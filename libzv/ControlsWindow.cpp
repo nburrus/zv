@@ -212,6 +212,28 @@ void ControlsWindow::renderFrame ()
             if (ImGui::MenuItem("Double size", ">", false)) imageWindow->processKeyEvent ('>');
             if (ImGui::MenuItem("Half size", "<", false)) imageWindow->processKeyEvent ('<');
             if (ImGui::MenuItem("Restore aspect ratio", "a", false)) imageWindow->processKeyEvent (GLFW_KEY_A);
+            if (ImGui::BeginMenu("Grid"))
+            {
+                if (ImGui::BeginMenu("2 images"))
+                {
+                    if (ImGui::MenuItem("2x1")) imageWindow->setLayout(2,2,1);
+                    if (ImGui::MenuItem("1x2")) imageWindow->setLayout(2,1,2);
+                    ImGui::EndMenu();
+                }
+                if (ImGui::BeginMenu("3 images"))
+                {
+                    if (ImGui::MenuItem("3x1")) imageWindow->setLayout(3,3,1);
+                    if (ImGui::MenuItem("1x3")) imageWindow->setLayout(3,1,3);
+                    if (ImGui::MenuItem("2x2")) imageWindow->setLayout(3,2,2);
+                    ImGui::EndMenu();
+                }
+                if (ImGui::BeginMenu("4 images"))
+                {
+                    if (ImGui::MenuItem("2x2")) imageWindow->setLayout(4,2,2);
+                    ImGui::EndMenu();
+                }
+                ImGui::EndMenu();
+            }
             ImGui::EndMenu();
         }
 

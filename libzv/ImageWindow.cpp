@@ -67,13 +67,52 @@ std::string viewerModeFileName (ViewerMode mode)
     }
 }
 
+struct ImageItemAndData
+{
+    ImageItemPtr item;
+    ImageItemDataPtr data;
+};
+
+struct ImageLayout
+{
+    LayoutConfig config;
+    std::vector<Rect> imageRects;
+    
+    void adjustForConfig (const LayoutConfig& config)
+    {
+        this->config = config;
+        imageRects.resize (config.numImages);
+        
+        for (int r = 0; r < config.numRows; ++r)
+        for (int c = 0; c < config.numCols; ++c)
+        {
+            const int idx = r*config.numCols + c;
+            if (idx < config.numImages)
+            {
+                imageRects[idx] = Rect::from_x_y_w_h(double(c)/config.numCols,
+                                                     double(r)/config.numRows,
+                                                     1.0/config.numCols,
+                                                     1.0/config.numRows);
+            }
+        }
+    }
+};
+
+struct ZoomInfo
+{
+    int zoomFactor = 1;
+    
+    // UV means normalized between 0 and 1.
+    ImVec2 uvCenter = ImVec2(0.5f,0.5f);
+};
+
 struct ImageWindow::Impl
 {
     ImguiGLFWWindow imguiGlfwWindow;
     Viewer* viewer = nullptr;
 
-    std::shared_ptr<ImageItem> currentImageItem;
-    std::shared_ptr<ImageItemData> currentImageData;
+    std::vector<ImageItemAndData> currentImages;
+    ImageLayout currentLayout;
     
     ImageWindowState mutableState;
 
@@ -108,12 +147,7 @@ struct ImageWindow::Impl
         zv::Rect current;
     } imageWidgetRect;
     
-    struct {
-        int zoomFactor = 1;
-        
-        // UV means normalized between 0 and 1.
-        ImVec2 uvCenter = ImVec2(0.5f,0.5f);
-    } zoom;
+    ZoomInfo zoom;
     
     void enterMode (ViewerMode newMode)
     {
@@ -131,7 +165,7 @@ struct ImageWindow::Impl
                                       imageWidgetRect.current.size.y + windowBorderSize * 2);
     }
 
-    void adjustForNewImageItem (const std::shared_ptr<ImageItem>& imageItem);
+    void adjustForNewSelection (const ImageItemPtr& imageItem);
 
     void adjustAspectRatio ()
     {
@@ -149,29 +183,49 @@ struct ImageWindow::Impl
     }
 };
 
-void ImageWindow::Impl::adjustForNewImageItem (const std::shared_ptr<ImageItem>& imageItem)
+void ImageWindow::Impl::adjustForNewSelection (const ImageItemPtr& imageItem)
 {
     GLFWmonitor* monitor = glfwGetPrimaryMonitor();
     const GLFWvidmode* mode = glfwGetVideoMode(monitor);
     this->monitorSize = ImVec2(mode->width, mode->height);
 
     ImageList& imageList = this->viewer->imageList();
+    const int firstIndex = imageList.selectedIndex();
+    
+    this->imguiGlfwWindow.enableContexts ();
     
     // It's very important that this gets called while the GL context is bound
     // as it may release some GLTexture in the cache. Would be nice to make this
     // code more robust.
-    this->currentImageItem = imageItem;
-    this->currentImageData = imageList.getData(imageItem.get());
-    const auto& im = *this->currentImageData->cpuData;
-
-    this->imguiGlfwWindow.enableContexts ();
-    if (!this->currentImageData->textureData)
+    this->currentImages.resize (this->mutableState.layoutConfig.numImages);
+    for (int i = 0; i < this->currentImages.size(); ++i)
     {
-        this->currentImageData->textureData = std::make_unique<GLTexture>();
-        this->currentImageData->textureData->initialize();
-        // FIXME: not using the cache yet! GPU data releasing can be tricky.
-        this->currentImageData->textureData->upload(im);
+        const int imgIndex = firstIndex + i;
+        if (imgIndex < imageList.numImages())
+        {
+            this->currentImages[i].item = imageList.imageItemFromIndex(firstIndex + i);
+            this->currentImages[i].data = imageList.getData(this->currentImages[i].item.get());
+            
+            auto& textureData = this->currentImages[i].data->textureData;
+            if (!textureData)
+            {
+                textureData = std::make_unique<GLTexture>();
+                textureData->initialize();
+                // FIXME: not using the cache yet! GPU data releasing can be tricky.
+                textureData->upload(*this->currentImages[i].data->cpuData);
+            }
+        }
+        else
+        {
+            // Make sure that we clear it.
+            this->currentImages[i] = {};
+        }
     }
+    
+    this->currentLayout.adjustForConfig(this->mutableState.layoutConfig);
+        
+    // The first image will decide for all the other sizes.
+    const auto& firstIm = *this->currentImages[0].data->cpuData;
 
     if (!this->imageWidgetRect.normal.origin.isValid())
     {
@@ -179,8 +233,9 @@ void ImageWindow::Impl::adjustForNewImageItem (const std::shared_ptr<ImageItem>&
         this->imageWidgetRect.normal.origin.y = this->monitorSize.y * 0.10;
     }
 
-    this->imageWidgetRect.normal.size.x = im.width();
-    this->imageWidgetRect.normal.size.y = im.height();
+    const auto& firstRect = this->currentLayout.imageRects[0];
+    this->imageWidgetRect.normal.size.x = firstIm.width() / firstRect.size.x;
+    this->imageWidgetRect.normal.size.y = firstIm.height() / firstRect.size.y;
     
     // Keep the current geometry if it was already set before.
     if (!this->imageWidgetRect.current.origin.isValid())
@@ -273,6 +328,15 @@ bool ImageWindow::initialize (GLFWwindow* parentWindow, Viewer* viewer)
     checkGLError ();
     
     return true;
+}
+
+void ImageWindow::setLayout (int numImages, int numRows, int numCols)
+{
+    LayoutConfig config;
+    config.numImages = numImages;
+    config.numCols = numCols;
+    config.numRows = numRows;
+    impl->mutableState.layoutConfig = config;
 }
 
 ImageWindowState& ImageWindow::mutableState ()
@@ -446,15 +510,117 @@ const CursorOverlayInfo& ImageWindow::cursorOverlayInfo() const
 //     updatedWindowGeometry = impl->updateAfterContentSwitch.targetWindowGeometry;
 // }
 
+void renderImageItem (const ImageItemAndData& item,
+                      const ImVec2& imageWidgetTopLeft,
+                      const ImVec2& imageWidgetSize,
+                      ZoomInfo& zoom,
+                      bool imageHasNonMultipleSize,
+                      CursorOverlayInfo* overlayInfo)
+{
+    auto& io = ImGui::GetIO();
+    
+    ImVec2 uv0 (0,0);
+    ImVec2 uv1 (1.f/zoom.zoomFactor,1.f/zoom.zoomFactor);
+    ImVec2 uvRoiCenter = (uv0 + uv1) * 0.5f;
+    uv0 += zoom.uvCenter - uvRoiCenter;
+    uv1 += zoom.uvCenter - uvRoiCenter;
+    
+    // Make sure the ROI fits in the image.
+    ImVec2 deltaToAdd (0,0);
+    if (uv0.x < 0) deltaToAdd.x = -uv0.x;
+    if (uv0.y < 0) deltaToAdd.y = -uv0.y;
+    if (uv1.x > 1.f) deltaToAdd.x = 1.f-uv1.x;
+    if (uv1.y > 1.f) deltaToAdd.y = 1.f-uv1.y;
+    uv0 += deltaToAdd;
+    uv1 += deltaToAdd;
+
+    GLTexture* imageTexture = item.data->textureData.get();
+    
+    const bool hasZoom = zoom.zoomFactor != 1;
+    const bool useLinearFiltering = imageHasNonMultipleSize && !hasZoom;
+    // Enable it just for that rendering otherwise the pointer overlay will get filtered too.
+    if (useLinearFiltering)
+    {
+        ImGui::GetWindowDrawList()->AddCallback([](const ImDrawList *parent_list, const ImDrawCmd *cmd)
+                                                {
+                                                    GLTexture* imageTexture = reinterpret_cast<GLTexture*>(cmd->UserCallbackData);
+                                                    imageTexture->setLinearInterpolationEnabled(true);
+                                                },
+                                                imageTexture);
+    }
+
+    ImGui::Image(reinterpret_cast<ImTextureID>(imageTexture->textureId()),
+                 imageWidgetSize,
+                 uv0,
+                 uv1);
+
+    if (useLinearFiltering)
+    {
+        ImGui::GetWindowDrawList()->AddCallback([](const ImDrawList *parent_list, const ImDrawCmd *cmd)
+                                                {
+                                                    GLTexture* imageTexture = reinterpret_cast<GLTexture*>(cmd->UserCallbackData);
+                                                    imageTexture->setLinearInterpolationEnabled(true);
+                                                },
+                                                imageTexture);
+    }
+
+    const auto& currentIm = *item.data->cpuData;
+
+    ImVec2 mousePosInImage (0,0);
+    ImVec2 mousePosInTexture (0,0);
+    {
+        // This 0.5 offset is important since the mouse coordinate is an integer.
+        // So when we are in the center of a pixel we'll return 0,0 instead of
+        // 0.5,0.5.
+        ImVec2 widgetPos = (io.MousePos + ImVec2(0.5f,0.5f)) - imageWidgetTopLeft;
+        ImVec2 uv_window = widgetPos / imageWidgetSize;
+        mousePosInTexture = (uv1-uv0)*uv_window + uv0;
+        mousePosInImage = mousePosInTexture * ImVec2(currentIm.width(), currentIm.height());
+    }
+    
+    bool showCursorOverlay = false;
+    const bool pointerOverTheImage = ImGui::IsItemHovered() && currentIm.contains(mousePosInImage.x, mousePosInImage.y);
+
+    if (pointerOverTheImage && overlayInfo)
+    {
+        overlayInfo->imageData = item.data.get();
+        overlayInfo->showHelp = false;
+        overlayInfo->imageWidgetSize = imageWidgetSize;
+        overlayInfo->imageWidgetTopLeft = imageWidgetTopLeft;
+        overlayInfo->uvTopLeft = uv0;
+        overlayInfo->uvBottomRight = uv1;
+        overlayInfo->roiWindowSize = ImVec2(15, 15);
+        overlayInfo->mousePos = io.MousePos;
+    }
+
+    if (ImGui::IsItemClicked(ImGuiMouseButton_Left) && io.KeyCtrl)
+    {
+        if ((currentIm.width() / float(zoom.zoomFactor)) > 16.f
+             && (currentIm.height() / float(zoom.zoomFactor)) > 16.f)
+        {
+            zoom.zoomFactor *= 2;
+            zoom.uvCenter = mousePosInTexture;
+        }
+    }
+    
+    if (ImGui::IsItemClicked(ImGuiMouseButton_Right) && io.KeyCtrl)
+    {
+        if (zoom.zoomFactor >= 2)
+            zoom.zoomFactor /= 2;
+    }
+}
+
 void ImageWindow::renderFrame ()
 {
     ImageList& imageList = impl->viewer->imageList();
     
-    const std::shared_ptr<ImageItem>& imageItem = imageList.imageItemFromIndex (imageList.selectedIndex());
+    const ImageItemPtr& imageItem = imageList.imageItemFromIndex (imageList.selectedIndex());
     
-    if (impl->currentImageItem != imageItem)
+    if (impl->mutableState.layoutConfig != impl->currentLayout.config
+        || impl->currentImages.empty()
+        || impl->currentImages[0].item != imageItem)
     {
-        impl->adjustForNewImageItem (imageItem);
+        impl->adjustForNewSelection (imageItem);
     }
 
     if (impl->updateAfterContentSwitch.needToResize)
@@ -525,7 +691,7 @@ void ImageWindow::renderFrame ()
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0,0));
     bool isOpen = true;
     
-    std::string mainWindowName = impl->currentImageItem->sourceImagePath;
+    std::string mainWindowName = impl->currentImages[0].item->sourceImagePath;
     glfwSetWindowTitle(impl->imguiGlfwWindow.glfwWindow(), mainWindowName.c_str());
 
     if (ImGui::Begin((mainWindowName + "###Image").c_str(), &isOpen, flags))
@@ -534,124 +700,39 @@ void ImageWindow::renderFrame ()
         {
             impl->mutableState.activeMode = ViewerMode::None;
         }
-                      
-        const ImVec2 imageWidgetTopLeft = ImGui::GetCursorScreenPos();
         
-        ImVec2 uv0 (0,0);
-        ImVec2 uv1 (1.f/impl->zoom.zoomFactor,1.f/impl->zoom.zoomFactor);
-        ImVec2 uvRoiCenter = (uv0 + uv1) * 0.5f;
-        uv0 += impl->zoom.uvCenter - uvRoiCenter;
-        uv1 += impl->zoom.uvCenter - uvRoiCenter;
-        
-        // Make sure the ROI fits in the image.
-        ImVec2 deltaToAdd (0,0);
-        if (uv0.x < 0) deltaToAdd.x = -uv0.x;
-        if (uv0.y < 0) deltaToAdd.y = -uv0.y;
-        if (uv1.x > 1.f) deltaToAdd.x = 1.f-uv1.x;
-        if (uv1.y > 1.f) deltaToAdd.y = 1.f-uv1.y;
-        uv0 += deltaToAdd;
-        uv1 += deltaToAdd;
-    
-        GLTexture* imageTexture = impl->currentImageData->textureData.get();
-
-        if (impl->saveToFile.requested)
-        {
-            impl->saveToFile.requested = false;
-            ImageSRGBA im;
-            imageTexture->download (im);
-            writePngImage (impl->saveToFile.outPath, im);
-        }
-        
+        const ImVec2 globalImageWidgetTopLeft = ImGui::GetCursorScreenPos();
+        const auto globalImageWidgetSize = imSize(impl->imageWidgetRect.current);
         const bool imageHasNonMultipleSize = int(impl->imageWidgetRect.current.size.x) % int(impl->imageWidgetRect.normal.size.x) != 0;
-        const bool hasZoom = impl->zoom.zoomFactor != 1;
-        const bool useLinearFiltering = imageHasNonMultipleSize && !hasZoom;
-        // Enable it just for that rendering otherwise the pointer overlay will get filtered too.
-        if (useLinearFiltering)
-        {
-            ImGui::GetWindowDrawList()->AddCallback([](const ImDrawList *parent_list, const ImDrawCmd *cmd)
-                                                    {
-                                                        ImageWindow *that = reinterpret_cast<ImageWindow *>(cmd->UserCallbackData);
-                                                        that->impl->currentImageData->textureData->setLinearInterpolationEnabled(true);
-                                                    },
-                                                    this);
-        }
-
-        const auto imageWidgetSize = imSize(impl->imageWidgetRect.current);
-        ImGui::Image(reinterpret_cast<ImTextureID>(imageTexture->textureId()),
-                     imageWidgetSize,
-                     uv0,
-                     uv1);        
-
-        if (useLinearFiltering)
-        {
-            ImGui::GetWindowDrawList()->AddCallback([](const ImDrawList *parent_list, const ImDrawCmd *cmd)
-                                                    {
-                                                        ImageWindow *that = reinterpret_cast<ImageWindow *>(cmd->UserCallbackData);
-                                                        that->impl->currentImageData->textureData->setLinearInterpolationEnabled(false);
-                                                    },
-                                                    this);
-        }
-
-        const auto& currentIm = *impl->currentImageData->cpuData;
-
-        ImVec2 mousePosInImage (0,0);
-        ImVec2 mousePosInTexture (0,0);
-        {
-            // This 0.5 offset is important since the mouse coordinate is an integer.
-            // So when we are in the center of a pixel we'll return 0,0 instead of
-            // 0.5,0.5.
-            ImVec2 widgetPos = (io.MousePos + ImVec2(0.5f,0.5f)) - imageWidgetTopLeft;
-            ImVec2 uv_window = widgetPos / imageWidgetSize;
-            mousePosInTexture = (uv1-uv0)*uv_window + uv0;
-            mousePosInImage = mousePosInTexture * ImVec2(currentIm.width(), currentIm.height());
-        }
         
-        bool showCursorOverlay = false;
-        const bool pointerOverTheImage = ImGui::IsItemHovered() && currentIm.contains(mousePosInImage.x, mousePosInImage.y);
-        if (pointerOverTheImage)
+        for (int r = 0; r < impl->currentLayout.config.numRows; ++r)
+        for (int c = 0; c < impl->currentLayout.config.numCols; ++c)
         {
-            showCursorOverlay = impl->mutableState.activeMode == ViewerMode::Original;
-        }
-        
-        if (showCursorOverlay)
-        {
-            impl->cursorOverlayInfo.imageData = impl->currentImageData.get();
-            impl->cursorOverlayInfo.showHelp = false;
-            impl->cursorOverlayInfo.imageWidgetSize = imageWidgetSize;
-            impl->cursorOverlayInfo.imageWidgetTopLeft = imageWidgetTopLeft;
-            impl->cursorOverlayInfo.uvTopLeft = uv0;
-            impl->cursorOverlayInfo.uvBottomRight = uv1;
-            impl->cursorOverlayInfo.roiWindowSize = ImVec2(15, 15);
-            impl->cursorOverlayInfo.mousePos = io.MousePos;
+            const int idx = r*impl->currentLayout.config.numCols + c;
+            if (idx < impl->currentImages.size() && impl->currentImages[idx].data)
+            {
+                const auto& rect = impl->currentLayout.imageRects[idx];
+                const ImVec2 imageWidgetSize = ImVec2(globalImageWidgetSize.x * rect.size.x, globalImageWidgetSize.y * rect.size.y);
+                const ImVec2 imageWidgetTopLeft = ImVec2(globalImageWidgetSize.x * rect.origin.x, globalImageWidgetSize.y * rect.origin.y);
+                renderImageItem (impl->currentImages[idx],
+                                 imageWidgetTopLeft,
+                                 imageWidgetSize,
+                                 impl->zoom,
+                                 imageHasNonMultipleSize,
+                                 &impl->cursorOverlayInfo);
+            }
+            
             // Option: show it next to the mouse.
             if (impl->mutableState.inputState.shiftIsPressed || controlsWindowState.shiftIsPressed)
             {
                 impl->inlineCursorOverlay.showTooltip(impl->cursorOverlayInfo);
             }
         }
-
-        if (ImGui::IsItemClicked(ImGuiMouseButton_Left) && io.KeyCtrl)
+                        
+        if (ImGui::IsItemClicked(ImGuiMouseButton_Right) && !io.KeyCtrl)
         {
-            if ((currentIm.width() / float(impl->zoom.zoomFactor)) > 16.f
-                 && (currentIm.height() / float(impl->zoom.zoomFactor)) > 16.f)
-            {
-                impl->zoom.zoomFactor *= 2;
-                impl->zoom.uvCenter = mousePosInTexture;
-            }
-        }    
-        
-        if (ImGui::IsItemClicked(ImGuiMouseButton_Right))
-        {
-            if (io.KeyCtrl)
-            {
-                if (impl->zoom.zoomFactor >= 2)
-                    impl->zoom.zoomFactor /= 2;
-            }
-            else
-            {
-                // xv-like controls focus.
-                if (impl->viewer) impl->viewer->onControlsRequested();
-            }
+            // xv-like controls focus.
+            if (impl->viewer) impl->viewer->onControlsRequested();
         }
     }
         

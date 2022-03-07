@@ -18,6 +18,19 @@ enum class ViewerMode {
 
 std::string viewerModeName (ViewerMode mode);
 
+struct LayoutConfig
+{
+    int numImages = 1;
+    int numRows = 1;
+    int numCols = 1;
+    
+    bool operator==(const LayoutConfig& rhs) const
+    {
+        return memcmp(this, &rhs, sizeof(LayoutConfig)) == 0;
+    }
+    bool operator!=(const LayoutConfig& rhs) const { return !(*this == rhs); }
+};
+
 struct ImageWindowState
 {
     ViewerMode activeMode = ViewerMode::None;
@@ -33,6 +46,8 @@ struct ImageWindowState
 
     InputState controlsInputState;
     InputState inputState;
+    
+    LayoutConfig layoutConfig;
 };
 
 } // zv

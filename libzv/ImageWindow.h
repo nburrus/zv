@@ -38,6 +38,8 @@ public:
     
     bool isEnabled () const;
     void setEnabled (bool enabled);
+    
+    void setLayout (int numImages, int numRows, int numCols);
 
     zv::Rect geometry () const;
 

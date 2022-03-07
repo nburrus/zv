@@ -66,16 +66,16 @@ public:
         _lruCache.clear();
     }
 
-    std::shared_ptr<ImageItemData> getData (const ImageItem* entry)
+    ImageItemDataPtr getData (const ImageItem* entry)
     {
-        const std::shared_ptr<ImageItemData>* cacheEntry = _lruCache.get (entry);
+        const ImageItemDataPtr* cacheEntry = _lruCache.get (entry);
         if (cacheEntry)
         {
             return *cacheEntry;
         }
         else
         {
-            std::shared_ptr<ImageItemData> imageData = loadImageData(*entry);
+            ImageItemDataPtr imageData = loadImageData(*entry);
             _lruCache.put (entry, imageData);
             return imageData;
         }
@@ -85,7 +85,7 @@ public:
     void asyncPreload (ImageItem* entry) {}
 
 private:
-    lru_cache<const ImageItem*, std::shared_ptr<ImageItemData>> _lruCache;
+    lru_cache<const ImageItem*, ImageItemDataPtr> _lruCache;
 };
 
 } // zv
@@ -96,7 +96,7 @@ namespace zv
 struct ImageList::Impl
 {
     // Sorted set of images.
-    std::vector<std::shared_ptr<ImageItem>> entries;
+    std::vector<ImageItemPtr> entries;
 
     int selectedIndex = 0;
 
@@ -141,12 +141,12 @@ void ImageList::appendImage (std::unique_ptr<ImageItem> image)
     impl->entries.push_back (std::move(image));
 }
 
-std::shared_ptr<ImageItemData> ImageList::getData (const ImageItem* entry)
+ImageItemDataPtr ImageList::getData (const ImageItem* entry)
 {
     return impl->cache.getData (entry);
 }
 
-const std::shared_ptr<ImageItem>& ImageList::imageItemFromIndex (int index)
+const ImageItemPtr& ImageList::imageItemFromIndex (int index)
 {
     zv_assert (index < impl->entries.size(), "Image index out of bounds");
     return impl->entries[index];

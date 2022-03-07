@@ -29,7 +29,7 @@ int main (int argc, char* argv[])
         std::cerr << "Wrong usage" << std::endl;
         std::cerr << err.what() << std::endl;
         std::cerr << parser;
-        return false;
+        return 1;
     }
 
     zv::Viewer viewer;

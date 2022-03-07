@@ -33,6 +33,7 @@ struct ImageItem
     // Could add thumbnail, etc.
     // Everything should be lazy though.
 };
+using ImageItemPtr = std::shared_ptr<ImageItem>;
 
 std::unique_ptr<ImageItem> imageItemFromPath (const std::string& imagePath);
 
@@ -43,6 +44,7 @@ struct ImageItemData
     // In a context compatible with ImageWindowContext
     std::unique_ptr<GLTexture> textureData;
 };
+using ImageItemDataPtr = std::shared_ptr<ImageItemData>;
 
 class ImageList
 {
@@ -54,13 +56,13 @@ public:
     int numImages () const;
     int selectedIndex () const;
     void selectImage (int index);
-    const std::shared_ptr<ImageItem>& imageItemFromIndex (int index);
+    const ImageItemPtr& imageItemFromIndex (int index);
 
     // Takes ownership.
     void appendImage (std::unique_ptr<ImageItem> image);
 
     // Important to call this with a GL context set as it may release some GL textures.
-    std::shared_ptr<ImageItemData> getData (const ImageItem* entry);
+    ImageItemDataPtr getData (const ImageItem* entry);
     
     // Important to call this with a GL context set as it may release some textures.
     void releaseGL ();
