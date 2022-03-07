@@ -73,6 +73,7 @@ struct ImageWindow::Impl
     Viewer* viewer = nullptr;
 
     const ImageEntry* lastImageEntry = nullptr;
+    std::shared_ptr<ImageEntryData> currentImageData;
     
     ImageWindowState mutableState;
 
@@ -134,7 +135,7 @@ struct ImageWindow::Impl
                                       imageWidgetRect.current.size.y + windowBorderSize * 2);
     }
 
-    void adjustForNewImage (ImageEntryData& imData);
+    void adjustForNewImage (const std::shared_ptr<ImageEntryData>& imData);
 
     void adjustAspectRatio ()
     {
@@ -152,7 +153,7 @@ struct ImageWindow::Impl
     }
 };
 
-void ImageWindow::Impl::adjustForNewImage (ImageEntryData& imData)
+void ImageWindow::Impl::adjustForNewImage (const std::shared_ptr<ImageEntryData>& imData)
 {
     GLFWmonitor* monitor = glfwGetPrimaryMonitor();
     const GLFWvidmode* mode = glfwGetVideoMode(monitor);
@@ -162,6 +163,7 @@ void ImageWindow::Impl::adjustForNewImage (ImageEntryData& imData)
     this->imagePath = imData.entry->sourceImagePath;
 
     this->imguiGlfwWindow.enableContexts ();
+    if (imData.
     // FIXME: not using the cache yet! GPU data releasing can be tricky.
     this->gpuTexture.upload(*(this->im));
     if (!this->imageWidgetRect.normal.origin.isValid())
@@ -447,7 +449,7 @@ void ImageWindow::renderFrame ()
     
     if (impl->lastImageEntry != imageEntry)
     {
-        impl->adjustForNewImage (*imdata);
+        impl->adjustForNewImage (imdata);
         impl->lastImageEntry = imageEntry;
     }
 

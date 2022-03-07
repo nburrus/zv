@@ -38,7 +38,7 @@ std::unique_ptr<ImageEntry> imageEntryFromPath (const std::string& imagePath);
 
 struct ImageEntryData
 {
-    const ImageEntry* entry = nullptr;
+    const std::shared_ptr<ImageEntry> entry;
 
     std::shared_ptr<ImageSRGBA> cpuData;
     
@@ -56,7 +56,7 @@ public:
     int numImages () const;
     int selectedIndex () const;
     void selectImage (int index);
-    const ImageEntry* imageEntryFromIndex (int index);
+    const std::shared_ptr<ImageEntry> imageEntryFromIndex (int index);
 
     // Takes ownership.
     void appendImage (std::unique_ptr<ImageEntry> image);

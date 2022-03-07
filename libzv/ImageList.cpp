@@ -88,7 +88,7 @@ namespace zv
 struct ImageList::Impl
 {
     // Sorted set of images.
-    std::vector<std::unique_ptr<ImageEntry>> entries;
+    std::vector<std::shared_ptr<ImageEntry>> entries;
 
     int selectedIndex = 0;
 
@@ -118,7 +118,7 @@ void ImageList::selectImage (int index)
 
     if (index < 0)
         return;
-        
+
     impl->selectedIndex = index;
 }
 
@@ -133,10 +133,10 @@ std::shared_ptr<ImageEntryData> ImageList::getData (const ImageEntry* entry)
     return impl->cache.getData (entry);
 }
 
-const ImageEntry* ImageList::imageEntryFromIndex (int index)
+const std::shared_ptr<ImageEntry> ImageList::imageEntryFromIndex (int index)
 {
     zv_assert (index < impl->entries.size(), "Image index out of bounds");
-    return impl->entries[index].get();
+    return impl->entries[index];
 }
 
 } // zv

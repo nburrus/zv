@@ -31,7 +31,7 @@ struct ControlsWindow::Impl
     
     ControlsWindowInputState inputState;
 
-    // Debatable, but since we don't need polymorphims I've decided to use composition
+    // Debatable, but since we don't need polymorphism I've decided to use composition
     // for more flexibility, encapsulation (don't need to expose all the methods)
     // and explicit code.
     ImguiGLFWWindow imguiGlfwWindow;
