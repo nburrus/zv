@@ -10,6 +10,7 @@
 #include "ImageWindowState.h"
 
 #include <libzv/Viewer.h>
+#include <libzv/ImageList.h>
 #include <libzv/ImageCursorOverlay.h>
 #include <libzv/ImguiUtils.h>
 #include <libzv/PlatformSpecific.h>
@@ -70,6 +71,8 @@ struct ImageWindow::Impl
 {
     ImguiGLFWWindow imguiGlfwWindow;
     Viewer* viewer = nullptr;
+
+    const ImageEntry* lastImageEntry = nullptr;
     
     ImageWindowState mutableState;
 
@@ -95,7 +98,7 @@ struct ImageWindow::Impl
     } updateAfterContentSwitch;
     
     GLTexture gpuTexture;
-    zv::ImageSRGBA im;
+    std::shared_ptr<zv::ImageSRGBA> im;
     std::string imagePath;
     
     ImVec2 monitorSize = ImVec2(-1,-1);
@@ -130,7 +133,50 @@ struct ImageWindow::Impl
         imguiGlfwWindow.setWindowSize(imageWidgetRect.current.size.x + windowBorderSize * 2,
                                       imageWidgetRect.current.size.y + windowBorderSize * 2);
     }
+
+    void adjustForNewImage (ImageEntryData& imData);
 };
+
+void ImageWindow::Impl::adjustForNewImage (ImageEntryData& imData)
+{
+    GLFWmonitor* monitor = glfwGetPrimaryMonitor();
+    const GLFWvidmode* mode = glfwGetVideoMode(monitor);
+    this->monitorSize = ImVec2(mode->width, mode->height);
+
+    this->im = imData.cpuData;
+    this->imagePath = imData.entry->sourceImagePath;
+
+    this->imguiGlfwWindow.enableContexts ();
+    // FIXME: not using the cache yet! GPU data releasing can be tricky.
+    this->gpuTexture.upload(*(this->im));
+    if (this->imageWidgetRect.normal.origin.x < 0) this->imageWidgetRect.normal.origin.x = this->monitorSize.x * 0.10;
+    if (this->imageWidgetRect.normal.origin.y < 0) this->imageWidgetRect.normal.origin.y = this->monitorSize.y * 0.10;
+    this->imageWidgetRect.normal.size.x = this->im->width();
+    this->imageWidgetRect.normal.size.y = this->im->height();
+    this->imageWidgetRect.current = this->imageWidgetRect.normal;
+
+    this->mutableState.activeMode = ViewerMode::Original;
+
+    // Don't show it now, but tell it to show the window after
+    // updating the content, otherwise we can get annoying flicker.
+    this->updateAfterContentSwitch.inProgress = true;
+    this->updateAfterContentSwitch.needToResize = true;
+    this->updateAfterContentSwitch.numAlreadyRenderedFrames = 0;
+    this->updateAfterContentSwitch.targetWindowGeometry.origin.x = this->imageWidgetRect.normal.origin.x - this->windowBorderSize;
+    this->updateAfterContentSwitch.targetWindowGeometry.origin.y = this->imageWidgetRect.normal.origin.y - this->windowBorderSize;
+    this->updateAfterContentSwitch.targetWindowGeometry.size.x = this->imageWidgetRect.normal.size.x + 2 * this->windowBorderSize;
+    this->updateAfterContentSwitch.targetWindowGeometry.size.y = this->imageWidgetRect.normal.size.y + 2 * this->windowBorderSize;
+    this->updateAfterContentSwitch.screenToImageScale = 1.0;
+
+    this->viewer->onImageWindowGeometryUpdated (this->updateAfterContentSwitch.targetWindowGeometry);
+}
+
+// void Viewer::addImageData (const ImageSRGBA& image, const std::string& imageName)
+// {
+//     zv::Rect updatedViewerWindowGeometry;
+//     impl->imageWindow.showImage (image, imageName, updatedViewerWindowGeometry);
+//     impl->controlsWindow.repositionAfterNextRendering (updatedViewerWindowGeometry, true /* show by default */);
+// }
 
 ImageWindow::ImageWindow()
 : impl (new Impl())
@@ -336,41 +382,52 @@ const CursorOverlayInfo& ImageWindow::cursorOverlayInfo() const
     return impl->cursorOverlayInfo;
 }
 
-void ImageWindow::showImage (const zv::ImageSRGBA& im, const std::string& imagePath, zv::Rect& updatedWindowGeometry)
-{
-    GLFWmonitor* monitor = glfwGetPrimaryMonitor();
-    const GLFWvidmode* mode = glfwGetVideoMode(monitor);
-    impl->monitorSize = ImVec2(mode->width, mode->height);
+// void ImageWindow::showImage (const zv::ImageSRGBA& im, const std::string& imagePath, zv::Rect& updatedWindowGeometry)
+// {
+//     GLFWmonitor* monitor = glfwGetPrimaryMonitor();
+//     const GLFWvidmode* mode = glfwGetVideoMode(monitor);
+//     impl->monitorSize = ImVec2(mode->width, mode->height);
 
-    impl->im = im;
-    impl->imagePath = imagePath;
+//     impl->im = im;
+//     impl->imagePath = imagePath;
 
-    impl->imguiGlfwWindow.enableContexts ();
-    impl->gpuTexture.upload(impl->im);
-    if (impl->imageWidgetRect.normal.origin.x < 0) impl->imageWidgetRect.normal.origin.x = impl->monitorSize.x * 0.10;
-    if (impl->imageWidgetRect.normal.origin.y < 0) impl->imageWidgetRect.normal.origin.y = impl->monitorSize.y * 0.10;
-    impl->imageWidgetRect.normal.size.x = impl->im.width();
-    impl->imageWidgetRect.normal.size.y = impl->im.height();
-    impl->imageWidgetRect.current = impl->imageWidgetRect.normal;
+//     impl->imguiGlfwWindow.enableContexts ();
+//     impl->gpuTexture.upload(impl->im);
+//     if (impl->imageWidgetRect.normal.origin.x < 0) impl->imageWidgetRect.normal.origin.x = impl->monitorSize.x * 0.10;
+//     if (impl->imageWidgetRect.normal.origin.y < 0) impl->imageWidgetRect.normal.origin.y = impl->monitorSize.y * 0.10;
+//     impl->imageWidgetRect.normal.size.x = impl->im->width();
+//     impl->imageWidgetRect.normal.size.y = impl->im->height();
+//     impl->imageWidgetRect.current = impl->imageWidgetRect.normal;
 
-    impl->mutableState.activeMode = ViewerMode::Original;
+//     impl->mutableState.activeMode = ViewerMode::Original;
 
-    // Don't show it now, but tell it to show the window after
-    // updating the content, otherwise we can get annoying flicker.
-    impl->updateAfterContentSwitch.inProgress = true;
-    impl->updateAfterContentSwitch.needToResize = true;
-    impl->updateAfterContentSwitch.numAlreadyRenderedFrames = 0;
-    impl->updateAfterContentSwitch.targetWindowGeometry.origin.x = impl->imageWidgetRect.normal.origin.x - impl->windowBorderSize;
-    impl->updateAfterContentSwitch.targetWindowGeometry.origin.y = impl->imageWidgetRect.normal.origin.y - impl->windowBorderSize;
-    impl->updateAfterContentSwitch.targetWindowGeometry.size.x = impl->imageWidgetRect.normal.size.x + 2 * impl->windowBorderSize;
-    impl->updateAfterContentSwitch.targetWindowGeometry.size.y = impl->imageWidgetRect.normal.size.y + 2 * impl->windowBorderSize;
-    impl->updateAfterContentSwitch.screenToImageScale = 1.0;
+//     // Don't show it now, but tell it to show the window after
+//     // updating the content, otherwise we can get annoying flicker.
+//     impl->updateAfterContentSwitch.inProgress = true;
+//     impl->updateAfterContentSwitch.needToResize = true;
+//     impl->updateAfterContentSwitch.numAlreadyRenderedFrames = 0;
+//     impl->updateAfterContentSwitch.targetWindowGeometry.origin.x = impl->imageWidgetRect.normal.origin.x - impl->windowBorderSize;
+//     impl->updateAfterContentSwitch.targetWindowGeometry.origin.y = impl->imageWidgetRect.normal.origin.y - impl->windowBorderSize;
+//     impl->updateAfterContentSwitch.targetWindowGeometry.size.x = impl->imageWidgetRect.normal.size.x + 2 * impl->windowBorderSize;
+//     impl->updateAfterContentSwitch.targetWindowGeometry.size.y = impl->imageWidgetRect.normal.size.y + 2 * impl->windowBorderSize;
+//     impl->updateAfterContentSwitch.screenToImageScale = 1.0;
 
-    updatedWindowGeometry = impl->updateAfterContentSwitch.targetWindowGeometry;
-}
+//     updatedWindowGeometry = impl->updateAfterContentSwitch.targetWindowGeometry;
+// }
 
 void ImageWindow::renderFrame ()
 {
+    ImageList& imageList = impl->viewer->imageList();
+    
+    const ImageEntry* imageEntry = imageList.imageEntryFromIndex (imageList.selectedIndex());
+    std::shared_ptr<ImageEntryData> imdata = imageList.getData(imageEntry);
+    
+    if (impl->lastImageEntry != imageEntry)
+    {
+        impl->adjustForNewImage (*imdata);
+        impl->lastImageEntry = imageEntry;
+    }
+
     if (impl->updateAfterContentSwitch.needToResize)
     {
         impl->imguiGlfwWindow.enableContexts();
@@ -515,11 +572,11 @@ void ImageWindow::renderFrame ()
             ImVec2 widgetPos = (io.MousePos + ImVec2(0.5f,0.5f)) - imageWidgetTopLeft;
             ImVec2 uv_window = widgetPos / imageWidgetSize;
             mousePosInTexture = (uv1-uv0)*uv_window + uv0;
-            mousePosInImage = mousePosInTexture * ImVec2(impl->im.width(), impl->im.height());
+            mousePosInImage = mousePosInTexture * ImVec2(impl->im->width(), impl->im->height());
         }
         
         bool showCursorOverlay = false;
-        const bool pointerOverTheImage = ImGui::IsItemHovered() && impl->im.contains(mousePosInImage.x, mousePosInImage.y);
+        const bool pointerOverTheImage = ImGui::IsItemHovered() && impl->im->contains(mousePosInImage.x, mousePosInImage.y);
         if (pointerOverTheImage)
         {
             showCursorOverlay = impl->mutableState.activeMode == ViewerMode::Original;
@@ -527,7 +584,7 @@ void ImageWindow::renderFrame ()
         
         if (showCursorOverlay)
         {
-            impl->cursorOverlayInfo.image = &impl->im;
+            impl->cursorOverlayInfo.image = impl->im.get();
             impl->cursorOverlayInfo.imageTexture = &impl->gpuTexture;
             impl->cursorOverlayInfo.showHelp = false;
             impl->cursorOverlayInfo.imageWidgetSize = imageWidgetSize;
@@ -545,8 +602,8 @@ void ImageWindow::renderFrame ()
 
         if (ImGui::IsItemClicked(ImGuiMouseButton_Left) && io.KeyCtrl)
         {
-            if ((impl->im.width() / float(impl->zoom.zoomFactor)) > 16.f
-                 && (impl->im.height() / float(impl->zoom.zoomFactor)) > 16.f)
+            if ((impl->im->width() / float(impl->zoom.zoomFactor)) > 16.f
+                 && (impl->im->height() / float(impl->zoom.zoomFactor)) > 16.f)
             {
                 impl->zoom.zoomFactor *= 2;
                 impl->zoom.uvCenter = mousePosInTexture;

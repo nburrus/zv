@@ -30,9 +30,7 @@ public:
     
 public:   
     bool initialize (GLFWwindow* parentWindow, Viewer* controller);
-    
-    void showImage (const ImageSRGBA& image, const std::string& imagePath, zv::Rect& updatedWindowGeometry);
-    
+        
     const CursorOverlayInfo& cursorOverlayInfo() const;
     
     void shutdown ();

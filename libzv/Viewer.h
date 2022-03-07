@@ -16,6 +16,7 @@ namespace zv
 
 class ImageWindow;
 class ControlsWindow;
+class ImageList;
 
 struct ViewerState
 {
@@ -40,7 +41,7 @@ public:
     void renderFrame ();
 
 public:
-    bool addImageFromFile (const std::string& imagePath);
+    void addImageFromFile (const std::string& imagePath);
     void addImageData (const ImageSRGBA& image, const std::string& imageName);
     void addPastedImage ();
         
@@ -49,8 +50,11 @@ protected:
     void onDismissRequested ();
     void onHelpRequested ();
     void onControlsRequested ();
+    void onImageWindowGeometryUpdated (const Rect& geometry);
+
     ImageWindow* imageWindow();
     ControlsWindow* controlsWindow();
+    ImageList& imageList();
 
     friend class ImageWindow;
     friend class ControlsWindow;

@@ -48,6 +48,8 @@ endif()
 add_library(zv 
     ColorConversion.cpp
     ColorConversion.h
+    ControlsWindow.cpp
+    ControlsWindow.h
     GLFWUtils.cpp
     GLFWUtils.h
     HelpWindow.cpp
@@ -59,8 +61,8 @@ add_library(zv
     Image.h
     ImageCursorOverlay.cpp
     ImageCursorOverlay.h
-    ControlsWindow.cpp
-    ControlsWindow.h
+    ImageList.cpp
+    ImageList.h
     ImageWindow.cpp
     ImageWindow.h
     ImageWindowState.h

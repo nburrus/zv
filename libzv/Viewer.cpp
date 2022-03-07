@@ -10,6 +10,7 @@
 #include <libzv/Prefs.h>
 #include <libzv/Utils.h>
 
+#include <libzv/ImageList.h>
 #include <libzv/ImageWindow.h>
 #include <libzv/ControlsWindow.h>
 #include <libzv/HelpWindow.h>
@@ -29,7 +30,8 @@ namespace zv
 struct Viewer::Impl
 {   
     GLFWwindow* mainContextWindow = nullptr;
-    
+
+    ImageList imageList;    
     ImageWindow imageWindow;
     ControlsWindow controlsWindow;
     HelpWindow helpWindow;
@@ -172,6 +174,11 @@ void Viewer::onControlsRequested()
     }
 }
 
+void Viewer::onImageWindowGeometryUpdated (const Rect& geometry)
+{
+    impl->controlsWindow.repositionAfterNextRendering (geometry, true /* show by default */);
+}
+
 ImageWindow* Viewer::imageWindow()
 {
     return &impl->imageWindow;
@@ -182,24 +189,14 @@ ControlsWindow* Viewer::controlsWindow()
     return &impl->controlsWindow;
 }
 
-void Viewer::addImageData (const ImageSRGBA& image, const std::string& imageName)
+ImageList& Viewer::imageList()
 {
-    zv::Rect updatedViewerWindowGeometry;
-    impl->imageWindow.showImage (image, imageName, updatedViewerWindowGeometry);
-    impl->controlsWindow.repositionAfterNextRendering (updatedViewerWindowGeometry, true /* show by default */);
+    return impl->imageList;
 }
 
-bool Viewer::addImageFromFile (const std::string& imagePath)
+void Viewer::addImageFromFile (const std::string& imagePath)
 {
-    zv::ImageSRGBA image;
-    bool couldLoad = zv::readPngImage(imagePath, image);
-    if (!couldLoad)
-    {
-        return false;
-    }
-
-    addImageData (image, imagePath);
-    return true;
+    impl->imageList.appendImage (imageEntryFromPath(imagePath));
 }
 
 void Viewer::addPastedImage ()

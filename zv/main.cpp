@@ -40,12 +40,7 @@ int main (int argc, char* argv[])
         auto images = parser.get<std::vector<std::string>>("images");
         zv_dbg("%d images provided", (int)images.size());
 
-        bool couldLoad = viewer.addImageFromFile (images[0]);
-        if (!couldLoad)
-        {
-            std::cerr << "ERROR: could not load " << images[0] << std::endl;
-            return 1;
-        }
+        viewer.addImageFromFile (images[0]);
     }
     catch (std::logic_error& e)
     {
