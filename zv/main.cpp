@@ -40,7 +40,8 @@ int main (int argc, char* argv[])
         auto images = parser.get<std::vector<std::string>>("images");
         zv_dbg("%d images provided", (int)images.size());
 
-        viewer.addImageFromFile (images[0]);
+        for (const auto& im : images)
+            viewer.addImageFromFile (im);
     }
     catch (std::logic_error& e)
     {

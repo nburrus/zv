@@ -113,7 +113,12 @@ int ImageList::selectedIndex () const
 
 void ImageList::selectImage (int index)
 {
-    zv_assert (index < impl->entries.size(), "Out of bounds");
+    if (index >= impl->entries.size())
+        return;
+
+    if (index < 0)
+        return;
+        
     impl->selectedIndex = index;
 }
 

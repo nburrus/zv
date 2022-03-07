@@ -135,6 +135,21 @@ struct ImageWindow::Impl
     }
 
     void adjustForNewImage (ImageEntryData& imData);
+
+    void adjustAspectRatio ()
+    {
+        float ratioX = this->imageWidgetRect.current.size.x / this->imageWidgetRect.normal.size.x;
+        float ratioY = this->imageWidgetRect.current.size.y / this->imageWidgetRect.normal.size.y;
+        if (ratioX < ratioY)
+        {
+            this->imageWidgetRect.current.size.y = ratioX * this->imageWidgetRect.normal.size.y;
+        }
+        else
+        {
+            this->imageWidgetRect.current.size.x = ratioY * this->imageWidgetRect.normal.size.x;
+        }
+        this->shouldUpdateWindowSize = true;
+    }
 };
 
 void ImageWindow::Impl::adjustForNewImage (ImageEntryData& imData)
@@ -149,26 +164,32 @@ void ImageWindow::Impl::adjustForNewImage (ImageEntryData& imData)
     this->imguiGlfwWindow.enableContexts ();
     // FIXME: not using the cache yet! GPU data releasing can be tricky.
     this->gpuTexture.upload(*(this->im));
-    if (this->imageWidgetRect.normal.origin.x < 0) this->imageWidgetRect.normal.origin.x = this->monitorSize.x * 0.10;
-    if (this->imageWidgetRect.normal.origin.y < 0) this->imageWidgetRect.normal.origin.y = this->monitorSize.y * 0.10;
+    if (!this->imageWidgetRect.normal.origin.isValid())
+    {
+        this->imageWidgetRect.normal.origin.x = this->monitorSize.x * 0.10;
+        this->imageWidgetRect.normal.origin.y = this->monitorSize.y * 0.10;
+    }
     this->imageWidgetRect.normal.size.x = this->im->width();
     this->imageWidgetRect.normal.size.y = this->im->height();
-    this->imageWidgetRect.current = this->imageWidgetRect.normal;
+    
+    // Keep the current geometry if it was already set before.
+    if (!this->imageWidgetRect.current.origin.isValid())
+    {
+        this->imageWidgetRect.current = this->imageWidgetRect.normal;
+        // Don't show it now, but tell it to show the window after
+        // updating the content, otherwise we can get annoying flicker.
+        this->updateAfterContentSwitch.inProgress = true;
+        this->updateAfterContentSwitch.needToResize = true;
+        this->updateAfterContentSwitch.numAlreadyRenderedFrames = 0;
+        this->updateAfterContentSwitch.targetWindowGeometry.origin.x = this->imageWidgetRect.normal.origin.x - this->windowBorderSize;
+        this->updateAfterContentSwitch.targetWindowGeometry.origin.y = this->imageWidgetRect.normal.origin.y - this->windowBorderSize;
+        this->updateAfterContentSwitch.targetWindowGeometry.size.x = this->imageWidgetRect.normal.size.x + 2 * this->windowBorderSize;
+        this->updateAfterContentSwitch.targetWindowGeometry.size.y = this->imageWidgetRect.normal.size.y + 2 * this->windowBorderSize;
+        this->updateAfterContentSwitch.screenToImageScale = 1.0;
+        this->viewer->onImageWindowGeometryUpdated (this->updateAfterContentSwitch.targetWindowGeometry);
+    }
 
-    this->mutableState.activeMode = ViewerMode::Original;
-
-    // Don't show it now, but tell it to show the window after
-    // updating the content, otherwise we can get annoying flicker.
-    this->updateAfterContentSwitch.inProgress = true;
-    this->updateAfterContentSwitch.needToResize = true;
-    this->updateAfterContentSwitch.numAlreadyRenderedFrames = 0;
-    this->updateAfterContentSwitch.targetWindowGeometry.origin.x = this->imageWidgetRect.normal.origin.x - this->windowBorderSize;
-    this->updateAfterContentSwitch.targetWindowGeometry.origin.y = this->imageWidgetRect.normal.origin.y - this->windowBorderSize;
-    this->updateAfterContentSwitch.targetWindowGeometry.size.x = this->imageWidgetRect.normal.size.x + 2 * this->windowBorderSize;
-    this->updateAfterContentSwitch.targetWindowGeometry.size.y = this->imageWidgetRect.normal.size.y + 2 * this->windowBorderSize;
-    this->updateAfterContentSwitch.screenToImageScale = 1.0;
-
-    this->viewer->onImageWindowGeometryUpdated (this->updateAfterContentSwitch.targetWindowGeometry);
+    this->mutableState.activeMode = ViewerMode::Original;    
 }
 
 // void Viewer::addImageData (const ImageSRGBA& image, const std::string& imageName)
@@ -291,6 +312,18 @@ void ImageWindow::processKeyEvent (int keycode)
 
     switch (keycode)
     {
+        case GLFW_KEY_UP:
+        {
+            impl->viewer->imageList().selectImage (impl->viewer->imageList().selectedIndex() - 1);
+            break;
+        }
+
+        case GLFW_KEY_DOWN:
+        {
+            impl->viewer->imageList().selectImage (impl->viewer->imageList().selectedIndex() + 1);
+            break;
+        }
+
         case GLFW_KEY_S:
         {
             if (io.KeyCtrl)
@@ -309,17 +342,7 @@ void ImageWindow::processKeyEvent (int keycode)
 
         case GLFW_KEY_A:
         {
-            float ratioX = impl->imageWidgetRect.current.size.x / impl->imageWidgetRect.normal.size.x;
-            float ratioY = impl->imageWidgetRect.current.size.y / impl->imageWidgetRect.normal.size.y;
-            if (ratioX < ratioY)
-            {
-                impl->imageWidgetRect.current.size.y = ratioX * impl->imageWidgetRect.normal.size.y;
-            }
-            else
-            {
-                impl->imageWidgetRect.current.size.x = ratioY * impl->imageWidgetRect.normal.size.x;
-            }
-            impl->shouldUpdateWindowSize = true;
+            impl->adjustAspectRatio ();
             break;
         }
 

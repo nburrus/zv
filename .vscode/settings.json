@@ -4,6 +4,7 @@
     "cmake.debugConfig": {
         "args": [
             "${workspaceFolder}/tests/rgbgrid.png",
+            "${workspaceFolder}/tests/daltonlens.png",
         ]
     },
     "files.associations": {
