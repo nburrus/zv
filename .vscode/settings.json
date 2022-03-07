@@ -1,3 +1,9 @@
 {
-    "C_Cpp.errorSquiggles": "Disabled"
+    "C_Cpp.errorSquiggles": "Disabled",
+
+    "cmake.debugConfig": {
+        "args": [
+            "${workspaceFolder}/tests/rgbgrid.png",
+        ]
+    },
 }

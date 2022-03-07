@@ -12,6 +12,8 @@
 namespace zv
 {
 
+class ImageViewer;
+
 class Viewer
 {
 public:
@@ -23,6 +25,8 @@ public:
     // Sets up the hotkeys
     bool initialize ();
     
+    ImageViewer& imageViewer ();
+
     void runOnce ();
     
     void helpRequested ();

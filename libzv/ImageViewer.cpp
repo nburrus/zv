@@ -21,8 +21,6 @@
 #include <libzv/ImageViewerWindow.h>
 #include <libzv/ImageViewerControlsWindow.h>
 
-#include <argparse.hpp>
-
 #include <clip/clip.h>
 
 #include <cstdio>

@@ -81,6 +81,11 @@ static void glfw_error_callback(int error, const char* description)
     zv_assert (false, "GLFW error %d: %s\n", error, description);
 }
 
+ImageViewer& Viewer::imageViewer ()
+{
+    return impl->imageViewer;
+}
+
 bool Viewer::initialize ()
 {
     // Setup window
