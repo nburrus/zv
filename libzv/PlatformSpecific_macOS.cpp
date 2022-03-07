@@ -7,6 +7,7 @@
 #include "PlatformSpecific.h"
 
 #import <Foundation/Foundation.h>
+#import <AppKit/AppKit.h>
 
 namespace zv
 {

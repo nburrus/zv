@@ -8,6 +8,7 @@
 
 #include <libzv/ImguiGLFWWindow.h>
 
+#include <libzv/ImageList.h>
 #include <libzv/OpenGL.h>
 #include <libzv/Image.h>
 #include <libzv/MathUtils.h>
@@ -19,10 +20,9 @@ namespace zv
 
 struct CursorOverlayInfo
 {
-    bool valid() const { return image != nullptr; }
+    bool valid() const { return imageData != nullptr; }
     
-    const zv::ImageSRGBA* image = nullptr;
-    GLTexture* imageTexture = nullptr;
+    const ImageItemData* imageData = nullptr;
     bool showHelp = false;
     ImVec2 imageWidgetTopLeft;
     ImVec2 imageWidgetSize;

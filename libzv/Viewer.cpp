@@ -142,11 +142,16 @@ void Viewer::shutdown ()
 {
     if (!impl->mainContextWindow)
         return;
-    
+
     impl->imageWindow.shutdown ();
     impl->controlsWindow.shutdown ();
     impl->helpWindow.shutdown();
     
+    // Make sure a context is set for the textures.
+    glfwMakeContextCurrent(impl->mainContextWindow);
+    impl->imageList.releaseGL();
+    glfwMakeContextCurrent(nullptr);
+
     glfwDestroyWindow(impl->mainContextWindow);
     glfwTerminate();
     impl->mainContextWindow = nullptr;
@@ -196,7 +201,7 @@ ImageList& Viewer::imageList()
 
 void Viewer::addImageFromFile (const std::string& imagePath)
 {
-    impl->imageList.appendImage (imageEntryFromPath(imagePath));
+    impl->imageList.appendImage (imageItemFromPath(imagePath));
 }
 
 void Viewer::addPastedImage ()

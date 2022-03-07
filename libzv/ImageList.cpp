@@ -14,28 +14,27 @@
 namespace zv
 {
 
-std::unique_ptr<ImageEntry> imageEntryFromPath (const std::string& imagePath)
+std::unique_ptr<ImageItem> imageItemFromPath (const std::string& imagePath)
 {
-    auto entry = std::make_unique<ImageEntry>();
-    entry->source = ImageEntry::Source::FilePath;
+    auto entry = std::make_unique<ImageItem>();
+    entry->source = ImageItem::Source::FilePath;
     entry->sourceImagePath = imagePath;
     return entry;
 }
 
-std::unique_ptr<ImageEntryData> loadImageData(const ImageEntry& input)
+std::unique_ptr<ImageItemData> loadImageData(const ImageItem& input)
 {
-    auto output = std::make_unique<ImageEntryData>();
-    output->entry = &input;
+    auto output = std::make_unique<ImageItemData>();
     
     switch (input.source)
     {
-        case ImageEntry::Source::Data:
+        case ImageItem::Source::Data:
         {
             output->cpuData = input.sourceData;
             break;
         }
 
-        case ImageEntry::Source::FilePath:
+        case ImageItem::Source::FilePath:
         {
             output->cpuData = std::make_shared<ImageSRGBA>();
             bool couldLoad = readPngImage (input.sourceImagePath, *output->cpuData);
@@ -45,39 +44,48 @@ std::unique_ptr<ImageEntryData> loadImageData(const ImageEntry& input)
             }
             break;
         }
+
+        default:
+            zv_assert (false, "Invalid source.");
+            break;
     }
 
     return output;
 }
 
-class ImageEntryCache
+class ImageItemCache
 {
 public:
-    ImageEntryCache (int maxCacheSize = 5) : _lruCache (maxCacheSize)
+    ImageItemCache (int maxCacheSize = 5) : _lruCache (maxCacheSize)
     {
 
     }
 
-    std::shared_ptr<ImageEntryData> getData (const ImageEntry* entry)
+    void clear ()
     {
-        const std::shared_ptr<ImageEntryData>* cacheEntry = _lruCache.get (entry);
+        _lruCache.clear();
+    }
+
+    std::shared_ptr<ImageItemData> getData (const ImageItem* entry)
+    {
+        const std::shared_ptr<ImageItemData>* cacheEntry = _lruCache.get (entry);
         if (cacheEntry)
         {
             return *cacheEntry;
         }
         else
         {
-            std::shared_ptr<ImageEntryData> imageData = loadImageData(*entry);
+            std::shared_ptr<ImageItemData> imageData = loadImageData(*entry);
             _lruCache.put (entry, imageData);
             return imageData;
         }
     }
     
     // For later.
-    void asyncPreload (ImageEntry* entry) {}
+    void asyncPreload (ImageItem* entry) {}
 
 private:
-    lru_cache<const ImageEntry*, std::shared_ptr<ImageEntryData>> _lruCache;
+    lru_cache<const ImageItem*, std::shared_ptr<ImageItemData>> _lruCache;
 };
 
 } // zv
@@ -88,11 +96,11 @@ namespace zv
 struct ImageList::Impl
 {
     // Sorted set of images.
-    std::vector<std::shared_ptr<ImageEntry>> entries;
+    std::vector<std::shared_ptr<ImageItem>> entries;
 
     int selectedIndex = 0;
 
-    ImageEntryCache cache;
+    ImageItemCache cache;
 };
 
 ImageList::ImageList()
@@ -100,6 +108,11 @@ ImageList::ImageList()
 {}
 
 ImageList::~ImageList() = default;
+
+void ImageList::releaseGL ()
+{
+    impl->cache.clear();
+}
 
 int ImageList::numImages () const 
 { 
@@ -123,17 +136,17 @@ void ImageList::selectImage (int index)
 }
 
 // Takes ownership.
-void ImageList::appendImage (std::unique_ptr<ImageEntry> image)
+void ImageList::appendImage (std::unique_ptr<ImageItem> image)
 {
     impl->entries.push_back (std::move(image));
 }
 
-std::shared_ptr<ImageEntryData> ImageList::getData (const ImageEntry* entry)
+std::shared_ptr<ImageItemData> ImageList::getData (const ImageItem* entry)
 {
     return impl->cache.getData (entry);
 }
 
-const std::shared_ptr<ImageEntry> ImageList::imageEntryFromIndex (int index)
+const std::shared_ptr<ImageItem>& ImageList::imageItemFromIndex (int index)
 {
     zv_assert (index < impl->entries.size(), "Image index out of bounds");
     return impl->entries[index];

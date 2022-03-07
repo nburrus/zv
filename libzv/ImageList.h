@@ -15,7 +15,7 @@
 namespace zv
 {
 
-struct ImageEntry
+struct ImageItem
 {
     enum class Source
     {
@@ -34,12 +34,10 @@ struct ImageEntry
     // Everything should be lazy though.
 };
 
-std::unique_ptr<ImageEntry> imageEntryFromPath (const std::string& imagePath);
+std::unique_ptr<ImageItem> imageItemFromPath (const std::string& imagePath);
 
-struct ImageEntryData
+struct ImageItemData
 {
-    const std::shared_ptr<ImageEntry> entry;
-
     std::shared_ptr<ImageSRGBA> cpuData;
     
     // In a context compatible with ImageWindowContext
@@ -56,12 +54,16 @@ public:
     int numImages () const;
     int selectedIndex () const;
     void selectImage (int index);
-    const std::shared_ptr<ImageEntry> imageEntryFromIndex (int index);
+    const std::shared_ptr<ImageItem>& imageItemFromIndex (int index);
 
     // Takes ownership.
-    void appendImage (std::unique_ptr<ImageEntry> image);
+    void appendImage (std::unique_ptr<ImageItem> image);
 
-    std::shared_ptr<ImageEntryData> getData (const ImageEntry* entry);
+    // Important to call this with a GL context set as it may release some GL textures.
+    std::shared_ptr<ImageItemData> getData (const ImageItem* entry);
+    
+    // Important to call this with a GL context set as it may release some textures.
+    void releaseGL ();
 
 private:
     struct Impl;

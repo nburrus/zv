@@ -72,8 +72,8 @@ struct ImageWindow::Impl
     ImguiGLFWWindow imguiGlfwWindow;
     Viewer* viewer = nullptr;
 
-    const ImageEntry* lastImageEntry = nullptr;
-    std::shared_ptr<ImageEntryData> currentImageData;
+    std::shared_ptr<ImageItem> currentImageItem;
+    std::shared_ptr<ImageItemData> currentImageData;
     
     ImageWindowState mutableState;
 
@@ -97,11 +97,7 @@ struct ImageWindow::Impl
 
         void setCompleted () { *this = {}; }
     } updateAfterContentSwitch;
-    
-    GLTexture gpuTexture;
-    std::shared_ptr<zv::ImageSRGBA> im;
-    std::string imagePath;
-    
+        
     ImVec2 monitorSize = ImVec2(-1,-1);
     
     const int windowBorderSize = 0;
@@ -135,7 +131,7 @@ struct ImageWindow::Impl
                                       imageWidgetRect.current.size.y + windowBorderSize * 2);
     }
 
-    void adjustForNewImage (const std::shared_ptr<ImageEntryData>& imData);
+    void adjustForNewImageItem (const std::shared_ptr<ImageItem>& imageItem);
 
     void adjustAspectRatio ()
     {
@@ -153,26 +149,37 @@ struct ImageWindow::Impl
     }
 };
 
-void ImageWindow::Impl::adjustForNewImage (const std::shared_ptr<ImageEntryData>& imData)
+void ImageWindow::Impl::adjustForNewImageItem (const std::shared_ptr<ImageItem>& imageItem)
 {
     GLFWmonitor* monitor = glfwGetPrimaryMonitor();
     const GLFWvidmode* mode = glfwGetVideoMode(monitor);
     this->monitorSize = ImVec2(mode->width, mode->height);
 
-    this->im = imData.cpuData;
-    this->imagePath = imData.entry->sourceImagePath;
+    ImageList& imageList = this->viewer->imageList();
+    
+    // It's very important that this gets called while the GL context is bound
+    // as it may release some GLTexture in the cache. Would be nice to make this
+    // code more robust.
+    this->currentImageData = imageList.getData(imageItem.get());
+    const auto& im = *this->currentImageData->cpuData;
 
     this->imguiGlfwWindow.enableContexts ();
-    if (imData.
-    // FIXME: not using the cache yet! GPU data releasing can be tricky.
-    this->gpuTexture.upload(*(this->im));
+    if (!this->currentImageData->textureData)
+    {
+        this->currentImageData->textureData = std::make_unique<GLTexture>();
+        this->currentImageData->textureData->initialize();
+        // FIXME: not using the cache yet! GPU data releasing can be tricky.
+        this->currentImageData->textureData->upload(im);
+    }
+
     if (!this->imageWidgetRect.normal.origin.isValid())
     {
         this->imageWidgetRect.normal.origin.x = this->monitorSize.x * 0.10;
         this->imageWidgetRect.normal.origin.y = this->monitorSize.y * 0.10;
     }
-    this->imageWidgetRect.normal.size.x = this->im->width();
-    this->imageWidgetRect.normal.size.y = this->im->height();
+
+    this->imageWidgetRect.normal.size.x = im.width();
+    this->imageWidgetRect.normal.size.y = im.height();
     
     // Keep the current geometry if it was already set before.
     if (!this->imageWidgetRect.current.origin.isValid())
@@ -261,8 +268,6 @@ bool ImageWindow::initialize (GLFWwindow* parentWindow, Viewer* viewer)
         return false;
 
     glfwWindowHint(GLFW_RESIZABLE, true); // restore the default.
-
-    impl->gpuTexture.initialize();
 
     checkGLError ();
     
@@ -420,8 +425,8 @@ const CursorOverlayInfo& ImageWindow::cursorOverlayInfo() const
 //     impl->gpuTexture.upload(impl->im);
 //     if (impl->imageWidgetRect.normal.origin.x < 0) impl->imageWidgetRect.normal.origin.x = impl->monitorSize.x * 0.10;
 //     if (impl->imageWidgetRect.normal.origin.y < 0) impl->imageWidgetRect.normal.origin.y = impl->monitorSize.y * 0.10;
-//     impl->imageWidgetRect.normal.size.x = impl->im->width();
-//     impl->imageWidgetRect.normal.size.y = impl->im->height();
+//     impl->imageWidgetRect.normal.size.x = currentIm.width();
+//     impl->imageWidgetRect.normal.size.y = currentIm.height();
 //     impl->imageWidgetRect.current = impl->imageWidgetRect.normal;
 
 //     impl->mutableState.activeMode = ViewerMode::Original;
@@ -444,13 +449,11 @@ void ImageWindow::renderFrame ()
 {
     ImageList& imageList = impl->viewer->imageList();
     
-    const ImageEntry* imageEntry = imageList.imageEntryFromIndex (imageList.selectedIndex());
-    std::shared_ptr<ImageEntryData> imdata = imageList.getData(imageEntry);
+    const std::shared_ptr<ImageItem>& imageItem = imageList.imageItemFromIndex (imageList.selectedIndex());
     
-    if (impl->lastImageEntry != imageEntry)
+    if (impl->currentImageItem != imageItem)
     {
-        impl->adjustForNewImage (imdata);
-        impl->lastImageEntry = imageEntry;
+        impl->adjustForNewImageItem (imageItem);
     }
 
     if (impl->updateAfterContentSwitch.needToResize)
@@ -521,7 +524,7 @@ void ImageWindow::renderFrame ()
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0,0));
     bool isOpen = true;
     
-    std::string mainWindowName = impl->imagePath;
+    std::string mainWindowName = impl->currentImageItem->sourceImagePath;
     glfwSetWindowTitle(impl->imguiGlfwWindow.glfwWindow(), mainWindowName.c_str());
 
     if (ImGui::Begin((mainWindowName + "###Image").c_str(), &isOpen, flags))
@@ -548,7 +551,7 @@ void ImageWindow::renderFrame ()
         uv0 += deltaToAdd;
         uv1 += deltaToAdd;
     
-        GLTexture* imageTexture = &impl->gpuTexture;
+        GLTexture* imageTexture = impl->currentImageData->textureData.get();
 
         if (impl->saveToFile.requested)
         {
@@ -567,7 +570,7 @@ void ImageWindow::renderFrame ()
             ImGui::GetWindowDrawList()->AddCallback([](const ImDrawList *parent_list, const ImDrawCmd *cmd)
                                                     {
                                                         ImageWindow *that = reinterpret_cast<ImageWindow *>(cmd->UserCallbackData);
-                                                        that->impl->gpuTexture.setLinearInterpolationEnabled(true);
+                                                        that->impl->currentImageData->textureData->setLinearInterpolationEnabled(true);
                                                     },
                                                     this);
         }
@@ -583,10 +586,12 @@ void ImageWindow::renderFrame ()
             ImGui::GetWindowDrawList()->AddCallback([](const ImDrawList *parent_list, const ImDrawCmd *cmd)
                                                     {
                                                         ImageWindow *that = reinterpret_cast<ImageWindow *>(cmd->UserCallbackData);
-                                                        that->impl->gpuTexture.setLinearInterpolationEnabled(false);
+                                                        that->impl->currentImageData->textureData->setLinearInterpolationEnabled(false);
                                                     },
                                                     this);
         }
+
+        const auto& currentIm = *impl->currentImageData->cpuData;
 
         ImVec2 mousePosInImage (0,0);
         ImVec2 mousePosInTexture (0,0);
@@ -597,11 +602,11 @@ void ImageWindow::renderFrame ()
             ImVec2 widgetPos = (io.MousePos + ImVec2(0.5f,0.5f)) - imageWidgetTopLeft;
             ImVec2 uv_window = widgetPos / imageWidgetSize;
             mousePosInTexture = (uv1-uv0)*uv_window + uv0;
-            mousePosInImage = mousePosInTexture * ImVec2(impl->im->width(), impl->im->height());
+            mousePosInImage = mousePosInTexture * ImVec2(currentIm.width(), currentIm.height());
         }
         
         bool showCursorOverlay = false;
-        const bool pointerOverTheImage = ImGui::IsItemHovered() && impl->im->contains(mousePosInImage.x, mousePosInImage.y);
+        const bool pointerOverTheImage = ImGui::IsItemHovered() && currentIm.contains(mousePosInImage.x, mousePosInImage.y);
         if (pointerOverTheImage)
         {
             showCursorOverlay = impl->mutableState.activeMode == ViewerMode::Original;
@@ -609,8 +614,7 @@ void ImageWindow::renderFrame ()
         
         if (showCursorOverlay)
         {
-            impl->cursorOverlayInfo.image = impl->im.get();
-            impl->cursorOverlayInfo.imageTexture = &impl->gpuTexture;
+            impl->cursorOverlayInfo.imageData = impl->currentImageData.get();
             impl->cursorOverlayInfo.showHelp = false;
             impl->cursorOverlayInfo.imageWidgetSize = imageWidgetSize;
             impl->cursorOverlayInfo.imageWidgetTopLeft = imageWidgetTopLeft;
@@ -627,8 +631,8 @@ void ImageWindow::renderFrame ()
 
         if (ImGui::IsItemClicked(ImGuiMouseButton_Left) && io.KeyCtrl)
         {
-            if ((impl->im->width() / float(impl->zoom.zoomFactor)) > 16.f
-                 && (impl->im->height() / float(impl->zoom.zoomFactor)) > 16.f)
+            if ((currentIm.width() / float(impl->zoom.zoomFactor)) > 16.f
+                 && (currentIm.height() / float(impl->zoom.zoomFactor)) > 16.f)
             {
                 impl->zoom.zoomFactor *= 2;
                 impl->zoom.uvCenter = mousePosInTexture;

@@ -23,11 +23,11 @@ set (zv_deps_sources
 )
 
 if (APPLE)
+    set(USE_NFD 1)
     set (zv_platform_specific_sources 
          PlatformSpecific_macOS.cpp
          ${DEPS_DIR}/nativefiledialog-extended/src/nfd_cocoa.m         
     )
-    target_include_directories(zv PRIVATE ${DEPS_DIR}/nativefiledialog-extended/src/include)
 elseif (UNIX)
     set (zv_platform_specific_sources
         PlatformSpecific_linux.cpp
@@ -38,11 +38,11 @@ elseif (UNIX)
     )
 
 elseif (WIN32)
+    set(USE_NFD 1)
     set (zv_platform_specific_sources 
         PlatformSpecific_windows.cpp
         ${DEPS_DIR}/nativefiledialog-extended/src/nfd_win.cpp
     )
-    target_include_directories(zv PRIVATE ${DEPS_DIR}/nativefiledialog-extended/src/include)
 endif()
 
 add_library(zv 
@@ -101,6 +101,10 @@ target_include_directories(zv PRIVATE
      ${DEPS_DIR}/cppuserprefs
 )
 
+if (USE_NFD)
+    target_include_directories(zv PRIVATE ${DEPS_DIR}/nativefiledialog-extended/src/include)
+endif()
+
 target_link_libraries(zv
     glfw3
     clip
@@ -123,4 +127,8 @@ elseif (UNIX)
         xcb # for clip. FIXME: should use a find_library
         X11
     )
+endif()
+
+if (APPLE)
+    target_compile_options(zv PUBLIC -x objective-c++)
 endif()
