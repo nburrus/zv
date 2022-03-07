@@ -9,6 +9,8 @@
 #import <Foundation/Foundation.h>
 #import <AppKit/AppKit.h>
 
+#include "GeneratedConfig.h"
+
 namespace zv
 {
 
@@ -23,8 +25,17 @@ void getVersionAndBuildNumber(std::string& version, std::string& build)
     NSDictionary *infoDict = [[NSBundle mainBundle] infoDictionary];
     NSString *appVersion = [infoDict objectForKey:@"CFBundleShortVersionString"]; // example: 1.0.0
     NSString *buildNumber = [infoDict objectForKey:@"CFBundleVersion"]; // example: 42
-    version = [appVersion UTF8String];
-    build = [buildNumber UTF8String];
+    // FIXME: need to make sure the plist gets filled.
+    if (appVersion)
+    {
+        version = [appVersion UTF8String];
+        build = [buildNumber UTF8String];
+    }
+    else
+    {
+        version = PROJECT_VERSION;
+        build = PROJECT_VERSION_COMMIT;
+    }
 }
 
 } // zv

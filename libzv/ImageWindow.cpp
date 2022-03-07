@@ -160,6 +160,7 @@ void ImageWindow::Impl::adjustForNewImageItem (const std::shared_ptr<ImageItem>&
     // It's very important that this gets called while the GL context is bound
     // as it may release some GLTexture in the cache. Would be nice to make this
     // code more robust.
+    this->currentImageItem = imageItem;
     this->currentImageData = imageList.getData(imageItem.get());
     const auto& im = *this->currentImageData->cpuData;
 
