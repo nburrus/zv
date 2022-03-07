@@ -1,7 +1,7 @@
-prefix=/home/nb/Perso/DaltonLens/deps/prebuilt/Linux/glfw
+prefix=/home/nb/Perso/zv/deps/prebuilt/Linux/glfw
 exec_prefix=${prefix}
-includedir=/home/nb/Perso/DaltonLens/deps/prebuilt/Linux/glfw/include
-libdir=/home/nb/Perso/DaltonLens/deps/prebuilt/Linux/glfw/lib
+includedir=/home/nb/Perso/zv/deps/prebuilt/Linux/glfw/include
+libdir=/home/nb/Perso/zv/deps/prebuilt/Linux/glfw/lib
 
 Name: GLFW
 Description: A multi-platform library for OpenGL, window and input

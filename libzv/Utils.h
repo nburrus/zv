@@ -19,9 +19,9 @@
 #endif // !DEBUG
 
 #ifndef NDEBUG
-#define dl_assert(cond, ...) ZV_MULTI_STATEMENT_MACRO ( if (!(cond)) zv::handle_assert_failure(#cond, __FILE__, __LINE__, __VA_ARGS__); else {} )
+#define zv_assert(cond, ...) ZV_MULTI_STATEMENT_MACRO ( if (!(cond)) zv::handle_assert_failure(#cond, __FILE__, __LINE__, __VA_ARGS__); else {} )
 #else
-#define dl_assert(...)
+#define zv_assert(...)
 #endif // !DEBUG
 
 namespace zv

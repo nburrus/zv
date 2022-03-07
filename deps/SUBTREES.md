@@ -10,6 +10,9 @@ deps/gl3w taken from Imgui 1.83, before they removed it.
 # Nativefiledialog
 git subtree add --prefix deps/nativefiledialog-extended git@github.com:btzy/nativefiledialog-extended.git master --squash
 
+# ImGui file dialog (for Linux)
+git subtree add --prefix deps/ImGuiFileDialog git@github.com:aiekick/ImGuiFileDialog.git Lib_Only --squash
+
 # Clip
 git subtree add --prefix deps/clip git@github.com:dacap/clip.git main --squash
 Tweaked to add an install target.

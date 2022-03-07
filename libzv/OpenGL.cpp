@@ -6,9 +6,9 @@
 
 #include "OpenGL.h"
 
-#include <Dalton/Platform.h>
-#include <Dalton/Utils.h>
-#include <Dalton/OpenGL_Shaders.h>
+#include <libzv/Platform.h>
+#include <libzv/Utils.h>
+#include <libzv/OpenGL_Shaders.h>
 
 #include <gl3w/GL/gl3w.h>
 #include <GLFW/glfw3.h>
@@ -23,7 +23,7 @@ namespace zv
 void checkGLError ()
 {
     GLenum err = glGetError();
-    dl_assert (err == GL_NO_ERROR, "GL Error! 0x%x", (int)err);
+    zv_assert (err == GL_NO_ERROR, "GL Error! 0x%x", (int)err);
 }
 
 const char* glslVersion()
@@ -167,7 +167,7 @@ void GLShader::initialize(const char* glslVersionString, const char* vertexShade
 
 void GLShader::enable (int32_t textureId)
 {
-    dl_assert (_glHandles.shaderHandle != 0, "Forgot to call initialize()?");
+    zv_assert (_glHandles.shaderHandle != 0, "Forgot to call initialize()?");
     glGetIntegerv(GL_CURRENT_PROGRAM, &impl->prevHandle);
     glUseProgram (_glHandles.shaderHandle);
     glUniform1i (_glHandles.textureUniformLocation, textureId);
@@ -425,7 +425,7 @@ void GLFrameBuffer::enable(int width, int height)
         glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, width, height);
         glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, impl->rbo_depth);
         
-        dl_assert (glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE, "FB creation failed.");
+        zv_assert (glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE, "FB creation failed.");
     }
 
     glViewport(0,0,width,height);

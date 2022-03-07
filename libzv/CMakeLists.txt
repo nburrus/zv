@@ -22,6 +22,24 @@ set (zv_deps_sources
     ${DEPS_DIR}/stb/stb_impl.cpp
 )
 
+if (APPLE)
+    set (zv_platform_specific_sources 
+         PlatformSpecific_macOS.cpp
+         ${DEPS_DIR}/nativefiledialog-extended/src/nfd_cocoa.m
+    )
+elseif (UNIX)
+    set (zv_platform_specific_sources
+        PlatformSpecific_linux.cpp
+        # Don't want to rely on gtk on Linux, breaks the standalone binary approach.
+        # ${DEPS_DIR}/nativefiledialog-extended/src/nfd_gtk.cpp
+    )
+elseif (WIN32)
+    set (zv_platform_specific_sources 
+        PlatformSpecific_windows.cpp
+        ${DEPS_DIR}/nativefiledialog-extended/src/nfd_win.cpp
+    )
+endif()
+
 add_library(zv 
     Image.h    
     MathUtils.h
@@ -32,10 +50,19 @@ add_library(zv
     Platform.h
     Utils.cpp
     Utils.h
+
+    # Binary resource.
+    # zvIcon_xxd.cpp
+
     ${zv_deps_sources}
+    ${zv_platform_specific_sources}
 )
 
 add_dependencies(zv glfw-deps clip-deps)
+
+target_include_directories(zv PUBLIC
+    ${DEPS_DIR}/fonts
+)
 
 target_link_libraries(zv
     glfw3
