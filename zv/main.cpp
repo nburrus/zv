@@ -7,7 +7,7 @@
 #include <libzv/Viewer.h>
 #include <libzv/Utils.h>
 #include <libzv/Image.h>
-#include <libzv/ImageViewer.h>
+#include <libzv/Viewer.h>
 
 #include "GeneratedConfig.h"
 
@@ -32,36 +32,30 @@ int main (int argc, char* argv[])
         return false;
     }
 
-    zv::ImageSRGBA image;
-    std::string imagePath;
+    zv::Viewer viewer;
+    viewer.initialize ();
 
     try
     {
         auto images = parser.get<std::vector<std::string>>("images");
         zv_dbg("%d images provided", (int)images.size());
 
-        imagePath = images[0];
-        bool couldLoad = zv::readPngImage(imagePath, image);
-        zv_assert (couldLoad, "Could not load the image!");
+        bool couldLoad = viewer.addImageFromFile (images[0]);
+        if (!couldLoad)
+        {
+            std::cerr << "ERROR: could not load " << images[0] << std::endl;
+            return 1;
+        }
     }
     catch (std::logic_error& e)
     {
         std::cerr << "No files provided" << std::endl;
     }
-
-    zv::Viewer viewer;
-    viewer.initialize ();
-
-    if (image.hasData())
-    {
-        viewer.imageViewer().showImage (image, imagePath);
-    }
-    
+   
     zv::RateLimit rateLimit;
-    bool shouldExit = false;
-    while (!shouldExit)
+    while (!viewer.exitRequested())
     {
-        viewer.runOnce ();
+        viewer.renderFrame ();
         rateLimit.sleepIfNecessary (1 / 30.);
     }
     

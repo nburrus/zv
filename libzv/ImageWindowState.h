@@ -18,7 +18,7 @@ enum class ViewerMode {
 
 std::string viewerModeName (ViewerMode mode);
 
-struct ImageViewerWindowState
+struct ImageWindowState
 {
     ViewerMode activeMode = ViewerMode::None;
     

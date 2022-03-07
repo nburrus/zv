@@ -6,13 +6,22 @@
 
 #pragma once
 
+#include <libzv/Image.h>
+
 #include <memory>
 #include <functional>
 
 namespace zv
 {
 
-class ImageViewer;
+class ImageWindow;
+class ControlsWindow;
+
+struct ViewerState
+{
+    bool helpRequested = false;
+    bool dismissRequested = false;
+};
 
 class Viewer
 {
@@ -20,22 +29,32 @@ public:
     Viewer();
     ~Viewer();
     
-    // Call it once per app, calls glfwInit, etc.
-    // Sets up the callback on keyboard flags
-    // Sets up the hotkeys
+    // Call it once, calls glfwInit, etc.
     bool initialize ();
     
-    ImageViewer& imageViewer ();
-
-    void runOnce ();
-    
-    void helpRequested ();
-       
     void shutdown ();
     
-private:
-    void onDisplayLinkUpdated ();
-    
+    bool exitRequested () const;
+
+    // Call this in a loop to process input events and render one frame.
+    void renderFrame ();
+
+public:
+    bool addImageFromFile (const std::string& imagePath);
+    void addImageData (const ImageSRGBA& image, const std::string& imageName);
+    void addPastedImage ();
+        
+protected:
+    // Controller-like global methods that member windows can call.
+    void onDismissRequested ();
+    void onHelpRequested ();
+    void onControlsRequested ();
+    ImageWindow* imageWindow();
+    ControlsWindow* controlsWindow();
+
+    friend class ImageWindow;
+    friend class ControlsWindow;
+
 private:
     struct Impl;
     friend struct Impl;

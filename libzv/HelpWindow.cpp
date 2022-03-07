@@ -127,7 +127,7 @@ static void TextURL( const char* name_, const char* URL_, bool SameLineBefore_, 
     if( SameLineAfter_ ){ ImGui::SameLine( 0.0f, ImGui::GetStyle().ItemInnerSpacing.x ); }
 }
 
-void HelpWindow::runOnce ()
+void HelpWindow::renderFrame ()
 {
     const auto frameInfo = impl->imguiGlfwWindow.beginFrame ();    
     const auto& io = ImGui::GetIO();

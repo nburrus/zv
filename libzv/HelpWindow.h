@@ -23,7 +23,7 @@ public:
     ~HelpWindow();
 
     bool initialize (GLFWwindow* parentWindow);
-    void runOnce ();
+    void renderFrame ();
 
 public:
     void shutdown ();

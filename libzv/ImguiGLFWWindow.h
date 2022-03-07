@@ -51,7 +51,7 @@ public:
                      const zv::Rect& geometry,
                      bool enableImguiViewports = false);
     void shutdown ();
-    void runOnce ();
+    void renderFrame ();
 
     void setEnabled (bool enabled);
     bool isEnabled () const;

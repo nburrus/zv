@@ -7,7 +7,6 @@
 #pragma once
 
 #include <libzv/ImguiGLFWWindow.h>
-#include <libzv/ImageViewerController.h>
 
 #include <memory>
 #include <functional>
@@ -15,25 +14,26 @@
 namespace zv
 {
 
-class ImageViewerWindow;
+class ImageWindow;
+class Viewer;
 
 struct ControlsWindowInputState
 {
     bool shiftIsPressed = false;
 };
 
-class ImageViewerControlsWindow
+class ControlsWindow
 {    
 public:
-    ImageViewerControlsWindow();
-    ~ImageViewerControlsWindow();
+    ControlsWindow();
+    ~ControlsWindow();
 
 public:
     const ControlsWindowInputState& inputState () const;
 
 public:
-    bool initialize (GLFWwindow* parentWindow, ImageViewerController* controller);
-    void runOnce ();
+    bool initialize (GLFWwindow* parentWindow, Viewer* viewer);
+    void renderFrame ();
     void repositionAfterNextRendering (const zv::Rect& viewerWindowGeometry, bool showRequested);
 
 public:

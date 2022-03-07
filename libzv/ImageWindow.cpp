@@ -6,14 +6,15 @@
 
 #define GL_SILENCE_DEPRECATION 1
 
-#include "ImageViewerWindow.h"
-#include "ImageViewerWindowState.h"
+#include "ImageWindow.h"
+#include "ImageWindowState.h"
 
+#include <libzv/Viewer.h>
 #include <libzv/ImageCursorOverlay.h>
 #include <libzv/ImguiUtils.h>
 #include <libzv/PlatformSpecific.h>
 #include <libzv/ImguiGLFWWindow.h>
-#include <libzv/ImageViewerControlsWindow.h>
+#include <libzv/ControlsWindow.h>
 #include <libzv/Prefs.h>
 
 #define IMGUI_DEFINE_MATH_OPERATORS 1
@@ -65,12 +66,12 @@ std::string viewerModeFileName (ViewerMode mode)
     }
 }
 
-struct ImageViewerWindow::Impl
+struct ImageWindow::Impl
 {
     ImguiGLFWWindow imguiGlfwWindow;
-    ImageViewerController* controller = nullptr;
+    Viewer* viewer = nullptr;
     
-    ImageViewerWindowState mutableState;
+    ImageWindowState mutableState;
 
     bool enabled = false;
 
@@ -131,22 +132,22 @@ struct ImageViewerWindow::Impl
     }
 };
 
-ImageViewerWindow::ImageViewerWindow()
+ImageWindow::ImageWindow()
 : impl (new Impl())
 {
 }
 
-ImageViewerWindow::~ImageViewerWindow()
+ImageWindow::~ImageWindow()
 {
     shutdown();
 }
 
-bool ImageViewerWindow::isEnabled () const
+bool ImageWindow::isEnabled () const
 {
     return impl->enabled;
 }
 
-void ImageViewerWindow::setEnabled (bool enabled)
+void ImageWindow::setEnabled (bool enabled)
 {
     if (impl->enabled == enabled)
         return;
@@ -164,14 +165,14 @@ void ImageViewerWindow::setEnabled (bool enabled)
     }
 }
 
-void ImageViewerWindow::shutdown()
+void ImageWindow::shutdown()
 {
     impl->imguiGlfwWindow.shutdown ();
 }
 
-bool ImageViewerWindow::initialize (GLFWwindow* parentWindow, ImageViewerController* controller)
+bool ImageWindow::initialize (GLFWwindow* parentWindow, Viewer* viewer)
 {
-    impl->controller = controller;
+    impl->viewer = viewer;
 
     GLFWmonitor* monitor = glfwGetPrimaryMonitor();
     const GLFWvidmode* mode = glfwGetVideoMode(monitor);
@@ -199,12 +200,12 @@ bool ImageViewerWindow::initialize (GLFWwindow* parentWindow, ImageViewerControl
     return true;
 }
 
-ImageViewerWindowState& ImageViewerWindow::mutableState ()
+ImageWindowState& ImageWindow::mutableState ()
 {
     return impl->mutableState;
 }
 
-void ImageViewerWindow::checkImguiGlobalImageMouseEvents ()
+void ImageWindow::checkImguiGlobalImageMouseEvents ()
 {
     // Handle the mouse wheel
     auto& io = ImGui::GetIO ();
@@ -219,7 +220,7 @@ void ImageViewerWindow::checkImguiGlobalImageMouseEvents ()
     }
 }
 
-void ImageViewerWindow::checkImguiGlobalImageKeyEvents ()
+void ImageWindow::checkImguiGlobalImageKeyEvents ()
 {
     // These key events are valid also in the control window.
     auto& io = ImGui::GetIO();
@@ -238,7 +239,7 @@ void ImageViewerWindow::checkImguiGlobalImageKeyEvents ()
     }
 }
 
-void ImageViewerWindow::processKeyEvent (int keycode)
+void ImageWindow::processKeyEvent (int keycode)
 {
     auto& io = ImGui::GetIO();
 
@@ -297,7 +298,7 @@ void ImageViewerWindow::processKeyEvent (int keycode)
     }
 }
 
-void ImageViewerWindow::saveCurrentImage ()
+void ImageWindow::saveCurrentImage ()
 {
 #if !PLATFORM_LINUX
     nfdchar_t *outPath = NULL;
@@ -325,17 +326,17 @@ void ImageViewerWindow::saveCurrentImage ()
 #endif
 }
 
-zv::Rect ImageViewerWindow::geometry () const
+zv::Rect ImageWindow::geometry () const
 {
     return impl->imguiGlfwWindow.geometry();
 }
 
-const CursorOverlayInfo& ImageViewerWindow::cursorOverlayInfo() const
+const CursorOverlayInfo& ImageWindow::cursorOverlayInfo() const
 {
     return impl->cursorOverlayInfo;
 }
 
-void ImageViewerWindow::showImage (const zv::ImageSRGBA& im, const std::string& imagePath, zv::Rect& updatedWindowGeometry)
+void ImageWindow::showImage (const zv::ImageSRGBA& im, const std::string& imagePath, zv::Rect& updatedWindowGeometry)
 {
     GLFWmonitor* monitor = glfwGetPrimaryMonitor();
     const GLFWvidmode* mode = glfwGetVideoMode(monitor);
@@ -368,7 +369,7 @@ void ImageViewerWindow::showImage (const zv::ImageSRGBA& im, const std::string& 
     updatedWindowGeometry = impl->updateAfterContentSwitch.targetWindowGeometry;
 }
 
-void ImageViewerWindow::runOnce ()
+void ImageWindow::renderFrame ()
 {
     if (impl->updateAfterContentSwitch.needToResize)
     {
@@ -381,7 +382,7 @@ void ImageViewerWindow::runOnce ()
     }
 
     const auto frameInfo = impl->imguiGlfwWindow.beginFrame ();
-    const auto& controlsWindowState = impl->controller->controlsWindow()->inputState();
+    const auto& controlsWindowState = impl->viewer->controlsWindow()->inputState();
 
     // Might get filled later on.
     impl->cursorOverlayInfo = {};
@@ -397,7 +398,7 @@ void ImageViewerWindow::runOnce ()
   
     auto& io = ImGui::GetIO();    
     
-    impl->mutableState.inputState.shiftIsPressed = io.KeyShift;
+    impl->mutableState.inputState.shiftIsPressed = ImGui::IsKeyDown(ImGuiKey_LeftShift) || ImGui::IsKeyDown(ImGuiKey_RightShift);
 
     if (!io.WantCaptureKeyboard)
     {
@@ -412,12 +413,6 @@ void ImageViewerWindow::runOnce ()
     checkImguiGlobalImageMouseEvents ();
     
     impl->mutableState.modeForCurrentFrame = impl->mutableState.activeMode;
-
-    if (impl->mutableState.inputState.shiftIsPressed
-        || controlsWindowState.shiftIsPressed)
-    {
-        // FIXME: 
-    }
 
     if (impl->shouldUpdateWindowSize)
     {
@@ -489,7 +484,7 @@ void ImageViewerWindow::runOnce ()
         {
             ImGui::GetWindowDrawList()->AddCallback([](const ImDrawList *parent_list, const ImDrawCmd *cmd)
                                                     {
-                                                        ImageViewerWindow *that = reinterpret_cast<ImageViewerWindow *>(cmd->UserCallbackData);
+                                                        ImageWindow *that = reinterpret_cast<ImageWindow *>(cmd->UserCallbackData);
                                                         that->impl->gpuTexture.setLinearInterpolationEnabled(true);
                                                     },
                                                     this);
@@ -505,7 +500,7 @@ void ImageViewerWindow::runOnce ()
         {
             ImGui::GetWindowDrawList()->AddCallback([](const ImDrawList *parent_list, const ImDrawCmd *cmd)
                                                     {
-                                                        ImageViewerWindow *that = reinterpret_cast<ImageViewerWindow *>(cmd->UserCallbackData);
+                                                        ImageWindow *that = reinterpret_cast<ImageWindow *>(cmd->UserCallbackData);
                                                         that->impl->gpuTexture.setLinearInterpolationEnabled(false);
                                                     },
                                                     this);
@@ -542,7 +537,10 @@ void ImageViewerWindow::runOnce ()
             impl->cursorOverlayInfo.roiWindowSize = ImVec2(15, 15);
             impl->cursorOverlayInfo.mousePos = io.MousePos;
             // Option: show it next to the mouse.
-            // impl->inlineCursorOverlay.showTooltip(impl->cursorOverlayInfo);
+            if (impl->mutableState.inputState.shiftIsPressed || controlsWindowState.shiftIsPressed)
+            {
+                impl->inlineCursorOverlay.showTooltip(impl->cursorOverlayInfo);
+            }
         }
 
         if (ImGui::IsItemClicked(ImGuiMouseButton_Left) && io.KeyCtrl)
@@ -565,7 +563,7 @@ void ImageViewerWindow::runOnce ()
             else
             {
                 // xv-like controls focus.
-                if (impl->controller) impl->controller->onControlsRequested();
+                if (impl->viewer) impl->viewer->onControlsRequested();
             }
         }
     }
@@ -595,7 +593,7 @@ void ImageViewerWindow::runOnce ()
     // flicker when we enable this again.
     if (impl->mutableState.activeMode == ViewerMode::None)
     {
-        if (impl->controller) impl->controller->onDismissRequested ();
+        if (impl->viewer) impl->viewer->onDismissRequested ();
     }
 
     // Sync persistent settings that might have changed. This is no-op is none changed.

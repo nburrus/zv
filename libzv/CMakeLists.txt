@@ -59,14 +59,11 @@ add_library(zv
     Image.h
     ImageCursorOverlay.cpp
     ImageCursorOverlay.h
-    ImageViewerController.h
-    ImageViewerControlsWindow.cpp
-    ImageViewerControlsWindow.h
-    ImageViewer.cpp
-    ImageViewer.h
-    ImageViewerWindow.cpp
-    ImageViewerWindow.h
-    ImageViewerWindowState.h
+    ControlsWindow.cpp
+    ControlsWindow.h
+    ImageWindow.cpp
+    ImageWindow.h
+    ImageWindowState.h
     ImguiGLFWWindow.cpp
     ImguiGLFWWindow.h
     ImguiUtils.h
@@ -104,6 +101,7 @@ target_include_directories(zv PRIVATE
 
 target_link_libraries(zv
     glfw3
+    clip
 )
 
 if (APPLE)

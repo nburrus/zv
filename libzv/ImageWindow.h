@@ -6,8 +6,6 @@
 
 #pragma once
 
-#include <libzv/ImageViewerController.h>
-
 #include <libzv/MathUtils.h>
 #include <libzv/Image.h>
 
@@ -19,25 +17,26 @@ struct GLFWwindow;
 namespace zv
 {
 
-struct ImageViewerWindowState;
+class Viewer;
+struct ImageWindowState;
 struct CursorOverlayInfo;
 
 // Manages a single ImGuiWindow
-class ImageViewerWindow
+class ImageWindow
 {
 public:
-    ImageViewerWindow();
-    ~ImageViewerWindow();
+    ImageWindow();
+    ~ImageWindow();
     
 public:   
-    bool initialize (GLFWwindow* parentWindow, ImageViewerController* controller);
+    bool initialize (GLFWwindow* parentWindow, Viewer* controller);
     
     void showImage (const ImageSRGBA& image, const std::string& imagePath, zv::Rect& updatedWindowGeometry);
     
     const CursorOverlayInfo& cursorOverlayInfo() const;
     
     void shutdown ();
-    void runOnce ();
+    void renderFrame ();
     
     bool isEnabled () const;
     void setEnabled (bool enabled);
@@ -51,7 +50,7 @@ public:
 
 public:
     // State that one can modify directly between frames.
-    ImageViewerWindowState& mutableState ();
+    ImageWindowState& mutableState ();
     
 private:
     struct Impl;

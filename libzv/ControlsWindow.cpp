@@ -4,15 +4,16 @@
 // of the BSD license.  See the LICENSE file for details.
 //
 
-#include "ImageViewerControlsWindow.h"
+#include "ControlsWindow.h"
 
 #include <libzv/ImguiUtils.h>
 #include <libzv/ImguiGLFWWindow.h>
-#include <libzv/ImageViewerWindow.h>
-#include <libzv/ImageViewerWindowState.h>
+#include <libzv/ImageWindow.h>
+#include <libzv/ImageWindowState.h>
 #include <libzv/GLFWUtils.h>
 #include <libzv/ImageCursorOverlay.h>
 #include <libzv/PlatformSpecific.h>
+#include <libzv/Viewer.h>
 
 #include <libzv/Utils.h>
 
@@ -24,9 +25,9 @@
 namespace zv
 {
 
-struct ImageViewerControlsWindow::Impl
+struct ControlsWindow::Impl
 {
-    ImageViewerController* controller = nullptr;
+    Viewer* viewer = nullptr;
     
     ControlsWindowInputState inputState;
 
@@ -53,20 +54,20 @@ struct ImageViewerControlsWindow::Impl
     ImageCursorOverlay cursorOverlay;
 };
 
-ImageViewerControlsWindow::ImageViewerControlsWindow()
+ControlsWindow::ControlsWindow()
 : impl (new Impl ())
 {}
 
-ImageViewerControlsWindow::~ImageViewerControlsWindow() = default;
+ControlsWindow::~ControlsWindow() = default;
 
-const ControlsWindowInputState& ImageViewerControlsWindow::inputState () const
+const ControlsWindowInputState& ControlsWindow::inputState () const
 {
     return impl->inputState;
 }
 
-void ImageViewerControlsWindow::shutdown() { impl->imguiGlfwWindow.shutdown(); }
+void ControlsWindow::shutdown() { impl->imguiGlfwWindow.shutdown(); }
 
-void ImageViewerControlsWindow::setEnabled(bool enabled)
+void ControlsWindow::setEnabled(bool enabled)
 { 
     impl->imguiGlfwWindow.setEnabled(enabled);
     
@@ -87,22 +88,22 @@ void ImageViewerControlsWindow::setEnabled(bool enabled)
     }
 }
 
-bool ImageViewerControlsWindow::isEnabled() const { return impl->imguiGlfwWindow.isEnabled(); }
+bool ControlsWindow::isEnabled() const { return impl->imguiGlfwWindow.isEnabled(); }
 
 // Warning: may be ignored by some window managers on Linux.. 
 // Working hack would be to call 
 // sendEventToWM(window, _glfw.x11.NET_ACTIVE_WINDOW, 2, 0, 0, 0, 0);
 // in GLFW (notice the 2 instead of 1 in the source code).
 // Kwin ignores that otherwise.
-void ImageViewerControlsWindow::bringToFront ()
+void ControlsWindow::bringToFront ()
 {
     glfw_reliableBringToFront (impl->imguiGlfwWindow.glfwWindow());
 }
 
-bool ImageViewerControlsWindow::initialize (GLFWwindow* parentWindow, ImageViewerController* controller)
+bool ControlsWindow::initialize (GLFWwindow* parentWindow, Viewer* viewer)
 {
-    zv_assert (controller, "Cannot be null, we don't check it everywhere.");
-    impl->controller = controller;
+    zv_assert (viewer, "Cannot be null, we don't check it everywhere.");
+    impl->viewer = viewer;
 
     GLFWmonitor* monitor = glfwGetPrimaryMonitor();
     const GLFWvidmode* mode = glfwGetVideoMode(monitor);
@@ -142,7 +143,7 @@ bool ImageViewerControlsWindow::initialize (GLFWwindow* parentWindow, ImageViewe
     return ok;
 }
 
-void ImageViewerControlsWindow::repositionAfterNextRendering (const zv::Rect& viewerWindowGeometry, bool showRequested)
+void ControlsWindow::repositionAfterNextRendering (const zv::Rect& viewerWindowGeometry, bool showRequested)
 {
     // FIXME: padding probably depends on the window manager
     const int expectedHighlightWindowWidthWithPadding = impl->windowSizeAtCurrentDpi.x + 12;
@@ -168,12 +169,12 @@ void ImageViewerControlsWindow::repositionAfterNextRendering (const zv::Rect& vi
     impl->updateAfterContentSwitch.showAfterNextRendering = showRequested;
 }
 
-void ImageViewerControlsWindow::runOnce ()
+void ControlsWindow::renderFrame ()
 {
     const auto frameInfo = impl->imguiGlfwWindow.beginFrame ();
     const auto& io = ImGui::GetIO();
     const float monoFontSize = ImguiGLFWWindow::monoFontSize(io);
-    auto* activeImageWindow = impl->controller->activeViewerWindow();
+    auto* imageWindow = impl->viewer->imageWindow();
 
     if (impl->imguiGlfwWindow.closeRequested())
     {
@@ -182,7 +183,7 @@ void ImageViewerControlsWindow::runOnce ()
 
     if (ImGui::IsKeyPressed(GLFW_KEY_Q) || ImGui::IsKeyPressed(GLFW_KEY_ESCAPE))
     {
-        impl->controller->onDismissRequested();
+        impl->viewer->onDismissRequested();
     }
 
     int menuBarHeight = 0;
@@ -194,12 +195,12 @@ void ImageViewerControlsWindow::runOnce ()
         {
             if (ImGui::MenuItem("Save Image", "Ctrl + s", false))
             {
-                activeImageWindow->saveCurrentImage ();
+                imageWindow->saveCurrentImage ();
             }
 
             if (ImGui::MenuItem("Close", "q", false))
             {
-                impl->controller->onDismissRequested();
+                impl->viewer->onDismissRequested();
             }
 
             ImGui::EndMenu();
@@ -207,17 +208,17 @@ void ImageViewerControlsWindow::runOnce ()
 
         if (ImGui::BeginMenu("View"))
         {
-            if (ImGui::MenuItem("Original size", "n", false)) activeImageWindow->processKeyEvent (GLFW_KEY_N);
-            if (ImGui::MenuItem("Double size", ">", false)) activeImageWindow->processKeyEvent ('>');
-            if (ImGui::MenuItem("Half size", "<", false)) activeImageWindow->processKeyEvent ('<');
-            if (ImGui::MenuItem("Restore aspect ratio", "a", false)) activeImageWindow->processKeyEvent (GLFW_KEY_A);
+            if (ImGui::MenuItem("Original size", "n", false)) imageWindow->processKeyEvent (GLFW_KEY_N);
+            if (ImGui::MenuItem("Double size", ">", false)) imageWindow->processKeyEvent ('>');
+            if (ImGui::MenuItem("Half size", "<", false)) imageWindow->processKeyEvent ('<');
+            if (ImGui::MenuItem("Restore aspect ratio", "a", false)) imageWindow->processKeyEvent (GLFW_KEY_A);
             ImGui::EndMenu();
         }
 
         if (ImGui::BeginMenu("Help"))
         {
             if (ImGui::MenuItem("Help", NULL, false))
-                impl->controller->onHelpRequested();
+                impl->viewer->onHelpRequested();
             ImGui::EndMenu();
         }
         ImGui::EndMainMenuBar();
@@ -240,10 +241,22 @@ void ImageViewerControlsWindow::runOnce ()
     ImGui::SetNextWindowSize(ImVec2(frameInfo.windowContentWidth, frameInfo.windowContentHeight), ImGuiCond_Always);
     if (ImGui::Begin("zv Controls", nullptr, flags))
     {
-        auto& viewerState = activeImageWindow->mutableState();
+        auto& viewerState = imageWindow->mutableState();
         
-        activeImageWindow->checkImguiGlobalImageKeyEvents ();
-        activeImageWindow->checkImguiGlobalImageMouseEvents ();
+        const auto* cursorOverlayInfo = &imageWindow->cursorOverlayInfo();
+        if (cursorOverlayInfo->valid())
+        {
+            ImGui::SetCursorPosY (ImGui::GetWindowHeight() - monoFontSize*15.5);
+            ImGui::Spacing(); ImGui::Separator(); ImGui::Spacing();
+            // ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(1,0,0,1));
+            ImGui::BeginChild("CursorOverlay", ImVec2(monoFontSize*21, monoFontSize*14), false /* no border */, windowFlagsWithoutAnything());
+            impl->cursorOverlay.showTooltip(*cursorOverlayInfo, false /* not as tooltip */);
+            ImGui::EndChild();
+            // ImGui::PopStyleColor();
+        }
+
+        imageWindow->checkImguiGlobalImageKeyEvents ();
+        imageWindow->checkImguiGlobalImageMouseEvents ();
         
         // Debug: show the FPS.
         if (ImGui::IsKeyPressed(GLFW_KEY_F))
@@ -251,7 +264,7 @@ void ImageViewerControlsWindow::runOnce ()
             ImGui::Text("%.1f FPS", io.Framerate);
         }
 
-        impl->inputState.shiftIsPressed = io.KeyShift;
+        impl->inputState.shiftIsPressed = ImGui::IsKeyDown(ImGuiKey_LeftShift) || ImGui::IsKeyDown(ImGuiKey_RightShift);
     }
     ImGui::End();
 
