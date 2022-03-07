@@ -38,7 +38,7 @@ const char* glslVersion()
 #endif
 }
 
-} // dl
+} // zv
 
 // --------------------------------------------------------------------------------
 // GLShader
@@ -179,7 +179,7 @@ void GLShader::disable ()
     impl->prevHandle = 0;
 }
 
-} // dl
+} // zv
 
 // --------------------------------------------------------------------------------
 // GLTexture
@@ -307,7 +307,7 @@ void GLTexture::setLinearInterpolationEnabled(bool enabled)
     glBindTexture(GL_TEXTURE_2D, prevTexture);
 }
 
-} // dl
+} // zv
 
 // --------------------------------------------------------------------------------
 // GLContext
@@ -353,7 +353,7 @@ void GLContext::setCurrentToNull ()
     glfwMakeContextCurrent (nullptr);
 }
 
-} // dl
+} // zv
 
 // --------------------------------------------------------------------------------
 // GLFrameBuffer
@@ -449,7 +449,7 @@ void GLFrameBuffer::downloadBuffer(ImageSRGBA& output) const
     glPixelStorei (GL_UNPACK_ROW_LENGTH, 0);
 }
 
-} // dl
+} // zv
 
 // --------------------------------------------------------------------------------
 // ImageRenderer
@@ -535,4 +535,4 @@ void GLImageRenderer::render ()
     glBindVertexArray (0);
 }
 
-} // dl
+} // zv

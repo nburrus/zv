@@ -33,7 +33,7 @@ namespace zv
 
     void consoleMessage (const char* fmt, ...);
         
-} // dl
+} // zv
 
 namespace zv
 {
@@ -70,4 +70,4 @@ namespace zv
 
     std::string currentThreadId ();
 
-} // dl
+} // zv

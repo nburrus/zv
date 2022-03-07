@@ -4,10 +4,21 @@
 // of the BSD license.  See the LICENSE file for details.
 //
 
+#include <libzv/Viewer.h>
 #include <libzv/Utils.h>
 
 int main ()
 {
-    zv_dbg("Hello");
+    zv::Viewer viewer;
+    viewer.initialize ();
+    
+    zv::RateLimit rateLimit;
+    bool shouldExit = false;
+    while (!shouldExit)
+    {
+        viewer.runOnce ();
+        rateLimit.sleepIfNecessary (1 / 30.);
+    }
+    
     return 0;
 }

@@ -28,3 +28,7 @@
 *.exe
 *.out
 *.app
+
+# Folders
+build/
+# deps/prebuilt/
