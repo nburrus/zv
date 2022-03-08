@@ -708,7 +708,7 @@ void ImageWindow::renderFrame ()
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0,0));
     bool isOpen = true;
     
-    std::string mainWindowName = "zv - " + impl->currentImages[0].item->sourceImagePath;
+    std::string mainWindowName = "zv - " + impl->currentImages[0].item->prettyName();
     glfwSetWindowTitle(impl->imguiGlfwWindow.glfwWindow(), mainWindowName.c_str());
 
     if (ImGui::Begin((mainWindowName + "###Image").c_str(), &isOpen, flags))

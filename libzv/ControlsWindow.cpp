@@ -126,7 +126,7 @@ bool ControlsWindow::initialize (GLFWwindow* parentWindow, Viewer* viewer)
     geometry.origin.x = (impl->monitorSize.x - geometry.size.x)/2;
     geometry.origin.y = (impl->monitorSize.y - geometry.size.y)/2;
 
-    glfwWindowHint(GLFW_RESIZABLE, false); // fixed size.
+    glfwWindowHint(GLFW_RESIZABLE, true);
     bool ok = impl->imguiGlfwWindow.initialize (parentWindow, "zv controls", geometry);
     if (!ok)
     {
@@ -255,6 +255,8 @@ void ControlsWindow::renderFrame ()
         ImGui::EndMainMenuBar();
     }
 
+    // ImGui::ShowDemoWindow();
+    
     ImGuiWindowFlags flags = (ImGuiWindowFlags_NoTitleBar
                               | ImGuiWindowFlags_NoResize
                               | ImGuiWindowFlags_NoMove
@@ -266,13 +268,40 @@ void ControlsWindow::renderFrame ()
                               | ImGuiWindowFlags_HorizontalScrollbar
                               // | ImGuiWindowFlags_NoDocking
                               | ImGuiWindowFlags_NoNav);
+    
+    // flags = 0;
 
     // Always show the ImGui window filling the GLFW window.
     ImGui::SetNextWindowPos(ImVec2(0, menuBarHeight), ImGuiCond_Always);
     ImGui::SetNextWindowSize(ImVec2(frameInfo.windowContentWidth, frameInfo.windowContentHeight), ImGuiCond_Always);
     if (ImGui::Begin("zv controls", nullptr, flags))
     {
-        auto& viewerState = imageWindow->mutableState();
+        auto& imageWindowState = imageWindow->mutableState();
+                
+        ImageList& imageList = impl->viewer->imageList();
+        if (ImGui::BeginListBox("##filelist", ImVec2(-FLT_MIN, 4 * ImGui::GetTextLineHeightWithSpacing())))
+        {
+            const float availableWidth = ImGui::GetContentRegionAvail().x;
+            const int minSelectedIndex = imageList.selectedIndex();
+            const int maxSelectedIndex = minSelectedIndex + imageWindowState.layoutConfig.numImages;
+            for (int idx = 0; idx < imageList.numImages(); ++idx)
+            {
+                bool selected = (idx >= minSelectedIndex && idx < maxSelectedIndex);
+                std::string name = imageList.imageItemFromIndex(idx)->prettyName();
+                
+                // Make sure that the last part of the filename will be visible.
+                ImVec2 textSize = ImGui::CalcTextSize(name.c_str());
+                if (textSize.x > availableWidth)
+                {
+                    ImGui::SetCursorPosX(availableWidth - textSize.x);
+                }
+                if (ImGui::Selectable(name.c_str(), selected) && idx != minSelectedIndex)
+                {
+                    imageList.selectImage (idx);
+                }
+            }
+            ImGui::EndListBox();
+        }
         
         const auto* cursorOverlayInfo = &imageWindow->cursorOverlayInfo();
         if (cursorOverlayInfo->valid())

@@ -25,8 +25,10 @@ struct ImageItem
         Callback,
     } source;
 
+    const std::string& prettyName() { return sourceImagePath; }
+    
     std::string errorString;
-    std::string sourceImagePath;
+    std::string sourceImagePath; // also used for the pretty name of other sources.
     std::shared_ptr<ImageSRGBA> sourceData;
     std::function<ImageSRGBA(void)> callback;    
 
