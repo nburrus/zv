@@ -15,6 +15,8 @@
 
 int main (int argc, char* argv[])
 {
+    zv::Profiler p ("main");
+
     argparse::ArgumentParser parser("zv", PROJECT_VERSION);
     parser.add_argument("images")
           .help("Images to visualize")
@@ -32,8 +34,14 @@ int main (int argc, char* argv[])
         return 1;
     }
 
+    p.lap ("args");
+
+    double start = zv::currentDateInSeconds();
+
     zv::Viewer viewer;
     viewer.initialize ();
+
+    p.lap ("initialize");
 
     try
     {
@@ -52,6 +60,9 @@ int main (int argc, char* argv[])
     while (!viewer.exitRequested())
     {
         viewer.renderFrame ();
+        p.lap ("renderFirstFrame");
+        p.stop ();
+        break;
         rateLimit.sleepIfNecessary (1 / 30.);
     }
     

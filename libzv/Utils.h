@@ -59,6 +59,20 @@ namespace zv
         double _startTime = -1;
     };
 
+    struct Profiler
+    {
+        Profiler (const char* label);
+        ~Profiler () { stop(); }
+        void lap (const char* label);
+        void stop ();
+
+    private:
+        double _startTime = -1;
+        double _lastTime = -1;
+        std::string _label;
+        std::string _laps;
+    };
+
     struct RateLimit
     {
     public:

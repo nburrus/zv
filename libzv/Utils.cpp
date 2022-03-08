@@ -12,6 +12,7 @@
 #include <chrono>
 #include <cstdarg>
 #include <thread>
+#include <iostream>
 
 #if PLATFORM_UNIX
 // getpid
@@ -102,6 +103,31 @@ namespace zv
         
         fprintf(stderr, "[TIME] elasped in %s: %.1f ms\n", _label.c_str(), deltaTime*1e3);
 
+        _startTime = -1.0;
+    }
+
+    Profiler::Profiler (const char* label)
+    : _label (label)
+    {
+        _startTime = currentDateInSeconds();
+        _lastTime = _startTime;
+    }
+
+    void Profiler::lap (const char* label)
+    {
+        double now = currentDateInSeconds();
+        double elapsed = now - _lastTime;
+        _laps += formatted(" [%s %.1fms]", label, elapsed*1e3);
+        _lastTime = now;
+    }
+
+    void Profiler::stop ()
+    {
+        if (_startTime < 0)
+            return;
+        double now = currentDateInSeconds();
+        double elapsed = now - _startTime;
+        std::cerr << formatted("[PROFILER] [%s] %.1fms%s", _label.c_str(), elapsed*1e3, _laps.c_str()) << std::endl;
         _startTime = -1.0;
     }
 
