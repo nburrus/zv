@@ -20,9 +20,9 @@ namespace zv
 
 struct CursorOverlayInfo
 {
-    bool valid() const { return imageData != nullptr; }
+    bool valid() const { return itemAndData.data != nullptr; }
     
-    const ImageItemData* imageData = nullptr;
+    ImageItemAndData itemAndData;
     bool showHelp = false;
     ImVec2 imageWidgetTopLeft;
     ImVec2 imageWidgetSize;
@@ -30,6 +30,7 @@ struct CursorOverlayInfo
     ImVec2 uvBottomRight = ImVec2(1, 1);
     ImVec2 roiWindowSize = ImVec2(15, 15);
     ImVec2 mousePos = ImVec2(0,0);
+    ImVec2 mousePosInTexture = ImVec2(0,0); // normalized to 0,1
 };
 
 class ImageCursorOverlay

@@ -122,7 +122,7 @@ bool ControlsWindow::initialize (GLFWwindow* parentWindow, Viewer* viewer)
     geometry.origin.y = (impl->monitorSize.y - geometry.size.y)/2;
 
     glfwWindowHint(GLFW_RESIZABLE, false); // fixed size.
-    bool ok = impl->imguiGlfwWindow.initialize (parentWindow, "zv Controls", geometry);
+    bool ok = impl->imguiGlfwWindow.initialize (parentWindow, "zv controls", geometry);
     if (!ok)
     {
         return false;
@@ -214,22 +214,26 @@ void ControlsWindow::renderFrame ()
             if (ImGui::MenuItem("Restore aspect ratio", "a", false)) imageWindow->processKeyEvent (GLFW_KEY_A);
             if (ImGui::BeginMenu("Grid"))
             {
+                if (ImGui::MenuItem("Single image", "1"))
+                {
+                    imageWindow->setLayout(1,1,1);
+                }
                 if (ImGui::BeginMenu("2 images"))
                 {
+                    if (ImGui::MenuItem("1x2", "2")) imageWindow->setLayout(2,1,2);
                     if (ImGui::MenuItem("2x1")) imageWindow->setLayout(2,2,1);
-                    if (ImGui::MenuItem("1x2")) imageWindow->setLayout(2,1,2);
                     ImGui::EndMenu();
                 }
                 if (ImGui::BeginMenu("3 images"))
                 {
+                    if (ImGui::MenuItem("1x3", "3")) imageWindow->setLayout(3,1,3);
                     if (ImGui::MenuItem("3x1")) imageWindow->setLayout(3,3,1);
-                    if (ImGui::MenuItem("1x3")) imageWindow->setLayout(3,1,3);
                     if (ImGui::MenuItem("2x2")) imageWindow->setLayout(3,2,2);
                     ImGui::EndMenu();
                 }
                 if (ImGui::BeginMenu("4 images"))
                 {
-                    if (ImGui::MenuItem("2x2")) imageWindow->setLayout(4,2,2);
+                    if (ImGui::MenuItem("2x2", "4")) imageWindow->setLayout(4,2,2);
                     ImGui::EndMenu();
                 }
                 ImGui::EndMenu();
@@ -261,7 +265,7 @@ void ControlsWindow::renderFrame ()
     // Always show the ImGui window filling the GLFW window.
     ImGui::SetNextWindowPos(ImVec2(0, menuBarHeight), ImGuiCond_Always);
     ImGui::SetNextWindowSize(ImVec2(frameInfo.windowContentWidth, frameInfo.windowContentHeight), ImGuiCond_Always);
-    if (ImGui::Begin("zv Controls", nullptr, flags))
+    if (ImGui::Begin("zv controls", nullptr, flags))
     {
         auto& viewerState = imageWindow->mutableState();
         

@@ -46,6 +46,12 @@ struct ImageItemData
 };
 using ImageItemDataPtr = std::shared_ptr<ImageItemData>;
 
+struct ImageItemAndData
+{
+    ImageItemPtr item;
+    ImageItemDataPtr data;
+};
+
 class ImageList
 {
 public:

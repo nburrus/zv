@@ -67,12 +67,6 @@ std::string viewerModeFileName (ViewerMode mode)
     }
 }
 
-struct ImageItemAndData
-{
-    ImageItemPtr item;
-    ImageItemDataPtr data;
-};
-
 struct ImageLayout
 {
     LayoutConfig config;
@@ -141,6 +135,7 @@ struct ImageWindow::Impl
     
     const int windowBorderSize = 0;
     bool shouldUpdateWindowSize = false;
+    const int gridPadding = 1;
     
     struct {
         zv::Rect normal;
@@ -234,8 +229,8 @@ void ImageWindow::Impl::adjustForNewSelection (const ImageItemPtr& imageItem)
     }
 
     const auto& firstRect = this->currentLayout.imageRects[0];
-    this->imageWidgetRect.normal.size.x = firstIm.width() / firstRect.size.x;
-    this->imageWidgetRect.normal.size.y = firstIm.height() / firstRect.size.y;
+    this->imageWidgetRect.normal.size.x = firstIm.width() / firstRect.size.x + (this->currentLayout.config.numCols - 1)*gridPadding;
+    this->imageWidgetRect.normal.size.y = firstIm.height() / firstRect.size.y + (this->currentLayout.config.numRows - 1)*gridPadding;
     
     // Keep the current geometry if it was already set before.
     if (!this->imageWidgetRect.current.origin.isValid())
@@ -364,7 +359,12 @@ void ImageWindow::checkImguiGlobalImageKeyEvents ()
     // These key events are valid also in the control window.
     auto& io = ImGui::GetIO();
 
-    for (const auto code : {GLFW_KEY_UP, GLFW_KEY_DOWN, GLFW_KEY_LEFT, GLFW_KEY_RIGHT, GLFW_KEY_S, GLFW_KEY_W, GLFW_KEY_N, GLFW_KEY_A, GLFW_KEY_SPACE })
+    for (const auto code : {
+            GLFW_KEY_1, GLFW_KEY_2, GLFW_KEY_3, GLFW_KEY_4, 
+            GLFW_KEY_UP, GLFW_KEY_DOWN, GLFW_KEY_LEFT, GLFW_KEY_RIGHT,
+            GLFW_KEY_S, GLFW_KEY_W, GLFW_KEY_N, GLFW_KEY_A,
+            GLFW_KEY_SPACE, GLFW_KEY_BACKSPACE
+        })
     {
         if (ImGui::IsKeyPressed(code))
             processKeyEvent(code);
@@ -385,12 +385,14 @@ void ImageWindow::processKeyEvent (int keycode)
     switch (keycode)
     {
         case GLFW_KEY_UP:
+        case GLFW_KEY_BACKSPACE:
         {
             impl->viewer->imageList().selectImage (impl->viewer->imageList().selectedIndex() - 1);
             break;
         }
 
         case GLFW_KEY_DOWN:
+        case GLFW_KEY_SPACE:
         {
             impl->viewer->imageList().selectImage (impl->viewer->imageList().selectedIndex() + 1);
             break;
@@ -417,6 +419,11 @@ void ImageWindow::processKeyEvent (int keycode)
             impl->adjustAspectRatio ();
             break;
         }
+
+        case GLFW_KEY_1: setLayout(1,1,1); break;
+        case GLFW_KEY_2: setLayout(2,1,2); break;
+        case GLFW_KEY_3: setLayout(3,1,3); break;
+        case GLFW_KEY_4: setLayout(4,2,2); break;
 
         case '<':
         {
@@ -519,6 +526,8 @@ void renderImageItem (const ImageItemAndData& item,
 {
     auto& io = ImGui::GetIO();
     
+    ImGui::SetCursorPos (imageWidgetTopLeft);
+
     ImVec2 uv0 (0,0);
     ImVec2 uv1 (1.f/zoom.zoomFactor,1.f/zoom.zoomFactor);
     ImVec2 uvRoiCenter = (uv0 + uv1) * 0.5f;
@@ -559,7 +568,7 @@ void renderImageItem (const ImageItemAndData& item,
         ImGui::GetWindowDrawList()->AddCallback([](const ImDrawList *parent_list, const ImDrawCmd *cmd)
                                                 {
                                                     GLTexture* imageTexture = reinterpret_cast<GLTexture*>(cmd->UserCallbackData);
-                                                    imageTexture->setLinearInterpolationEnabled(true);
+                                                    imageTexture->setLinearInterpolationEnabled(false);
                                                 },
                                                 imageTexture);
     }
@@ -583,7 +592,7 @@ void renderImageItem (const ImageItemAndData& item,
 
     if (pointerOverTheImage && overlayInfo)
     {
-        overlayInfo->imageData = item.data.get();
+        overlayInfo->itemAndData = item;
         overlayInfo->showHelp = false;
         overlayInfo->imageWidgetSize = imageWidgetSize;
         overlayInfo->imageWidgetTopLeft = imageWidgetTopLeft;
@@ -591,6 +600,7 @@ void renderImageItem (const ImageItemAndData& item,
         overlayInfo->uvBottomRight = uv1;
         overlayInfo->roiWindowSize = ImVec2(15, 15);
         overlayInfo->mousePos = io.MousePos;
+        overlayInfo->mousePosInTexture = mousePosInTexture;
     }
 
     if (ImGui::IsItemClicked(ImGuiMouseButton_Left) && io.KeyCtrl)
@@ -611,7 +621,7 @@ void renderImageItem (const ImageItemAndData& item,
 }
 
 void ImageWindow::renderFrame ()
-{
+{    
     ImageList& imageList = impl->viewer->imageList();
     
     const ImageItemPtr& imageItem = imageList.imageItemFromIndex (imageList.selectedIndex());
@@ -648,7 +658,8 @@ void ImageWindow::renderFrame ()
         impl->imageWidgetRect.current.size.y = frameInfo.windowContentHeight;
     }
   
-    auto& io = ImGui::GetIO();    
+    auto& io = ImGui::GetIO();
+    const float monoFontSize = ImguiGLFWWindow::monoFontSize(io);
     
     impl->mutableState.inputState.shiftIsPressed = ImGui::IsKeyDown(ImGuiKey_LeftShift) || ImGui::IsKeyDown(ImGuiKey_RightShift);
 
@@ -683,15 +694,16 @@ void ImageWindow::renderFrame ()
                             | ImGuiWindowFlags_NoScrollbar
                             // ImGuiWindowFlags_NoScrollWithMouse
                             // | ImGuiWindowFlags_NoCollapse
-                            | ImGuiWindowFlags_NoBackground
+                            // | ImGuiWindowFlags_NoBackground
                             | ImGuiWindowFlags_NoSavedSettings
                             | ImGuiWindowFlags_HorizontalScrollbar
                             // | ImGuiWindowFlags_NoDocking
                             | ImGuiWindowFlags_NoNav);
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(1,1,1,1));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0,0));
     bool isOpen = true;
     
-    std::string mainWindowName = impl->currentImages[0].item->sourceImagePath;
+    std::string mainWindowName = "zv - " + impl->currentImages[0].item->sourceImagePath;
     glfwSetWindowTitle(impl->imguiGlfwWindow.glfwWindow(), mainWindowName.c_str());
 
     if (ImGui::Begin((mainWindowName + "###Image").c_str(), &isOpen, flags))
@@ -703,8 +715,16 @@ void ImageWindow::renderFrame ()
         
         const ImVec2 globalImageWidgetTopLeft = ImGui::GetCursorScreenPos();
         const auto globalImageWidgetSize = imSize(impl->imageWidgetRect.current);
+        const auto globalImageWidgetContentSize = globalImageWidgetSize - ImVec2(impl->currentLayout.config.numCols-1, impl->currentLayout.config.numRows-1)*impl->gridPadding;
         const bool imageHasNonMultipleSize = int(impl->imageWidgetRect.current.size.x) % int(impl->imageWidgetRect.normal.size.x) != 0;
         
+        struct ImageItemGeometry
+        {
+            ImVec2 topLeft;
+            ImVec2 size;
+        };
+        std::vector<ImageItemGeometry> widgetGeometries (impl->currentImages.size());
+
         for (int r = 0; r < impl->currentLayout.config.numRows; ++r)
         for (int c = 0; c < impl->currentLayout.config.numCols; ++c)
         {
@@ -712,23 +732,102 @@ void ImageWindow::renderFrame ()
             if (idx < impl->currentImages.size() && impl->currentImages[idx].data)
             {
                 const auto& rect = impl->currentLayout.imageRects[idx];
-                const ImVec2 imageWidgetSize = ImVec2(globalImageWidgetSize.x * rect.size.x, globalImageWidgetSize.y * rect.size.y);
-                const ImVec2 imageWidgetTopLeft = ImVec2(globalImageWidgetSize.x * rect.origin.x, globalImageWidgetSize.y * rect.origin.y);
-                renderImageItem (impl->currentImages[idx],
-                                 imageWidgetTopLeft,
-                                 imageWidgetSize,
-                                 impl->zoom,
-                                 imageHasNonMultipleSize,
-                                 &impl->cursorOverlayInfo);
+                const ImVec2 imageWidgetSize = ImVec2(globalImageWidgetContentSize.x * rect.size.x, 
+                                                      globalImageWidgetContentSize.y * rect.size.y);
+                const ImVec2 imageWidgetTopLeft = ImVec2(globalImageWidgetContentSize.x * rect.origin.x + c*impl->gridPadding, 
+                                                         globalImageWidgetContentSize.y * rect.origin.y + r*impl->gridPadding);
+                widgetGeometries[idx].topLeft = imageWidgetTopLeft;
+                widgetGeometries[idx].size = imageWidgetSize;
             }
             
             // Option: show it next to the mouse.
-            if (impl->mutableState.inputState.shiftIsPressed || controlsWindowState.shiftIsPressed)
+            // if (impl->mutableState.inputState.shiftIsPressed || controlsWindowState.shiftIsPressed)
+            // {
+            //     impl->inlineCursorOverlay.showTooltip(impl->cursorOverlayInfo);
+            // }
+        }
+
+        for (int idx = 0; idx < impl->currentImages.size(); ++idx)
+        {
+            renderImageItem(impl->currentImages[idx],
+                            widgetGeometries[idx].topLeft,
+                            widgetGeometries[idx].size,
+                            impl->zoom,
+                            imageHasNonMultipleSize,
+                            &impl->cursorOverlayInfo);
+        }
+
+        if (impl->cursorOverlayInfo.valid())
+        {            
+            for (int idx = 0; idx < impl->currentImages.size(); ++idx)
             {
-                impl->inlineCursorOverlay.showTooltip(impl->cursorOverlayInfo);
+                if (impl->cursorOverlayInfo.itemAndData.item == impl->currentImages[idx].item)
+                    continue;
+                
+                ImVec2 deltaFromTopLeft = impl->cursorOverlayInfo.mousePos - impl->cursorOverlayInfo.imageWidgetTopLeft;
+                // FIXME: replace this with an image of a cross-hair texture. Filled black with a white outline.
+                ImGui::GetForegroundDrawList()->AddCircle(widgetGeometries[idx].topLeft + deltaFromTopLeft, 4.0, IM_COL32(255,255,255,180), 0, 2.0f);
+                ImGui::GetForegroundDrawList()->AddCircle(widgetGeometries[idx].topLeft + deltaFromTopLeft, 5.0, IM_COL32(0,0,0,180), 0, 1.f);
+                ImGui::GetForegroundDrawList()->AddCircle(widgetGeometries[idx].topLeft + deltaFromTopLeft, 3.0, IM_COL32(0,0,0,180), 0, 1.f);
+            }
+
+            const bool showStatusBar = ImGui::IsMouseDown(ImGuiMouseButton_Left) && !io.KeyCtrl;
+            if (showStatusBar)
+            {
+                impl->imguiGlfwWindow.PushMonoSpaceFont(io);
+
+                const bool showOnBottom = impl->cursorOverlayInfo.mousePosInTexture.y < 0.75;
+
+                for (int idx = 0; idx < impl->currentImages.size(); ++idx)
+                {
+                    const auto& im = *impl->currentImages[idx].data->cpuData;
+                    const ImVec2 imSize (im.width(), im.height());
+                    ImVec2 mousePosInImage = impl->cursorOverlayInfo.mousePosInTexture * imSize;
+                    const int cInImage = int(mousePosInImage.x + 0.5f);
+                    const int rInImage = int(mousePosInImage.y + 0.5f);
+
+                    PixelSRGBA sRgba = im(cInImage, rInImage);
+                    const auto hsv = zv::convertToHSV(sRgba);
+                    std::string caption = formatted("%4d, %4d (sRGBA %3d %3d %3d %3d) (HSV %3d %3d %3d)",
+                                                    cInImage, rInImage,
+                                                    sRgba.r, sRgba.g, sRgba.b, sRgba.a,
+                                                    intRnd(hsv.x*360.f), intRnd(hsv.y*100.f), intRnd(hsv.z*100.f/255.f));
+
+                    ImVec2 textStart, textAreaStart, textAreaEnd;
+
+                    if (showOnBottom)
+                    {
+                        textStart = widgetGeometries[idx].topLeft;
+                        textStart.x += monoFontSize*0.5;
+                        
+                        textAreaStart = widgetGeometries[idx].topLeft;
+                        textAreaEnd = widgetGeometries[idx].topLeft + widgetGeometries[idx].size;
+
+                        textStart.y += widgetGeometries[idx].size.y - monoFontSize*1.1;
+                        textAreaStart.y = textStart.y - monoFontSize*0.1;
+                    }
+                    else
+                    {
+                        textStart = widgetGeometries[idx].topLeft;
+                        textStart.x += monoFontSize*0.5;
+                        textStart.y += monoFontSize*0.15;
+                        
+                        textAreaStart = widgetGeometries[idx].topLeft;
+                        textAreaEnd = textAreaStart + ImVec2(widgetGeometries[idx].size.x, monoFontSize*1.2);
+                    }
+                    
+                    
+                    auto* drawList = ImGui::GetWindowDrawList();
+                    ImVec4 clip_rect(textAreaStart.x, textAreaStart.y, textAreaEnd.x, textAreaEnd.y);
+                    drawList->AddRectFilled(textAreaStart, textAreaEnd, IM_COL32(0,0,0,127));
+                    // DrawList::AddText to be able to clip it, not sure if there is a simpler way,
+                    // but PushItemWidth / SetNextItemWidth do not seem to apply to Text.
+                    drawList->AddText(ImGui::GetFont(), ImGui::GetFontSize(), textStart, IM_COL32_WHITE, caption.c_str(), NULL, 0.0f, &clip_rect);
+                }
+                ImGui::PopFont();
             }
         }
-                        
+
         if (ImGui::IsItemClicked(ImGuiMouseButton_Right) && !io.KeyCtrl)
         {
             // xv-like controls focus.
@@ -738,6 +837,7 @@ void ImageWindow::renderFrame ()
         
     ImGui::End();
     ImGui::PopStyleVar();
+    ImGui::PopStyleColor();
     
     impl->imguiGlfwWindow.endFrame ();
     
