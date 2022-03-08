@@ -392,14 +392,14 @@ void ImageWindow::processKeyEvent (int keycode)
         case GLFW_KEY_UP:
         case GLFW_KEY_BACKSPACE:
         {
-            impl->viewer->imageList().selectImage (impl->viewer->imageList().selectedIndex() - 1);
+            impl->viewer->imageList().selectImage (impl->viewer->imageList().selectedIndex() - impl->currentLayout.config.numImages);
             break;
         }
 
         case GLFW_KEY_DOWN:
         case GLFW_KEY_SPACE:
         {
-            impl->viewer->imageList().selectImage (impl->viewer->imageList().selectedIndex() + 1);
+            impl->viewer->imageList().selectImage (impl->viewer->imageList().selectedIndex() + impl->currentLayout.config.numImages);
             break;
         }
 
@@ -823,7 +823,6 @@ void ImageWindow::renderFrame ()
                         textAreaStart = widgetGeometries[idx].topLeft;
                         textAreaEnd = textAreaStart + ImVec2(widgetGeometries[idx].size.x, monoFontSize*1.2);
                     }
-                    
                     
                     auto* drawList = ImGui::GetWindowDrawList();
                     ImVec4 clip_rect(textAreaStart.x, textAreaStart.y, textAreaEnd.x, textAreaEnd.y);
