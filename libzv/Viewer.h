@@ -21,6 +21,7 @@ class ImageList;
 struct ViewerState
 {
     bool helpRequested = false;
+    bool controlsRequested = false;
     bool dismissRequested = false;
 };
 

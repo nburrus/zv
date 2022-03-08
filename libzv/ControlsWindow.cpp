@@ -100,6 +100,11 @@ void ControlsWindow::bringToFront ()
     glfw_reliableBringToFront (impl->imguiGlfwWindow.glfwWindow());
 }
 
+bool ControlsWindow::isInitialized () const
+{
+    return impl->imguiGlfwWindow.isInitialized();
+}
+
 bool ControlsWindow::initialize (GLFWwindow* parentWindow, Viewer* viewer)
 {
     zv_assert (viewer, "Cannot be null, we don't check it everywhere.");

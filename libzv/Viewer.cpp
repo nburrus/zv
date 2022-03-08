@@ -28,8 +28,11 @@ namespace zv
 {
 
 struct Viewer::Impl
-{   
-    GLFWwindow* mainContextWindow = nullptr;
+{
+    Impl (Viewer& that) : that(that) {}
+    Viewer& that;
+    
+    GLFWwindow* mainContextWindow() { return imageWindow.glfwWindow(); }
 
     ImageList imageList;    
     ImageWindow imageWindow;
@@ -42,6 +45,11 @@ struct Viewer::Impl
     {
         if (state.helpRequested)
         {
+            if (!helpWindow.isInitialized())
+            {
+                helpWindow.initialize(nullptr); // no need to share a context.
+            }
+            
             helpWindow.setEnabled(true);
             state.helpRequested = false;
         }
@@ -50,14 +58,36 @@ struct Viewer::Impl
         {
             helpWindow.renderFrame();
         }
+        
+        if (state.controlsRequested)
+        {
+            if (!controlsWindow.isInitialized())
+            {
+                // Need to share the GL context for the cursor overlay.
+                controlsWindow.initialize (mainContextWindow(), &that);
+            }
+
+            if (!controlsWindow.isEnabled())
+            {
+                controlsWindow.setEnabled(true);
+            }
+            else
+            {
+                controlsWindow.bringToFront();
+            }
+            
+            state.controlsRequested = false;
+        }
 
         imageWindow.renderFrame();
-        controlsWindow.renderFrame();
+
+        if (controlsWindow.isEnabled())
+            controlsWindow.renderFrame();
     }
 };
 
 Viewer::Viewer()
-: impl (new Impl())
+: impl (new Impl(*this))
 {
     
 }
@@ -79,11 +109,15 @@ static void glfw_error_callback(int error, const char* description)
 
 bool Viewer::initialize ()
 {
+    Profiler p ("Viewer::init");
+
     // Setup window
     glfwSetErrorCallback(glfw_error_callback);
     if (!glfwInit())
         return false;
-        
+    
+    p.lap ("glfwInit");
+
     // Decide GL+GLSL versions
 #if __APPLE__
     // GL 3.2 + GLSL 150
@@ -98,37 +132,13 @@ bool Viewer::initialize ()
     // glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);  // 3.2+ only
     //glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);            // 3.0+ only
 #endif
-    
-    glfwWindowHint(GLFW_DECORATED, false);
-    glfwWindowHint(GLFW_VISIBLE, false);
-    impl->mainContextWindow = glfwCreateWindow(1, 1, "zv Hidden Parent Content", NULL, NULL);
-    if (impl->mainContextWindow == NULL)
-        return false;
-    glfwWindowHint(GLFW_DECORATED, true); // restore the default.
-    glfwWindowHint(GLFW_VISIBLE, true);
-    
-    glfwMakeContextCurrent(impl->mainContextWindow);
-    
-    // Initialize OpenGL loader
-    // bool err = glewInit() != GLEW_OK;
-    bool err = gl3wInit() != 0;
-    if (err)
-    {
-        fprintf(stderr, "Failed to initialize OpenGL loader!\n");
-        return false;
-    }
-    
-    glfwSwapInterval(1); // no vsync on that dummy window to avoid delaying other windows.
-    
-    glfwSetWindowPos(impl->mainContextWindow, 0, 0);    
         
-    impl->imageWindow.initialize (impl->mainContextWindow, this);
-    impl->controlsWindow.initialize (impl->mainContextWindow, this);
-    impl->helpWindow.initialize(impl->mainContextWindow);
+    impl->imageWindow.initialize (nullptr, this);
+    p.lap ("imageWindow");
     
     if (Prefs::showHelpOnStartup())
     {
-        impl->helpWindow.setEnabled (true);
+        impl->state.helpRequested = true;
     }
     return true;
 }
@@ -140,21 +150,19 @@ void Viewer::renderFrame ()
 
 void Viewer::shutdown ()
 {
-    if (!impl->mainContextWindow)
+    if (!impl->mainContextWindow())
         return;
 
+    // Make sure a context is set for the textures.
+    glfwMakeContextCurrent(impl->mainContextWindow());
+    impl->imageList.releaseGL();
+    glfwMakeContextCurrent(nullptr);
+    
     impl->imageWindow.shutdown ();
     impl->controlsWindow.shutdown ();
     impl->helpWindow.shutdown();
     
-    // Make sure a context is set for the textures.
-    glfwMakeContextCurrent(impl->mainContextWindow);
-    impl->imageList.releaseGL();
-    glfwMakeContextCurrent(nullptr);
-
-    glfwDestroyWindow(impl->mainContextWindow);
     glfwTerminate();
-    impl->mainContextWindow = nullptr;
 }
 
 void Viewer::onDismissRequested ()
@@ -169,14 +177,7 @@ void Viewer::onHelpRequested()
 
 void Viewer::onControlsRequested()
 {
-    if (!impl->controlsWindow.isEnabled())
-    {
-        impl->controlsWindow.setEnabled(true);
-    }
-    else
-    {
-        impl->controlsWindow.bringToFront();
-    }
+    impl->state.controlsRequested = true;
 }
 
 void Viewer::onImageWindowGeometryUpdated (const Rect& geometry)

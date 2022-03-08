@@ -23,6 +23,7 @@ public:
     ~HelpWindow();
 
     bool initialize (GLFWwindow* parentWindow);
+    bool isInitialized () const;
     void renderFrame ();
 
 public:

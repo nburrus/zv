@@ -15,7 +15,7 @@
 
 int main (int argc, char* argv[])
 {
-    zv::Profiler p ("main");
+    zv::Profiler p("main");
 
     argparse::ArgumentParser parser("zv", PROJECT_VERSION);
     parser.add_argument("images")
@@ -34,15 +34,10 @@ int main (int argc, char* argv[])
         return 1;
     }
 
-    p.lap ("args");
-
-    double start = zv::currentDateInSeconds();
-
     zv::Viewer viewer;
     viewer.initialize ();
-
-    p.lap ("initialize");
-
+    p.lap ("init");
+    
     try
     {
         auto images = parser.get<std::vector<std::string>>("images");
@@ -56,13 +51,19 @@ int main (int argc, char* argv[])
         std::cerr << "No files provided" << std::endl;
     }
    
+    p.lap ("args");
+
+    bool firstFrame = true;
     zv::RateLimit rateLimit;
     while (!viewer.exitRequested())
     {
         viewer.renderFrame ();
-        p.lap ("renderFirstFrame");
-        p.stop ();
-        break;
+        if (firstFrame)
+        {
+            p.lap ("firstRendered");
+            p.stop ();
+            firstFrame = false;
+        }
         rateLimit.sleepIfNecessary (1 / 30.);
     }
     

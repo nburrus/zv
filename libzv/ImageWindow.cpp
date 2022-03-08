@@ -297,6 +297,11 @@ void ImageWindow::shutdown()
     impl->imguiGlfwWindow.shutdown ();
 }
 
+GLFWwindow* ImageWindow::glfwWindow ()
+{
+    return impl->imguiGlfwWindow.glfwWindow();
+}
+
 bool ImageWindow::initialize (GLFWwindow* parentWindow, Viewer* viewer)
 {
     impl->viewer = viewer;
@@ -749,6 +754,9 @@ void ImageWindow::renderFrame ()
 
         for (int idx = 0; idx < impl->currentImages.size(); ++idx)
         {
+            if (!impl->currentImages[idx].data)
+                continue;
+            
             renderImageItem(impl->currentImages[idx],
                             widgetGeometries[idx].topLeft,
                             widgetGeometries[idx].size,
@@ -828,7 +836,7 @@ void ImageWindow::renderFrame ()
             }
         }
 
-        if (ImGui::IsItemClicked(ImGuiMouseButton_Right) && !io.KeyCtrl)
+        if (ImGui::IsMouseClicked(ImGuiMouseButton_Right) && !io.KeyCtrl)
         {
             // xv-like controls focus.
             if (impl->viewer) impl->viewer->onControlsRequested();

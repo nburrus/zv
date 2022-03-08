@@ -30,6 +30,7 @@ public:
     
 public:   
     bool initialize (GLFWwindow* parentWindow, Viewer* controller);
+    GLFWwindow* glfwWindow ();
         
     const CursorOverlayInfo& cursorOverlayInfo() const;
     

@@ -27,6 +27,9 @@
 #include "imgui_impl_opengl3.h"
 #include "imgui_internal.h"
 
+#include <GL/gl3w.h>
+#include <GLFW/glfw3.h>
+
 #include "GLFWUtils.h"
 
 #include <cstdio>
@@ -286,6 +289,11 @@ float ImguiGLFWWindow::monoFontSize (const ImGuiIO& io)
     return io.Fonts->Fonts[1]->FontSize * io.Fonts->Fonts[1]->Scale;
 }
 
+bool ImguiGLFWWindow::isInitialized () const
+{
+    return impl->window != nullptr;
+}
+
 bool ImguiGLFWWindow::initialize (GLFWwindow* parentWindow,
                                   const std::string& title,
                                   const zv::Rect& geometry,
@@ -328,6 +336,14 @@ bool ImguiGLFWWindow::initialize (GLFWwindow* parentWindow,
     }
 
     glfwMakeContextCurrent(impl->window);
+    
+    // Make sure that gl3w is initialized.
+    bool err = gl3wInit() != 0;
+    if (err)
+    {
+        fprintf(stderr, "Failed to initialize OpenGL loader!\n");
+        return false;
+    }
 
     // Setup Dear ImGui context
     IMGUI_CHECKVERSION();

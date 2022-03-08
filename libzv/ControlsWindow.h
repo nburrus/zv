@@ -33,6 +33,7 @@ public:
 
 public:
     bool initialize (GLFWwindow* parentWindow, Viewer* viewer);
+    bool isInitialized () const;
     void renderFrame ();
     void repositionAfterNextRendering (const zv::Rect& viewerWindowGeometry, bool showRequested);
 

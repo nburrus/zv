@@ -50,6 +50,7 @@ public:
                      const std::string& title,
                      const zv::Rect& geometry,
                      bool enableImguiViewports = false);
+    bool isInitialized () const;
     void shutdown ();
     void renderFrame ();
 

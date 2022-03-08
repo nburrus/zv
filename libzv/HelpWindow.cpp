@@ -47,6 +47,11 @@ HelpWindow::HelpWindow()
 
 HelpWindow::~HelpWindow() = default;
 
+bool HelpWindow::isInitialized () const
+{
+    return impl->imguiGlfwWindow.isInitialized();
+}
+
 bool HelpWindow::initialize (GLFWwindow* parentWindow)
 {
     GLFWmonitor* monitor = glfwGetPrimaryMonitor();
