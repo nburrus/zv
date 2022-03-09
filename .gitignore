@@ -32,3 +32,10 @@
 # Folders
 build*/
 deps/prebuilt/
+dist/
+
+# imgui generated files
+imgui.ini
+
+# Python packaging
+*.egg-info/

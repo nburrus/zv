@@ -55,6 +55,10 @@ if (WIN32)
   target_link_libraries(glfw3 INTERFACE opengl32)
 endif()
 
+if (UNIX)
+  set(PYTHON_EXTRA_CMAKE_CXX_FLAGS "-fPIC")
+endif()
+
 set(CLIP_LIBRARY_FILENAME "${CMAKE_STATIC_LIBRARY_PREFIX}clip${CMAKE_STATIC_LIBRARY_SUFFIX}")
 ExternalProject_Add(clip-deps
   LIST_SEPARATOR "${semicolon_smuggle}"
@@ -64,6 +68,7 @@ ExternalProject_Add(clip-deps
         -DCMAKE_BUILD_TYPE=${CMAKE_DEPS_CONFIG}
         -DCMAKE_OSX_ARCHITECTURES=${cmake_osx_archs_special_separator}
         -DCMAKE_INSTALL_PREFIX:PATH=${PRECOMPILED_FOLDER}/clip
+        -DCMAKE_CXX_FLAGS=${PYTHON_EXTRA_CMAKE_CXX_FLAGS}
         -DCLIP_EXAMPLES=OFF
         -DCLIP_TESTS=OFF
         -DCLIP_X11_WITH_PNG=OFF
@@ -122,6 +127,9 @@ endif()
 
 add_subdirectory(libzv)
 add_subdirectory(zv)
+
+add_subdirectory(deps/pybind11)
+add_subdirectory(python)
 
 # enable_testing()
 # add_subdirectory(tests)

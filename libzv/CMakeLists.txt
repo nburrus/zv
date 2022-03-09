@@ -132,3 +132,7 @@ endif()
 if (APPLE)
     target_compile_options(zv PUBLIC -x objective-c++)
 endif()
+
+if (UNIX)
+    target_compile_options(zv PRIVATE -fPIC)
+endif()
