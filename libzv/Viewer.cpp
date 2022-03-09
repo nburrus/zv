@@ -31,6 +31,7 @@ struct Viewer::Impl
 {
     Impl (Viewer& that) : that(that) {}
     Viewer& that;
+    RateLimit rateLimit;
     
     GLFWwindow* mainContextWindow() { return imageWindow.glfwWindow(); }
 
@@ -151,9 +152,13 @@ bool Viewer::initialize ()
     return true;
 }
 
-void Viewer::renderFrame ()
+void Viewer::renderFrame (double minDuration)
 {
     impl->renderFrame();
+    if (!isnan(minDuration))
+    {
+        impl->rateLimit.sleepIfNecessary (minDuration);
+    }
 }
 
 void Viewer::shutdown ()

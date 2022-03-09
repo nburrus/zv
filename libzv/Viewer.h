@@ -40,7 +40,8 @@ public:
     bool exitRequested () const;
 
     // Call this in a loop to process input events and render one frame.
-    void renderFrame ();
+    // minDelay will avoid a busy loop.
+    void renderFrame (double minDuration = NAN);
 
 public:
     void addImageFromFile (const std::string& imagePath);

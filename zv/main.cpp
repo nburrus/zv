@@ -57,6 +57,7 @@ int main (int argc, char* argv[])
     zv::RateLimit rateLimit;
     while (!viewer.exitRequested())
     {
+        // Max 30 FPS
         viewer.renderFrame ();
         if (firstFrame)
         {
