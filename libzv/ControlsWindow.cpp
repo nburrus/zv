@@ -20,6 +20,8 @@
 #define IMGUI_DEFINE_MATH_OPERATORS 1
 #include "imgui.h"
 
+#include <ImGuiFileDialog/ImGuiFileDialog.h>
+
 #include <cstdio>
 
 namespace zv
@@ -48,7 +50,7 @@ struct ControlsWindow::Impl
 
     // Tweaked manually by letting ImGui auto-resize the window.
     // 20 vertical pixels per new line.
-    ImVec2 windowSizeAtDefaultDpi = ImVec2(348, 382 + 20 + 20);
+    ImVec2 windowSizeAtDefaultDpi = ImVec2(640, 382 + 20 + 20);
     ImVec2 windowSizeAtCurrentDpi = ImVec2(-1,-1);
     
     ImageCursorOverlay cursorOverlay;
@@ -174,6 +176,15 @@ void ControlsWindow::repositionAfterNextRendering (const zv::Rect& viewerWindowG
     impl->updateAfterContentSwitch.showAfterNextRendering = showRequested;
 }
 
+void ControlsWindow::openImage ()
+{
+    ImGuiFileDialog::Instance()->OpenModal("ChooseImageDlgKey",
+                                           "Open Image",
+                                           ".png,.jpg,.jpeg,.bmp,.tiff",
+                                           ".",
+                                           10000 /* vCountSelectionMax */);
+}
+
 void ControlsWindow::renderFrame ()
 {
     const auto frameInfo = impl->imguiGlfwWindow.beginFrame ();
@@ -198,9 +209,14 @@ void ControlsWindow::renderFrame ()
 
         if (ImGui::BeginMenu("File"))
         {
-            if (ImGui::MenuItem("Save Image", "Ctrl + s", false))
+            // if (ImGui::MenuItem("Save Image", "Ctrl + s", false))
+            // {
+            //     imageWindow->saveCurrentImage ();
+            // }
+
+            if (ImGui::MenuItem("Open Image", "Ctrl + o", false))
             {
-                imageWindow->saveCurrentImage ();
+                impl->viewer->onOpenImage();
             }
 
             if (ImGui::MenuItem("Close", "q", false))
@@ -276,6 +292,24 @@ void ControlsWindow::renderFrame ()
     ImGui::SetNextWindowSize(ImVec2(frameInfo.windowContentWidth, frameInfo.windowContentHeight), ImGuiCond_Always);
     if (ImGui::Begin("zv controls", nullptr, flags))
     {
+        ImVec2 contentSize = ImGui::GetContentRegionAvail();
+        if (ImGuiFileDialog::Instance()->Display("ChooseImageDlgKey", ImGuiWindowFlags_NoCollapse, contentSize, contentSize))
+        {
+            if (ImGuiFileDialog::Instance()->IsOk() == true)
+            {
+                // map<FileName, FilePathName>
+                std::map<std::string, std::string> files = ImGuiFileDialog::Instance()->GetSelection();
+                // Add image will keep adding to the top, so process them in the reverse order.
+                for (auto it = files.rbegin(); it != files.rend(); ++it)
+                {
+                    impl->viewer->imageList().addImage(imageItemFromPath (it->second));
+                }
+                impl->viewer->imageList().selectImage (impl->viewer->imageList().numImages() - 1);
+            }
+            // close
+            ImGuiFileDialog::Instance()->Close();
+        }
+
         auto& imageWindowState = imageWindow->mutableState();
                 
         ImageList& imageList = impl->viewer->imageList();
@@ -326,6 +360,7 @@ void ControlsWindow::renderFrame ()
 
         impl->inputState.shiftIsPressed = ImGui::IsKeyDown(ImGuiKey_LeftShift) || ImGui::IsKeyDown(ImGuiKey_RightShift);
     }
+
     ImGui::End();
 
     // ImGui::ShowDemoWindow();

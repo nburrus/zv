@@ -14,11 +14,52 @@
 namespace zv
 {
 
+struct UniqueId
+{
+    static int64_t newId()
+    {
+        static uint64_t lastId = 0;
+        return lastId++;
+    }
+};
+
 std::unique_ptr<ImageItem> imageItemFromPath (const std::string& imagePath)
 {
     auto entry = std::make_unique<ImageItem>();
+    entry->uniqueId = UniqueId::newId();
     entry->source = ImageItem::Source::FilePath;
     entry->sourceImagePath = imagePath;
+    return entry;
+}
+
+ImageSRGBAPtr getDefaultImage ()
+{
+    static ImageSRGBAPtr image;
+    if (image)
+        return image;
+
+    int width = 256;
+    int height = 256;
+    image = std::make_shared<ImageSRGBA>(width,height);
+    for (int r = 0; r < height; ++r)
+    {
+        auto* rowPtr = image->atRowPtr(r);
+        for (int c = 0; c < width; ++c)
+        {
+            rowPtr[c] = PixelSRGBA(r%256, c%256, (r+c)%256, 255);
+        }
+    }
+
+    return image;
+}
+
+std::unique_ptr<ImageItem> defaultImageItem ()
+{
+    auto entry = std::make_unique<ImageItem>();
+    entry->uniqueId = UniqueId::newId();
+    entry->source = ImageItem::Source::Callback;
+    entry->sourceImagePath = "<<default>>";
+    entry->loadDataCallback = getDefaultImage;
     return entry;
 }
 
@@ -45,6 +86,12 @@ std::unique_ptr<ImageItemData> loadImageData(const ImageItem& input)
             break;
         }
 
+        case ImageItem::Source::Callback:
+        {
+            output->cpuData = input.loadDataCallback();
+            break;
+        }
+
         default:
             zv_assert (false, "Invalid source.");
             break;
@@ -66,9 +113,14 @@ public:
         _lruCache.clear();
     }
 
+    void removeItem (const ImageItem* entry)
+    {
+        _lruCache.remove (entry->uniqueId);
+    }
+
     ImageItemDataPtr getData (const ImageItem* entry)
     {
-        const ImageItemDataPtr* cacheEntry = _lruCache.get (entry);
+        const ImageItemDataPtr* cacheEntry = _lruCache.get (entry->uniqueId);
         if (cacheEntry)
         {
             return *cacheEntry;
@@ -76,7 +128,7 @@ public:
         else
         {
             ImageItemDataPtr imageData = loadImageData(*entry);
-            _lruCache.put (entry, imageData);
+            _lruCache.put (entry->uniqueId, imageData);
             return imageData;
         }
     }
@@ -85,7 +137,7 @@ public:
     void asyncPreload (ImageItem* entry) {}
 
 private:
-    lru_cache<const ImageItem*, ImageItemDataPtr> _lruCache;
+    lru_cache<uint64_t, ImageItemDataPtr> _lruCache;
 };
 
 } // zv
@@ -105,7 +157,10 @@ struct ImageList::Impl
 
 ImageList::ImageList()
 : impl (new Impl())
-{}
+{
+    // Always add the default image.
+    addImage(defaultImageItem());
+}
 
 ImageList::~ImageList() = default;
 
@@ -127,18 +182,37 @@ int ImageList::selectedIndex () const
 void ImageList::selectImage (int index)
 {
     if (index >= impl->entries.size())
+    {
         return;
+    }
 
     if (index < 0)
+    {
+        impl->selectedIndex = 0;
         return;
+    }
 
     impl->selectedIndex = index;
 }
 
 // Takes ownership.
-void ImageList::appendImage (std::unique_ptr<ImageItem> image)
+void ImageList::addImage (std::unique_ptr<ImageItem> image)
 {
-    impl->entries.push_back (std::move(image));
+    if (impl->entries.size() == 1 && impl->entries[0]->sourceImagePath == "<<default>>")
+    {
+        removeImage (0);
+    }
+
+    // FIXME: using a vector with front insertion is not great. Could use a list for once, I guess.
+    impl->entries.insert (impl->entries.begin(), std::move(image));
+}
+
+void ImageList::removeImage (int index)
+{
+    // Make sure that we remove it from the cache so we don't accidentally load the wrong data.
+    const ImageItem* item = impl->entries[index].get();
+    impl->cache.removeItem (item);
+    impl->entries.erase (impl->entries.begin() + index);
 }
 
 ImageItemDataPtr ImageList::getData (const ImageItem* entry)

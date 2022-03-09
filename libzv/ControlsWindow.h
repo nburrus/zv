@@ -42,6 +42,7 @@ public:
     void setEnabled (bool enabled);
     bool isEnabled () const;    
     void bringToFront ();
+    void openImage ();
     
 private:
     struct Impl;

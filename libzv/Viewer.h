@@ -23,6 +23,7 @@ struct ViewerState
     bool helpRequested = false;
     bool controlsRequested = false;
     bool dismissRequested = false;
+    bool openImageRequested = false;
 };
 
 class Viewer
@@ -52,6 +53,7 @@ protected:
     void onHelpRequested ();
     void onControlsRequested ();
     void onImageWindowGeometryUpdated (const Rect& geometry);
+    void onOpenImage ();
 
     ImageWindow* imageWindow();
     ControlsWindow* controlsWindow();

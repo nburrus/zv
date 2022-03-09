@@ -27,10 +27,11 @@ struct ImageItem
 
     const std::string& prettyName() { return sourceImagePath; }
     
+    int64_t uniqueId = -1;
     std::string errorString;
     std::string sourceImagePath; // also used for the pretty name of other sources.
     std::shared_ptr<ImageSRGBA> sourceData;
-    std::function<ImageSRGBA(void)> callback;    
+    std::function<ImageSRGBAPtr(void)> loadDataCallback;    
 
     // Could add thumbnail, etc.
     // Everything should be lazy though.
@@ -67,7 +68,8 @@ public:
     const ImageItemPtr& imageItemFromIndex (int index);
 
     // Takes ownership.
-    void appendImage (std::unique_ptr<ImageItem> image);
+    void addImage (std::unique_ptr<ImageItem> image);
+    void removeImage (int index);
 
     // Important to call this with a GL context set as it may release some GL textures.
     ImageItemDataPtr getData (const ImageItem* entry);

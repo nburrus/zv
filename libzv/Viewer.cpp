@@ -59,12 +59,13 @@ struct Viewer::Impl
             helpWindow.renderFrame();
         }
         
-        if (state.controlsRequested)
+        if (state.controlsRequested || state.openImageRequested)
         {
             if (!controlsWindow.isInitialized())
             {
                 // Need to share the GL context for the cursor overlay.
                 controlsWindow.initialize (mainContextWindow(), &that);
+                controlsWindow.repositionAfterNextRendering (imageWindow.geometry(), true);
             }
 
             if (!controlsWindow.isEnabled())
@@ -82,7 +83,14 @@ struct Viewer::Impl
         imageWindow.renderFrame();
 
         if (controlsWindow.isEnabled())
+        {
+            if (state.openImageRequested)
+            {
+                controlsWindow.openImage ();
+                state.openImageRequested = false;
+            }
             controlsWindow.renderFrame();
+        }
     }
 };
 
@@ -165,6 +173,11 @@ void Viewer::shutdown ()
     glfwTerminate();
 }
 
+void Viewer::onOpenImage ()
+{
+    impl->state.openImageRequested = true;
+}
+
 void Viewer::onDismissRequested ()
 {
     impl->state.dismissRequested = true;
@@ -202,7 +215,7 @@ ImageList& Viewer::imageList()
 
 void Viewer::addImageFromFile (const std::string& imagePath)
 {
-    impl->imageList.appendImage (imageItemFromPath(imagePath));
+    impl->imageList.addImage (imageItemFromPath(imagePath));
 }
 
 void Viewer::addPastedImage ()

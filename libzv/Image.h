@@ -361,6 +361,7 @@ namespace zv
     
     // Strong types to avoid confusion.
     using ImageSRGBA = Image<PixelSRGBA>;
+    using ImageSRGBAPtr = std::shared_ptr<ImageSRGBA>;
     using ImageLinearRGB = Image<PixelLinearRGB>;
     using ImageXYZ = Image<PixelXYZ>;
     using ImageLMS = Image<PixelLMS>;

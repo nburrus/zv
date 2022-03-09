@@ -200,14 +200,16 @@ void ImageWindow::Impl::adjustForNewSelection (const ImageItemPtr& imageItem)
         {
             this->currentImages[i].item = imageList.imageItemFromIndex(firstIndex + i);
             this->currentImages[i].data = imageList.getData(this->currentImages[i].item.get());
-            
-            auto& textureData = this->currentImages[i].data->textureData;
-            if (!textureData)
+            if (this->currentImages[i].data->cpuData->hasData())
             {
-                textureData = std::make_unique<GLTexture>();
-                textureData->initialize();
-                // FIXME: not using the cache yet! GPU data releasing can be tricky.
-                textureData->upload(*this->currentImages[i].data->cpuData);
+                auto &textureData = this->currentImages[i].data->textureData;
+                if (!textureData)
+                {
+                    textureData = std::make_unique<GLTexture>();
+                    textureData->initialize();
+                    // FIXME: not using the cache yet! GPU data releasing can be tricky.
+                    textureData->upload(*this->currentImages[i].data->cpuData);
+                }
             }
         }
         else
@@ -229,8 +231,11 @@ void ImageWindow::Impl::adjustForNewSelection (const ImageItemPtr& imageItem)
     }
 
     const auto& firstRect = this->currentLayout.imageRects[0];
-    this->imageWidgetRect.normal.size.x = firstIm.width() / firstRect.size.x + (this->currentLayout.config.numCols - 1)*gridPadding;
-    this->imageWidgetRect.normal.size.y = firstIm.height() / firstRect.size.y + (this->currentLayout.config.numRows - 1)*gridPadding;
+    // Handle the case there the cpuImage is empty (e.g. failed to load the file).
+    int firstImWidth = firstIm.width() > 0 ? firstIm.width() : 256;
+    int firstImHeight = firstIm.height() > 0 ? firstIm.height() : 256;
+    this->imageWidgetRect.normal.size.x = firstImWidth / firstRect.size.x + (this->currentLayout.config.numCols - 1) * gridPadding;
+    this->imageWidgetRect.normal.size.y = firstImHeight / firstRect.size.y + (this->currentLayout.config.numRows - 1) * gridPadding;
     
     // Keep the current geometry if it was already set before.
     if (!this->imageWidgetRect.current.origin.isValid())
@@ -367,7 +372,7 @@ void ImageWindow::checkImguiGlobalImageKeyEvents ()
     for (const auto code : {
             GLFW_KEY_1, GLFW_KEY_2, GLFW_KEY_3, GLFW_KEY_4, 
             GLFW_KEY_UP, GLFW_KEY_DOWN, GLFW_KEY_LEFT, GLFW_KEY_RIGHT,
-            GLFW_KEY_S, GLFW_KEY_W, GLFW_KEY_N, GLFW_KEY_A,
+            GLFW_KEY_O, GLFW_KEY_S, GLFW_KEY_W, GLFW_KEY_N, GLFW_KEY_A,
             GLFW_KEY_SPACE, GLFW_KEY_BACKSPACE
         })
     {
@@ -405,9 +410,20 @@ void ImageWindow::processKeyEvent (int keycode)
 
         case GLFW_KEY_S:
         {
+            // No image saving for now.
+            // if (io.KeyCtrl)
+            // {
+            //     saveCurrentImage();
+            // }
+            break;
+        }
+
+        case GLFW_KEY_O:
+        {
+            // No image saving for now.
             if (io.KeyCtrl)
             {
-                saveCurrentImage();
+                impl->viewer->onOpenImage();
             }
             break;
         }
@@ -633,7 +649,7 @@ void ImageWindow::renderFrame ()
     
     if (impl->mutableState.layoutConfig != impl->currentLayout.config
         || impl->currentImages.empty()
-        || impl->currentImages[0].item != imageItem)
+        || impl->currentImages[0].item->uniqueId != imageItem->uniqueId)
     {
         impl->adjustForNewSelection (imageItem);
     }
@@ -757,19 +773,30 @@ void ImageWindow::renderFrame ()
             if (!impl->currentImages[idx].data)
                 continue;
             
-            renderImageItem(impl->currentImages[idx],
-                            widgetGeometries[idx].topLeft,
-                            widgetGeometries[idx].size,
-                            impl->zoom,
-                            imageHasNonMultipleSize,
-                            &impl->cursorOverlayInfo);
+            if (!impl->currentImages[idx].data->cpuData->hasData())
+            {
+                ImGui::SetCursorScreenPos (widgetGeometries[idx].topLeft);
+                ImGui::TextColored (ImVec4(1,0,0,1), "ERROR: could not load the image.\nPath: %s", impl->currentImages[idx].item->prettyName().c_str());
+            }
+            else
+            {
+                renderImageItem(impl->currentImages[idx],
+                                widgetGeometries[idx].topLeft,
+                                widgetGeometries[idx].size,
+                                impl->zoom,
+                                imageHasNonMultipleSize,
+                                &impl->cursorOverlayInfo);
+            }
         }
 
         if (impl->cursorOverlayInfo.valid())
         {            
             for (int idx = 0; idx < impl->currentImages.size(); ++idx)
             {
-                if (impl->cursorOverlayInfo.itemAndData.item == impl->currentImages[idx].item)
+                if (!impl->currentImages[idx].data)
+                    continue;
+
+                if (impl->cursorOverlayInfo.itemAndData.item->uniqueId == impl->currentImages[idx].item->uniqueId)
                     continue;
                 
                 ImVec2 deltaFromTopLeft = impl->cursorOverlayInfo.mousePos - impl->cursorOverlayInfo.imageWidgetTopLeft;
@@ -791,8 +818,8 @@ void ImageWindow::renderFrame ()
                     const auto& im = *impl->currentImages[idx].data->cpuData;
                     const ImVec2 imSize (im.width(), im.height());
                     ImVec2 mousePosInImage = impl->cursorOverlayInfo.mousePosInTexture * imSize;
-                    const int cInImage = int(mousePosInImage.x + 0.5f);
-                    const int rInImage = int(mousePosInImage.y + 0.5f);
+                    const int cInImage = int(mousePosInImage.x);
+                    const int rInImage = int(mousePosInImage.y);
 
                     PixelSRGBA sRgba = im(cInImage, rInImage);
                     const auto hsv = zv::convertToHSV(sRgba);
@@ -845,7 +872,7 @@ void ImageWindow::renderFrame ()
     ImGui::End();
     ImGui::PopStyleVar();
     ImGui::PopStyleColor();
-    
+
     impl->imguiGlfwWindow.endFrame ();
     
     if (impl->updateAfterContentSwitch.inProgress)
