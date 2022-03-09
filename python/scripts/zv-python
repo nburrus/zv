@@ -1,0 +1,9 @@
+#!/usr/bin/env python3
+ 
+from zv import Viewer
+
+viewer = Viewer()
+viewer.initialize()
+
+while not viewer.exitRequested():
+    viewer.renderFrame(1.0 / 30.0)

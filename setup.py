@@ -131,6 +131,7 @@ setup(
     cmdclass={"build_ext": CMakeBuild},
     package_dir = {'': 'python'},
     packages=['zv'],
+    scripts=['python/scripts/zv-logserver', 'python/scripts/zv-python'],
     zip_safe=False,
     extras_require={"test": ["pytest>=6.0"]},
     python_requires=">=3.7",
