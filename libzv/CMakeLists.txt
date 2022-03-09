@@ -20,6 +20,8 @@ set (zv_deps_sources
     ${DEPS_DIR}/gl3w/GL/gl3w.c
     ${DEPS_DIR}/gl3w/GL/gl3w.h
     ${DEPS_DIR}/stb/stb_impl.cpp
+
+    ${DEPS_DIR}/ImGuiFileDialog/ImGuiFileDialog.cpp
 )
 
 if (APPLE)
@@ -34,7 +36,6 @@ elseif (UNIX)
         # Don't want to rely on gtk on Linux, it would break the standalone binary approach.
         # Instead use 
         # ${DEPS_DIR}/nativefiledialog-extended/src/nfd_gtk.cpp
-        ${DEPS_DIR}/ImGuiFileDialog/ImGuiFileDialog.cpp
     )
 
 elseif (WIN32)
@@ -45,7 +46,7 @@ elseif (WIN32)
     )
 endif()
 
-add_library(zv 
+add_library(zv
     ColorConversion.cpp
     ColorConversion.h
     ControlsWindow.cpp

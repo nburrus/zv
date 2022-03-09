@@ -651,6 +651,9 @@ void ImageWindow::renderFrame ()
     {
         for (int idx = 0; idx < impl->currentImages.size(); ++idx)
         {
+            if (!impl->currentImages[idx].data)
+                continue;
+            
             const ImageItemPtr& item = imageList.imageItemFromIndex (imageList.selectedIndex() + idx);
             if (impl->currentImages[idx].item->uniqueId != item->uniqueId)
             {
