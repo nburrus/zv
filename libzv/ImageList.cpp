@@ -206,15 +206,31 @@ void ImageList::selectImage (int index)
 }
 
 // Takes ownership.
-void ImageList::addImage (std::unique_ptr<ImageItem> image)
+void ImageList::addImage (std::unique_ptr<ImageItem> image, bool replaceExisting)
 {
     if (impl->entries.size() == 1 && impl->entries[0]->sourceImagePath == "<<default>>")
     {
         removeImage (0);
     }
 
+    int insertPosition = 0;
+
+    if (replaceExisting)
+    {
+        auto existing_element = std::find_if(impl->entries.begin(), impl->entries.end(), [&](const ImageItemPtr& e) {
+            return e->sourceImagePath == image->sourceImagePath;
+        });
+    
+        if (existing_element != impl->entries.end())
+        {
+            const int position = existing_element - impl->entries.begin();
+            removeImage (position);
+            insertPosition = position;
+        }
+    }
+
     // FIXME: using a vector with front insertion is not great. Could use a list for once, I guess.
-    impl->entries.insert (impl->entries.begin(), std::move(image));
+    impl->entries.insert (impl->entries.begin() + insertPosition, std::move(image));
 }
 
 void ImageList::removeImage (int index)

@@ -69,7 +69,7 @@ public:
     const ImageItemPtr& imageItemFromIndex (int index);
 
     // Takes ownership.
-    void addImage (std::unique_ptr<ImageItem> image);
+    void addImage (std::unique_ptr<ImageItem> image, bool replaceExisting = false);
     void removeImage (int index);
 
     // Important to call this with a GL context set as it may release some GL textures.

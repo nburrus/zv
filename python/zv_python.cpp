@@ -29,9 +29,9 @@ PYBIND11_MODULE(_zv, m) {
         .def("exitRequested", &Viewer::exitRequested)
         .def("renderFrame", &Viewer::renderFrame)
         .def("addImageFromFile", &Viewer::addImageFromFile)
-        .def("addImage", [](Viewer& viewer, const std::string& name, py::buffer b) {
+        .def("addImage", [](Viewer& viewer, const std::string& name, py::buffer buffer, bool replace) {
             /* Request a buffer descriptor from Python */
-            py::buffer_info info = b.request();
+            py::buffer_info info = buffer.request();
 
             /* Some sanity checks ... */
             if (info.format != py::format_descriptor<uint8_t>::format())
@@ -52,8 +52,8 @@ PYBIND11_MODULE(_zv, m) {
             // int otherHeight,
             // int otherBytesPerRow,
             ImageSRGBA image ((uint8_t*)info.ptr, numCols, numRows, info.strides[0], ImageSRGBA::noopReleaseFunc());
-            viewer.addImageData (image, name);
-        });
+            viewer.addImageData (image, name, replace);
+        }, py::arg("name"), py::arg("buffer"), py::arg("replace") = false);
 
 // PYTHON_VERSION_INFO comes from setup.py
 #ifdef PYTHON_VERSION_INFO
