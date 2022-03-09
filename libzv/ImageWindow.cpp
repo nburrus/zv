@@ -815,6 +815,9 @@ void ImageWindow::renderFrame ()
 
                 for (int idx = 0; idx < impl->currentImages.size(); ++idx)
                 {
+                    if (!impl->currentImages[idx].data)
+                        continue;
+                    
                     const auto& im = *impl->currentImages[idx].data->cpuData;
                     const ImVec2 imSize (im.width(), im.height());
                     ImVec2 mousePosInImage = impl->cursorOverlayInfo.mousePosInTexture * imSize;

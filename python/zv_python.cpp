@@ -26,7 +26,34 @@ PYBIND11_MODULE(_zv, m) {
     py::class_<Viewer>(m, "Viewer")
         .def(py::init<>())
         .def("initialize", &Viewer::initialize)
-        .def("renderFrame", &Viewer::renderFrame);
+        .def("exitRequested", &Viewer::exitRequested)
+        .def("renderFrame", &Viewer::renderFrame)
+        .def("addImageFromFile", &Viewer::addImageFromFile)
+        .def("addImage", [](Viewer& viewer, const std::string& name, py::buffer b) {
+            /* Request a buffer descriptor from Python */
+            py::buffer_info info = b.request();
+
+            /* Some sanity checks ... */
+            if (info.format != py::format_descriptor<uint8_t>::format())
+                throw std::runtime_error("Incompatible format: expected a uint8 array!");
+
+            if (info.ndim != 3)
+                throw std::runtime_error("Incompatible buffer dimension!");
+
+            const int numRows = info.shape[0];
+            const int numCols = info.shape[1];
+            const int numChannels = info.shape[2];
+
+            if (numChannels != 4)
+                throw std::runtime_error("Channel size must be 4 for sRGBA");
+
+            // uint8_t* otherData,
+            // int otherWidth,
+            // int otherHeight,
+            // int otherBytesPerRow,
+            ImageSRGBA image ((uint8_t*)info.ptr, numCols, numRows, info.strides[0], ImageSRGBA::noopReleaseFunc());
+            viewer.addImageData (image, name);
+        });
 
 // PYTHON_VERSION_INFO comes from setup.py
 #ifdef PYTHON_VERSION_INFO

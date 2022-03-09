@@ -23,6 +23,16 @@ struct UniqueId
     }
 };
 
+std::unique_ptr<ImageItem> imageItemFromData (const ImageSRGBA& im, const std::string& name)
+{
+    auto entry = std::make_unique<ImageItem>();
+    entry->uniqueId = UniqueId::newId();
+    entry->source = ImageItem::Source::Data;
+    entry->sourceData = std::make_shared<ImageSRGBA>(im);
+    entry->sourceImagePath = name;
+    return entry;
+}
+
 std::unique_ptr<ImageItem> imageItemFromPath (const std::string& imagePath)
 {
     auto entry = std::make_unique<ImageItem>();

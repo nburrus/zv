@@ -1,4 +1,2 @@
-import _zv
+from _zv import Viewer
 
-def zvadd (a, b):
-    return _zv.add (a,b)

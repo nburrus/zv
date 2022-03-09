@@ -39,6 +39,7 @@ struct ImageItem
 using ImageItemPtr = std::shared_ptr<ImageItem>;
 
 std::unique_ptr<ImageItem> imageItemFromPath (const std::string& imagePath);
+std::unique_ptr<ImageItem> imageItemFromData (const ImageSRGBA& im, const std::string& name);
 
 struct ImageItemData
 {

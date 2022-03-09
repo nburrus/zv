@@ -223,6 +223,11 @@ void Viewer::addImageFromFile (const std::string& imagePath)
     impl->imageList.addImage (imageItemFromPath(imagePath));
 }
 
+void Viewer::addImageData (const ImageSRGBA& image, const std::string& imageName)
+{
+    impl->imageList.addImage (imageItemFromData (image, imageName));
+}
+
 void Viewer::addPastedImage ()
 {
     // Keep that old code around for now.
