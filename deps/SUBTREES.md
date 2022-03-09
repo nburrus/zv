@@ -19,3 +19,6 @@ Tweaked to add an install target.
 
 # CppUserPrefs
 git subtree add --prefix deps/cppuserprefs git@github.com:nburrus/cppuserprefs.git main --squash
+
+# pybind11
+git subtree add --prefix deps/pybind11 git@github.com:pybind/pybind11.git stable --squash
