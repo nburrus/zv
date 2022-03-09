@@ -98,6 +98,108 @@ namespace zv
         return outImg;
     }
 
+    ImageSRGBA srgbaFromSrgb (uint8_t* rgb_buffer, int w, int h, int bytesPerRow)
+    {
+        ImageSRGBA outImg(w, h);
+        for (int r = 0; r < h; ++r)
+        {
+            const uint8_t* inRowPtr = rgb_buffer + r*bytesPerRow;
+            auto* outPtr = outImg.atRowPtr(r);
+            for (int c = 0; c < w; ++c)
+            {
+                PixelSRGBA p;
+                p.r = inRowPtr[c*3 + 0];
+                p.g = inRowPtr[c*3 + 1];
+                p.b = inRowPtr[c*3 + 2];
+                p.a = 255;
+                outPtr[c] = p;
+            }
+        }
+        return outImg;
+    }
+
+    ImageSRGBA srgbaFromGray (uint8_t* rgb_buffer, int w, int h, int bytesPerRow)
+    {
+        ImageSRGBA outImg(w, h);
+        for (int r = 0; r < h; ++r)
+        {
+            const uint8_t* inRowPtr = rgb_buffer + r*bytesPerRow;
+            auto* outPtr = outImg.atRowPtr(r);
+            for (int c = 0; c < w; ++c)
+            {
+                PixelSRGBA p;
+                uint8_t v = inRowPtr[c + 0];
+                p.r = v;
+                p.g = v;
+                p.b = v;
+                p.a = 255;
+                outPtr[c] = p;
+            }
+        }
+        return outImg;
+    }
+
+    ImageSRGBA srgbaFromFloatGray (uint8_t* rgb_buffer, int w, int h, int bytesPerRow)
+    {
+        ImageSRGBA outImg(w, h);
+        for (int r = 0; r < h; ++r)
+        {
+            const float* inRowPtr = (float*)(rgb_buffer + r*bytesPerRow);
+            auto* outPtr = outImg.atRowPtr(r);
+            for (int c = 0; c < w; ++c)
+            {
+                PixelSRGBA p;
+                uint8_t v = inRowPtr[c + 0] * 255.99f;
+                p.r = v;
+                p.g = v;
+                p.b = v;
+                p.a = 255;
+                outPtr[c] = p;
+            }
+        }
+        return outImg;
+    }
+    
+    ImageSRGBA srgbaFromFloatSrgb (uint8_t* srgb_buffer, int w, int h, int bytesPerRow)
+    {
+        ImageSRGBA outImg(w, h);
+        for (int r = 0; r < h; ++r)
+        {
+            const float* inRowPtr = (float*) (srgb_buffer + r*bytesPerRow);
+            auto* outPtr = outImg.atRowPtr(r);
+            for (int c = 0; c < w; ++c)
+            {
+                PixelSRGBA p;
+                p.r = int(255.99f * inRowPtr[c*3 + 0]);
+                p.g = int(255.99f * inRowPtr[c*3 + 1]);
+                p.b = int(255.99f * inRowPtr[c*3 + 2]);
+                p.a = 255;
+                outPtr[c] = p;
+            }
+        }
+        return outImg;
+    }
+
+    ImageSRGBA srgbaFromFloatSrgba (uint8_t* srgba_buffer, int w, int h, int bytesPerRow)
+    {
+        ImageSRGBA outImg(w, h);
+        for (int r = 0; r < h; ++r)
+        {
+            const float* inRowPtr = (float*) (srgba_buffer + r*bytesPerRow);
+            auto* outPtr = outImg.atRowPtr(r);
+            for (int c = 0; c < w; ++c)
+            {
+                PixelSRGBA p;
+                p.r = int(255.99f * inRowPtr[c*4 + 0]);
+                p.g = int(255.99f * inRowPtr[c*4 + 1]);
+                p.b = int(255.99f * inRowPtr[c*4 + 2]);
+                p.a = int(255.99f * inRowPtr[c*4 + 3]);
+                outPtr[c] = p;
+            }
+        }
+        return outImg;
+    }
+
     // Convert rgb floats ([0-255],[0-255],[0-255])
     // to hsv floats ([0-1],[0-1],[0-255]), from Foley & van Dam p592
     // Optimized http://lolengine.net/blog/2013/01/13/fast-rgb-to-hsv

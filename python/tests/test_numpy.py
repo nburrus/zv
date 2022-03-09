@@ -15,10 +15,13 @@ blue_im = np.zeros((256,256,4), dtype=np.uint8)
 blue_im[:,:,3] = 255
 viewer.addImage ("All Black", blue_im)
 
-red_im = np.zeros((256,256,4), dtype=np.uint8)
-red_im[:,:,0] = 255
-red_im[:,:,3] = 255
+red_im = np.zeros((256,256,3), dtype=np.float32)
+red_im[:,:,0] = 1.0
 viewer.addImage ("Red im", red_im)
+
+gray_im = np.zeros((256,256), dtype=np.uint8)
+gray_im[:,:] = 200
+viewer.addImage ("Gray im", gray_im)
 
 i = 0
 while not viewer.exitRequested():

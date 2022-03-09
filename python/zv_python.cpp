@@ -1,4 +1,5 @@
 #include <libzv/Viewer.h>
+#include <libzv/ColorConversion.h>
 
 #include <pybind11/pybind11.h>
 
@@ -33,25 +34,76 @@ PYBIND11_MODULE(_zv, m) {
             /* Request a buffer descriptor from Python */
             py::buffer_info info = buffer.request();
 
-            /* Some sanity checks ... */
-            if (info.format != py::format_descriptor<uint8_t>::format())
-                throw std::runtime_error("Incompatible format: expected a uint8 array!");
+            ImageSRGBA image;
 
-            if (info.ndim != 3)
-                throw std::runtime_error("Incompatible buffer dimension!");
+            if (info.ndim != 2 && info.ndim != 3)
+                throw std::runtime_error("Image dimension must be 2 (grayscale) or 3 (color)");
 
             const int numRows = info.shape[0];
             const int numCols = info.shape[1];
-            const int numChannels = info.shape[2];
 
-            if (numChannels != 4)
-                throw std::runtime_error("Channel size must be 4 for sRGBA");
+            switch (info.ndim)
+            {
+                case 2: 
+                {
+                    if (info.format == py::format_descriptor<uint8_t>::format())
+                    {
+                        image = srgbaFromGray ((uint8_t*)info.ptr, numCols, numRows, info.strides[0]);
+                    }
+                    else if (info.format == py::format_descriptor<float>::format())
+                    {
+                        image = srgbaFromFloatGray ((uint8_t*)info.ptr, numCols, numRows, info.strides[0]);
+                    }
+                    else
+                    {
+                        throw std::runtime_error("Grayscale images must have np.uint8 or np.float32 dtype.");
+                    }
+                    break;
+                }
 
-            // uint8_t* otherData,
-            // int otherWidth,
-            // int otherHeight,
-            // int otherBytesPerRow,
-            ImageSRGBA image ((uint8_t*)info.ptr, numCols, numRows, info.strides[0], ImageSRGBA::noopReleaseFunc());
+                case 3: {
+                    const int numChannels = info.shape[2];
+                    if (numChannels != 3 && numChannels != 4)
+                        throw std::runtime_error("Channel size must be 3 (RGB) or 4 (RGBA)");
+
+                    switch (numChannels)
+                    {
+                        case 3: {
+                            if (info.format == py::format_descriptor<uint8_t>::format())
+                            {
+                                image = srgbaFromSrgb ((uint8_t*)info.ptr, numCols, numRows, info.strides[0]);
+                            }
+                            else if (info.format == py::format_descriptor<float>::format())
+                            {
+                                image = srgbaFromFloatSrgb ((uint8_t*)info.ptr, numCols, numRows, info.strides[0]);
+                            }
+                            else
+                            {
+                                throw std::runtime_error("Color images must have np.uint8 or np.float32 dtype.");
+                            }
+                            break;
+                        }
+
+                        case 4: {
+                            if (info.format == py::format_descriptor<uint8_t>::format())
+                            {
+                                image = ImageSRGBA((uint8_t*)info.ptr, numCols, numRows, info.strides[0], ImageSRGBA::noopReleaseFunc());
+                            }
+                            else if (info.format == py::format_descriptor<float>::format())
+                            {
+                                image = srgbaFromFloatSrgba ((uint8_t*)info.ptr, numCols, numRows, info.strides[0]);
+                            }
+                            else
+                            {
+                                throw std::runtime_error("Color images must have np.uint8 or np.float32 dtype.");
+                            }
+                            break;
+                        }
+                    }
+                    break;
+                }
+            }
+
             viewer.addImageData (image, name, position, replace);
         }, py::arg("name"), py::arg("buffer"), py::arg("position") = -1, py::arg("replace") = false);
 

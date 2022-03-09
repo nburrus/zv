@@ -49,6 +49,13 @@ namespace zv
     PixelLab convertToLab(const PixelSRGBA& p);
     PixelSRGBA convertToSRGBA(const PixelLab& p);
 
+    ImageSRGBA srgbaFromSrgb (uint8_t* rgb_buffer, int width, int height, int bytesPerRow);
+    ImageSRGBA srgbaFromGray (uint8_t* rgb_buffer, int width, int height, int bytesPerRow);
+    
+    ImageSRGBA srgbaFromFloatSrgb (uint8_t* srgba_buffer, int width, int height, int bytesPerRow);
+    ImageSRGBA srgbaFromFloatSrgba (uint8_t* srgba_buffer, int width, int height, int bytesPerRow);
+    ImageSRGBA srgbaFromFloatGray (uint8_t* rgb_buffer, int width, int height, int bytesPerRow);
+
     struct ColorEntry
     {
         const char* className;
