@@ -160,7 +160,7 @@ struct ImageWindow::Impl
                                       imageWidgetRect.current.size.y + windowBorderSize * 2);
     }
 
-    void adjustForNewSelection (const ImageItemPtr& imageItem);
+    void adjustForNewSelection ();
 
     void adjustAspectRatio ()
     {
@@ -178,7 +178,7 @@ struct ImageWindow::Impl
     }
 };
 
-void ImageWindow::Impl::adjustForNewSelection (const ImageItemPtr& imageItem)
+void ImageWindow::Impl::adjustForNewSelection ()
 {
     GLFWmonitor* monitor = glfwGetPrimaryMonitor();
     const GLFWvidmode* mode = glfwGetVideoMode(monitor);
@@ -644,14 +644,25 @@ void renderImageItem (const ImageItemAndData& item,
 void ImageWindow::renderFrame ()
 {    
     ImageList& imageList = impl->viewer->imageList();
-    
-    const ImageItemPtr& imageItem = imageList.imageItemFromIndex (imageList.selectedIndex());
-    
-    if (impl->mutableState.layoutConfig != impl->currentLayout.config
-        || impl->currentImages.empty()
-        || impl->currentImages[0].item->uniqueId != imageItem->uniqueId)
+       
+    bool contentChanged = (impl->mutableState.layoutConfig != impl->currentLayout.config);
+    contentChanged |= impl->currentImages.empty();
+    if (!contentChanged)
     {
-        impl->adjustForNewSelection (imageItem);
+        for (int idx = 0; idx < impl->currentImages.size(); ++idx)
+        {
+            const ImageItemPtr& item = imageList.imageItemFromIndex (imageList.selectedIndex() + idx);
+            if (impl->currentImages[idx].item->uniqueId != item->uniqueId)
+            {
+                contentChanged = true;
+                break;
+            }
+        }
+    }
+
+    if (contentChanged)
+    {
+        impl->adjustForNewSelection ();
     }
 
     if (impl->updateAfterContentSwitch.needToResize)

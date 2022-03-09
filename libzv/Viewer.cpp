@@ -220,12 +220,12 @@ ImageList& Viewer::imageList()
 
 void Viewer::addImageFromFile (const std::string& imagePath)
 {
-    impl->imageList.addImage (imageItemFromPath(imagePath));
+    impl->imageList.addImage (imageItemFromPath(imagePath), -1, true);
 }
 
-void Viewer::addImageData (const ImageSRGBA& image, const std::string& imageName, bool replaceExisting)
+void Viewer::addImageData (const ImageSRGBA& image, const std::string& imageName, int insertPos, bool replaceExisting)
 {    
-    impl->imageList.addImage (imageItemFromData (image, imageName), replaceExisting);
+    impl->imageList.addImage (imageItemFromData (image, imageName), insertPos, replaceExisting);
 }
 
 void Viewer::addPastedImage ()

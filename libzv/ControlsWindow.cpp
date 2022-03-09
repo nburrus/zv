@@ -300,9 +300,9 @@ void ControlsWindow::renderFrame ()
                 // map<FileName, FilePathName>
                 std::map<std::string, std::string> files = ImGuiFileDialog::Instance()->GetSelection();
                 // Add image will keep adding to the top, so process them in the reverse order.
-                for (auto it = files.rbegin(); it != files.rend(); ++it)
+                for (const auto& it  : files)
                 {
-                    impl->viewer->imageList().addImage(imageItemFromPath (it->second));
+                    impl->viewer->imageList().addImage(imageItemFromPath (it.second), -1 /* end */, false /* replace */);
                 }
                 impl->viewer->imageList().selectImage (impl->viewer->imageList().numImages() - 1);
             }

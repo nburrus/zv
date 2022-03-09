@@ -45,7 +45,7 @@ public:
 
 public:
     void addImageFromFile (const std::string& imagePath);
-    void addImageData (const ImageSRGBA& image, const std::string& imageName, bool replaceExisting = false);
+    void addImageData (const ImageSRGBA& image, const std::string& imageName, int insertPos = -1, bool replaceExisting = false);
     void addPastedImage ();
         
 protected:

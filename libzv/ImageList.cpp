@@ -169,7 +169,7 @@ ImageList::ImageList()
 : impl (new Impl())
 {
     // Always add the default image.
-    addImage(defaultImageItem());
+    addImage(defaultImageItem(), 0, false);
 }
 
 ImageList::~ImageList() = default;
@@ -206,14 +206,15 @@ void ImageList::selectImage (int index)
 }
 
 // Takes ownership.
-void ImageList::addImage (std::unique_ptr<ImageItem> image, bool replaceExisting)
+void ImageList::addImage (std::unique_ptr<ImageItem> image, int insertPosition, bool replaceExisting)
 {
     if (impl->entries.size() == 1 && impl->entries[0]->sourceImagePath == "<<default>>")
     {
         removeImage (0);
     }
 
-    int insertPosition = 0;
+    if (insertPosition < 0)
+        insertPosition = numImages();
 
     if (replaceExisting)
     {
