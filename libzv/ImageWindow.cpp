@@ -820,7 +820,8 @@ void ImageWindow::renderFrame ()
                 ImGui::GetForegroundDrawList()->AddCircle(widgetGeometries[idx].topLeft + deltaFromTopLeft, 3.0, IM_COL32(0,0,0,180), 0, 1.f);
             }
 
-            const bool showStatusBar = ImGui::IsMouseDown(ImGuiMouseButton_Left) && !io.KeyCtrl;
+            const bool showStatusBar = (impl->mutableState.inputState.shiftIsPressed || controlsWindowState.shiftIsPressed);            
+            // ImGui::IsMouseDown(ImGuiMouseButton_Left) && !io.KeyCtrl;
             if (showStatusBar)
             {
                 impl->imguiGlfwWindow.PushMonoSpaceFont(io);
@@ -840,7 +841,8 @@ void ImageWindow::renderFrame ()
 
                     PixelSRGBA sRgba = im(cInImage, rInImage);
                     const auto hsv = zv::convertToHSV(sRgba);
-                    std::string caption = formatted("%4d, %4d (sRGB %3d %3d %3d) (HSV %3d %3d %3d)",
+                    std::string caption = formatted("%s\n%4d, %4d (sRGB %3d %3d %3d) (HSV %3d %3d %3d)",
+                                                    impl->currentImages[idx].item->prettyName().c_str(),
                                                     cInImage, rInImage,
                                                     sRgba.r, sRgba.g, sRgba.b,
                                                     intRnd(hsv.x*360.f), intRnd(hsv.y*100.f), intRnd(hsv.z*100.f/255.f));
@@ -855,7 +857,7 @@ void ImageWindow::renderFrame ()
                         textAreaStart = widgetGeometries[idx].topLeft;
                         textAreaEnd = widgetGeometries[idx].topLeft + widgetGeometries[idx].size;
 
-                        textStart.y += widgetGeometries[idx].size.y - monoFontSize*1.1;
+                        textStart.y += widgetGeometries[idx].size.y - monoFontSize*2.1;
                         textAreaStart.y = textStart.y - monoFontSize*0.1;
                     }
                     else
@@ -865,7 +867,7 @@ void ImageWindow::renderFrame ()
                         textStart.y += monoFontSize*0.15;
                         
                         textAreaStart = widgetGeometries[idx].topLeft;
-                        textAreaEnd = textAreaStart + ImVec2(widgetGeometries[idx].size.x, monoFontSize*1.2);
+                        textAreaEnd = textAreaStart + ImVec2(widgetGeometries[idx].size.x, monoFontSize*2.2);
                     }
                     
                     auto* drawList = ImGui::GetWindowDrawList();
