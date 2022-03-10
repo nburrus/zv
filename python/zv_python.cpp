@@ -2,15 +2,12 @@
 #include <libzv/ColorConversion.h>
 
 #include <pybind11/pybind11.h>
+#include <pybind11/stl.h>
 
 using namespace zv;
 
 #define STRINGIFY(x) #x
 #define MACRO_STRINGIFY(x) STRINGIFY(x)
-
-int add(int i, int j) {
-    return i + j;
-}
 
 namespace py = pybind11;
 
@@ -26,7 +23,11 @@ PYBIND11_MODULE(_zv, m) {
 
     py::class_<Viewer>(m, "Viewer")
         .def(py::init<>())
-        .def("initialize", &Viewer::initialize)
+        
+        .def("initialize", [](Viewer& viewer, const std::vector<std::string>& argv) {
+            return viewer.initialize (argv);
+        }, py::arg("argv") = std::vector<std::string>({"zv"}))
+
         .def("exitRequested", &Viewer::exitRequested)
         .def("renderFrame", &Viewer::renderFrame)
         .def("addImageFromFile", &Viewer::addImageFromFile)

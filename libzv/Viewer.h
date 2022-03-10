@@ -33,7 +33,8 @@ public:
     ~Viewer();
     
     // Call it once, calls glfwInit, etc.
-    bool initialize ();
+    bool initialize (int argc, const char *const argv[]);
+    bool initialize (const std::vector<std::string>& args = {"zv"});
     
     void shutdown ();
     

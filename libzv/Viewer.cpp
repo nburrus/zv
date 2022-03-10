@@ -15,6 +15,8 @@
 #include <libzv/ControlsWindow.h>
 #include <libzv/HelpWindow.h>
 
+#include "GeneratedConfig.h"
+
 #define IMGUI_DEFINE_MATH_OPERATORS 1
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
@@ -23,6 +25,8 @@
 
 #include <GL/gl3w.h>
 #include <GLFW/glfw3.h>
+
+#include <argparse.hpp>
 
 namespace zv
 {
@@ -41,6 +45,8 @@ struct Viewer::Impl
     HelpWindow helpWindow;
 
     ViewerState state;
+
+    std::unique_ptr<argparse::ArgumentParser> argsParser;
     
     void renderFrame ()
     {
@@ -93,6 +99,45 @@ struct Viewer::Impl
             controlsWindow.renderFrame();
         }
     }
+
+    bool parseCommandLine (const std::vector<std::string>& args)
+    {
+        argsParser = std::make_unique<argparse::ArgumentParser>("zv", PROJECT_VERSION);
+        argsParser->add_argument("images")
+            .help("Images to visualize")
+            .remaining();
+
+        try
+        {
+            argsParser->parse_args(args);
+        }
+        catch (const std::runtime_error &err)
+        {
+            std::cerr << "Wrong usage" << std::endl;
+            std::cerr << err.what() << std::endl;
+            std::cerr << *argsParser;
+            return false;
+        }
+
+        return true;
+    }
+
+    void processCommandLine ()
+    {
+        try {
+            auto images = argsParser->get<std::vector<std::string>>("images");
+            zv_dbg("%d images provided", (int)images.size());
+
+            for (const auto &im : images)
+                that.addImageFromFile(im);
+        }
+        catch (const std::exception& err)
+        {
+            zv_dbg ("No images provided, using default.");
+        }
+
+        argsParser.reset ();
+    }
 };
 
 Viewer::Viewer()
@@ -116,9 +161,23 @@ static void glfw_error_callback(int error, const char* description)
     zv_assert (false, "GLFW error %d: %s\n", error, description);
 }
 
-bool Viewer::initialize ()
+bool Viewer::initialize (int argc, const char *const argv[])
+{
+    std::vector<std::string> stl_argv (argc);
+    for (int i = 0; i < argc; ++i)
+    {
+        stl_argv[i] = argv[i];
+    }
+    return initialize (stl_argv);
+}
+
+bool Viewer::initialize (const std::vector<std::string>& args)
 {
     Profiler p ("Viewer::init");
+
+    bool ok = impl->parseCommandLine (args);
+    if (!ok)
+        return false;
 
     // Setup window
     glfwSetErrorCallback(glfw_error_callback);
@@ -149,6 +208,9 @@ bool Viewer::initialize ()
     {
         impl->state.helpRequested = true;
     }
+
+    impl->processCommandLine ();
+
     return true;
 }
 

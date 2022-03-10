@@ -70,6 +70,10 @@
         "thread": "cpp",
         "cinttypes": "cpp",
         "typeinfo": "cpp",
-        "variant": "cpp"
+        "variant": "cpp",
+        "complex": "cpp",
+        "forward_list": "cpp",
+        "typeindex": "cpp",
+        "valarray": "cpp"
     },
 }
