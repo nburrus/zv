@@ -40,10 +40,15 @@ PYBIND11_MODULE(_zv, m) {
             if (info.ndim != 2 && info.ndim != 3)
                 throw std::runtime_error("Image dimension must be 2 (grayscale) or 3 (color)");
 
+            // (H,W,1) is the same as (H,W), treat it as grayscale.
+            int actual_dims = info.ndim;
+            if (info.ndim == 3 && info.shape[2] == 1)
+                actual_dims = 2;
+
             const int numRows = info.shape[0];
             const int numCols = info.shape[1];
 
-            switch (info.ndim)
+            switch (actual_dims)
             {
                 case 2: 
                 {

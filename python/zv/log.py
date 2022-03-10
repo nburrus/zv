@@ -50,9 +50,12 @@ class _ZVLogChild:
         if self._zvViewer is None:
             self._zvViewer = Viewer()
             self._zvViewer.initialize ()
-        self._zvViewer.addImage (name, img, -1, replace=True)
-        # cv2.imshow(name, img)
-        self._num_cv_images += 1
+        try:
+            self._zvViewer.addImage (name, img, -1, replace=True)
+            self._num_cv_images += 1
+        except:
+            print (f"Could not add image with shape {img.shape} and dtype {img.dtype}")
+        # cv2.imshow(name, img)        
 
     def _process_input(self, e):
         kind, data = e
