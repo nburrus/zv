@@ -119,7 +119,7 @@ class ZVLogServer:
                         e = conn.recv()
                         zvlog._send_raw(e)
                 except Exception as e:
-                    print (f"ERROR: got exception {type(e)}, closing the client")
+                    print (f"ERROR: got exception {type(e), str(e)}, closing the client")
                     conn.close()
 
 class ZVLog:
@@ -166,13 +166,13 @@ class ZVLog:
         if self.child:
             self.parent_conn.send((DebuggerElement.StopProcess, None))
 
-    def image(self, img: np.ndarray, name: str = "ZVLog Image"):
+    def image(self, name: str, img: np.ndarray):
         if not self._enabled:
             return
         self._send((DebuggerElement.Image, (img, name)))
 
 
-    def plot(self, fig: mpl.figure.Figure, name: str = "ZVLog Plot"):
+    def plot(self, name: str, fig: mpl.figure.Figure):
         """Show a matplotlib figure
         
         Sample code
@@ -227,7 +227,7 @@ if __name__ == "__main__":
     if args.test_client:
         zvlog.start (('127.0.0.1',7007))
         zvlog.enabled = True
-        zvlog.image(np.random.default_rng().random(size=(256,256,3), dtype=np.float32))
+        zvlog.image("random", np.random.default_rng().random(size=(256,256,3), dtype=np.float32))
         zvlog.waitUntilWindowsAreClosed()
     else:
         server = ZVLogServer()
