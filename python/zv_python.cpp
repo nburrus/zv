@@ -31,13 +31,24 @@ PYBIND11_MODULE(_zv, m) {
 
         .def("numViewers", &App::numViewers)
 
+        // return_value_policy::reference_internal) is required for those,
+        // since the returned objects are still owned by the app.
+
+        // The viewer is only guaranteed to stay alive until the next
+        // call to updateOnce.
         .def("getViewer", [](App& app, const std::string& name) {
-            return app.getViewer (name);
-        }, py::arg("name") = "default")
+                return app.getViewer (name);
+            }, py::arg("name") = "default", 
+            py::return_value_policy::reference_internal)
 
-        .def("createViewer", &App::createViewer)
+        // The viewer is only guaranteed to stay alive until the next
+        // call to updateOnce.
+        .def("createViewer", &App::createViewer, 
+            py::return_value_policy::reference_internal)
 
-        .def("updateOnce", &App::updateOnce);
+        .def("updateOnce", [](App& app, double minDuration) {
+            app.updateOnce(minDuration);
+        }, py::arg("minDuration") = 0.0);
 
     py::class_<Viewer>(m, "Viewer")
         .def("addImageFromFile", &Viewer::addImageFromFile)

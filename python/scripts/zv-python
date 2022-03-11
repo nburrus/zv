@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
  
-from zv import Viewer
+import zv
 import sys
 
-viewer = Viewer()
-viewer.initialize(sys.argv)
+app = zv.App()
+app.initialize(sys.argv)
 
-while not viewer.exitRequested():
-    viewer.renderFrame(1.0 / 30.0)
+while app.numViewers() > 0:
+    app.updateOnce(1.0 / 30.0)
+

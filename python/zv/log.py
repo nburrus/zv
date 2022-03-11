@@ -1,6 +1,6 @@
 from distutils.debug import DEBUG
 from distutils.log import ERROR, INFO
-from zv import Viewer
+import zv
 
 import numpy as np
 
@@ -54,8 +54,7 @@ class _ZVLogChild:
         self._shutdown = False
         self._stop_when_all_windows_closed = False
         self._figures_by_name = dict()
-        self._zv_viewer_per_group = {}
-        self._already_displayed_data = False
+        self._zvApp = None
 
     def _process_image (self, data):
         img, name, group = data
@@ -63,13 +62,14 @@ class _ZVLogChild:
         if img.dtype == np.bool:
             img = img.astype(np.uint8)*255
         
-        if group in self._zv_viewer_per_group:
-            viewer = self._zv_viewer_per_group[group]
-        else:
-            viewer = Viewer()
-            viewer.initialize ()
-            self._zv_viewer_per_group[group] = viewer
-            self._already_displayed_data = True
+        if self._zvApp is None:
+            self._zvApp = zv.App()
+            self._zvApp.initialize ()
+
+        viewer = self._zvApp.getViewer (group)
+        if not viewer:
+            viewer = self._zvApp.createViewer (group)    
+
         try:
             viewer.addImage (name, img, -1, replace=True)
         except:
@@ -101,21 +101,16 @@ class _ZVLogChild:
         del self._figures_by_name[name]
 
     def _shouldStop (self):
-        # not dict returns True if empty
-        if self._already_displayed_data and not self._zv_viewer_per_group and not self._figures_by_name and self._stop_when_all_windows_closed:
+        # not dict returns True if empty        
+        if self._zvApp and self._zvApp.numViewers() == 0 and not self._figures_by_name and self._stop_when_all_windows_closed:
             return True
         return self._shutdown
 
     def run (self):        
         while not self._shouldStop():
             with RateLimit(1./30.0):
-                viewers_to_remove = []
-                for group, viewer in self._zv_viewer_per_group.items():
-                    viewer.renderFrame (0)
-                    if viewer.exitRequested():
-                        viewers_to_remove.append(group)
-                for group in viewers_to_remove:
-                    del self._zv_viewer_per_group[group]
+                if self._zvApp:
+                    self._zvApp.updateOnce ()
 
                 if self._figures_by_name:
                     # This would always bring the window to front, which is not what I want.
@@ -252,8 +247,8 @@ if __name__ == "__main__":
     if args.test_client:
         zvlog.start (('127.0.0.1',7007))
         zvlog.enabled = True
-        zvlog.image("random1", np.random.default_rng().random(size=(256,256,3), dtype=np.float32), group="FirstGroup")
-        zvlog.image("random2", np.random.default_rng().random(size=(256,256,3), dtype=np.float32), group="FirstGroup")
+        zvlog.image("random1", np.random.default_rng().random(size=(256,256,3), dtype=np.float32), group="default")
+        zvlog.image("random2", np.random.default_rng().random(size=(256,256,3), dtype=np.float32), group="default")
 
         zvlog.image("random3", np.random.default_rng().random(size=(256,256,3), dtype=np.float32), group="SecondGroup")
         zvlog.image("random4", np.random.default_rng().random(size=(256,256,3), dtype=np.float32), group="SecondGroup")
