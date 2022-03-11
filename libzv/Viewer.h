@@ -31,20 +31,17 @@ struct ViewerState
 class Viewer
 {
 public:
-    Viewer();
+    Viewer(const std::string& name, int index);
     ~Viewer();
     
-    // Call it once, calls glfwInit, etc.
-    bool initialize (int argc, const char *const argv[]);
-    bool initialize (const std::vector<std::string>& args = {"zv"});
+    // Call it once, creates the context, etc.
+    bool initialize ();
     
     void shutdown ();
     
     bool exitRequested () const;
 
-    // Call this in a loop to process input events and render one frame.
-    // minDelay will avoid a busy loop.
-    void renderFrame (double minDuration = NAN);
+    void renderFrame ();
 
 public:
     void addImageFromFile (const std::string& imagePath);
@@ -62,6 +59,9 @@ protected:
     ImageWindow* imageWindow();
     ControlsWindow* controlsWindow();
     ImageList& imageList();
+
+    int globalIndex () const;
+    const std::string& name() const;
 
     friend class ImageWindow;
     friend class ControlsWindow;

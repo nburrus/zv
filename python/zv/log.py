@@ -63,8 +63,9 @@ class _ZVLogChild:
         if img.dtype == np.bool:
             img = img.astype(np.uint8)*255
         
-        viewer = self._zv_viewer_per_group[group]
-        if viewer is None:
+        if group in self._zv_viewer_per_group:
+            viewer = self._zv_viewer_per_group[group]
+        else:
             viewer = Viewer()
             viewer.initialize ()
             self._zv_viewer_per_group[group] = viewer
@@ -77,13 +78,13 @@ class _ZVLogChild:
 
     def _process_input(self, e):
         kind, data = e
-        if kind == DebuggerElement.StopProcess:
+        if kind == DebuggerElement.StopProcess.value:
             self._shutdown = True
-        elif kind == DebuggerElement.StopWhenAllWindowsClosed:
+        elif kind == DebuggerElement.StopWhenAllWindowsClosed.value:
             self._stop_when_all_windows_closed = True
-        elif kind == DebuggerElement.Image:
+        elif kind == DebuggerElement.Image.value:
             self._process_image (data)
-        elif kind == DebuggerElement.Figure:
+        elif kind == DebuggerElement.Figure.value:
             if matplotlib_supported:
                 fig, name = data
                 if name in self._figures_by_name:
@@ -182,18 +183,18 @@ class ZVLog:
 
     def waitUntilWindowsAreClosed(self):
         if self.child:
-            self.parent_conn.send((DebuggerElement.StopWhenAllWindowsClosed, None))
+            self.parent_conn.send((DebuggerElement.StopWhenAllWindowsClosed.value, None))
             self.child.join()
             self.child = None
 
     def shutdown(self):
         if self.child:
-            self.parent_conn.send((DebuggerElement.StopProcess, None))
+            self.parent_conn.send((DebuggerElement.StopProcess.value, None))
 
     def image(self, name: str, img: np.ndarray, group: str = 'default'):
         if not self._enabled:
             return
-        self._send((DebuggerElement.Image, (img, name, group)))
+        self._send((DebuggerElement.Image.value, (img, name, group)))
 
 
     def plot(self, name: str, fig: mpl.figure.Figure):
@@ -207,7 +208,7 @@ class ZVLog:
         """
         if not self._enabled:
             return
-        self._send((DebuggerElement.Figure, (fig, name)))
+        self._send((DebuggerElement.Figure.value, (fig, name)))
 
     def _send(self, e):
         try:
@@ -251,7 +252,11 @@ if __name__ == "__main__":
     if args.test_client:
         zvlog.start (('127.0.0.1',7007))
         zvlog.enabled = True
-        zvlog.image("random", np.random.default_rng().random(size=(256,256,3), dtype=np.float32))
+        zvlog.image("random1", np.random.default_rng().random(size=(256,256,3), dtype=np.float32), group="FirstGroup")
+        zvlog.image("random2", np.random.default_rng().random(size=(256,256,3), dtype=np.float32), group="FirstGroup")
+
+        zvlog.image("random3", np.random.default_rng().random(size=(256,256,3), dtype=np.float32), group="SecondGroup")
+        zvlog.image("random4", np.random.default_rng().random(size=(256,256,3), dtype=np.float32), group="SecondGroup")
         zvlog.waitUntilWindowsAreClosed()
     else:
         server = ZVLogServer()

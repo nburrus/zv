@@ -26,16 +26,20 @@
 #include <GL/gl3w.h>
 #include <GLFW/glfw3.h>
 
-#include <argparse.hpp>
-
 namespace zv
 {
 
 struct Viewer::Impl
 {
-    Impl (Viewer& that) : that(that) {}
+    Impl (Viewer& that, const std::string& name, int index) 
+        : that(that),
+        name (name),
+        globalIndex (index) 
+    {}
+
     Viewer& that;
-    RateLimit rateLimit;
+    const std::string name;
+    const int globalIndex;
     
     GLFWwindow* mainContextWindow() { return imageWindow.glfwWindow(); }
 
@@ -45,8 +49,6 @@ struct Viewer::Impl
     HelpWindow helpWindow;
 
     ViewerState state;
-
-    std::unique_ptr<argparse::ArgumentParser> argsParser;
     
     void renderFrame ()
     {
@@ -99,56 +101,26 @@ struct Viewer::Impl
             controlsWindow.renderFrame();
         }
     }
-
-    bool parseCommandLine (const std::vector<std::string>& args)
-    {
-        argsParser = std::make_unique<argparse::ArgumentParser>("zv", PROJECT_VERSION);
-        argsParser->add_argument("images")
-            .help("Images to visualize")
-            .remaining();
-
-        try
-        {
-            argsParser->parse_args(args);
-        }
-        catch (const std::runtime_error &err)
-        {
-            std::cerr << "Wrong usage" << std::endl;
-            std::cerr << err.what() << std::endl;
-            std::cerr << *argsParser;
-            return false;
-        }
-
-        return true;
-    }
-
-    void processCommandLine ()
-    {
-        try {
-            auto images = argsParser->get<std::vector<std::string>>("images");
-            zv_dbg("%d images provided", (int)images.size());
-
-            for (const auto &im : images)
-                that.addImageFromFile(im);
-        }
-        catch (const std::exception& err)
-        {
-            zv_dbg ("No images provided, using default.");
-        }
-
-        argsParser.reset ();
-    }
 };
 
-Viewer::Viewer()
-: impl (new Impl(*this))
+Viewer::Viewer(const std::string& name, int index)
+: impl (new Impl(*this, name, index))
 {
-    
 }
 
 Viewer::~Viewer()
 {
     shutdown();
+}
+
+int Viewer::globalIndex () const
+{
+    return impl->globalIndex;
+}
+
+const std::string& Viewer::name() const
+{
+    return impl->name;    
 }
 
 bool Viewer::exitRequested () const
@@ -161,23 +133,9 @@ static void glfw_error_callback(int error, const char* description)
     zv_assert (false, "GLFW error %d: %s\n", error, description);
 }
 
-bool Viewer::initialize (int argc, const char *const argv[])
-{
-    std::vector<std::string> stl_argv (argc);
-    for (int i = 0; i < argc; ++i)
-    {
-        stl_argv[i] = argv[i];
-    }
-    return initialize (stl_argv);
-}
-
-bool Viewer::initialize (const std::vector<std::string>& args)
+bool Viewer::initialize ()
 {
     Profiler p ("Viewer::init");
-
-    bool ok = impl->parseCommandLine (args);
-    if (!ok)
-        return false;
 
     // Setup window
     glfwSetErrorCallback(glfw_error_callback);
@@ -209,18 +167,12 @@ bool Viewer::initialize (const std::vector<std::string>& args)
         impl->state.helpRequested = true;
     }
 
-    impl->processCommandLine ();
-
     return true;
 }
 
-void Viewer::renderFrame (double minDuration)
+void Viewer::renderFrame ()
 {
     impl->renderFrame();
-    if (!isnan(minDuration))
-    {
-        impl->rateLimit.sleepIfNecessary (minDuration);
-    }
 }
 
 void Viewer::shutdown ()
@@ -236,8 +188,6 @@ void Viewer::shutdown ()
     impl->imageWindow.shutdown ();
     impl->controlsWindow.shutdown ();
     impl->helpWindow.shutdown();
-    
-    glfwTerminate();
 }
 
 void Viewer::onOpenImage ()

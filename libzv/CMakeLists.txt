@@ -47,6 +47,8 @@ elseif (WIN32)
 endif()
 
 add_library(zv
+    App.cpp
+    App.h
     ColorConversion.cpp
     ColorConversion.h
     ControlsWindow.cpp

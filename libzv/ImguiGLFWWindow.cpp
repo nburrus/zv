@@ -510,8 +510,10 @@ void ImguiGLFWWindow::endFrame ()
     glClearColor(0.1, 0.1, 0.1, 1);
     glClear(GL_COLOR_BUFFER_BIT);
 
-    ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+    ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());   
     glfwSwapBuffers(impl->window);
+
+    checkGLError ();
 
     // would be safer to call disableContexts now?
 }

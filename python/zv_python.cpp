@@ -1,3 +1,4 @@
+#include <libzv/App.h>
 #include <libzv/Viewer.h>
 #include <libzv/ColorConversion.h>
 
@@ -21,16 +22,26 @@ PYBIND11_MODULE(_zv, m) {
            add
     )pbdoc";
 
-    py::class_<Viewer>(m, "Viewer")
+    py::class_<App>(m, "App")
         .def(py::init<>())
-        
-        .def("initialize", [](Viewer& viewer, const std::vector<std::string>& argv) {
-            return viewer.initialize (argv);
+
+        .def("initialize", [](App& app, const std::vector<std::string>& argv) {
+            return app.initialize (argv);
         }, py::arg("argv") = std::vector<std::string>({"zv"}))
 
-        .def("exitRequested", &Viewer::exitRequested)
-        .def("renderFrame", &Viewer::renderFrame)
+        .def("numViewers", &App::numViewers)
+
+        .def("getViewer", [](App& app, const std::string& name) {
+            return app.getViewer (name);
+        }, py::arg("name") = "default")
+
+        .def("createViewer", &App::createViewer)
+
+        .def("updateOnce", &App::updateOnce);
+
+    py::class_<Viewer>(m, "Viewer")
         .def("addImageFromFile", &Viewer::addImageFromFile)
+
         .def("addImage", [](Viewer& viewer, const std::string& name, py::buffer buffer, int position, bool replace) {
             /* Request a buffer descriptor from Python */
             py::buffer_info info = buffer.request();

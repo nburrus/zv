@@ -226,7 +226,7 @@ void ImageWindow::Impl::adjustForNewSelection ()
 
     if (!this->imageWidgetRect.normal.origin.isValid())
     {
-        this->imageWidgetRect.normal.origin.x = this->monitorSize.x * 0.10;
+        this->imageWidgetRect.normal.origin.x = this->monitorSize.x * (0.10 + 0.15*(this->viewer->globalIndex()));
         this->imageWidgetRect.normal.origin.y = this->monitorSize.y * 0.10;
     }
 
@@ -299,6 +299,12 @@ void ImageWindow::setEnabled (bool enabled)
 
 void ImageWindow::shutdown()
 {
+    impl->imguiGlfwWindow.enableContexts();
+    
+    // Make sure that we release any GL stuff here with the context set.
+    impl->currentImages.clear();
+    impl->cursorOverlayInfo = {};
+
     impl->imguiGlfwWindow.shutdown ();
 }
 

@@ -4,6 +4,7 @@
 // of the BSD license.  See the LICENSE file for details.
 //
 
+#include <libzv/App.h>
 #include <libzv/Viewer.h>
 #include <libzv/Utils.h>
 #include <libzv/Image.h>
@@ -12,22 +13,23 @@
 #include "GeneratedConfig.h"
 
 int main (int argc, char* argv[])
-{
+{    
     zv::Profiler p("main");
     
-    zv::Viewer viewer;
-    viewer.initialize (argc, argv);
+    zv::App app;
+    app.initialize (argc, argv);
     p.lap ("init");
     
-    bool firstFrame = true;
+    app.createViewer ("secondViewer");
+
     zv::RateLimit rateLimit;
-    while (!viewer.exitRequested())
+    bool firstFrame = true;
+    while (app.numViewers() > 0)
     {
-        // Max 30 FPS
-        viewer.renderFrame ();
+        app.updateOnce ();
         if (firstFrame)
         {
-            p.lap ("firstRendered");
+            p.lap ("firstUpdate");
             p.stop ();
             firstFrame = false;
         }
