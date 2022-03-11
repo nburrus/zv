@@ -1,6 +1,6 @@
 from distutils.debug import DEBUG
 from distutils.log import ERROR, INFO
-from . import Viewer
+from zv import Viewer
 
 import numpy as np
 
@@ -15,6 +15,7 @@ except ImportError:
     pass
 
 import argparse
+from contextlib import ContextDecorator
 import multiprocessing as mp
 from multiprocessing import connection
 from multiprocessing.connection import Client, Listener
@@ -26,6 +27,20 @@ import sys
 import atexit
 
 from enum import IntEnum
+from typing import Any
+
+class RateLimit(ContextDecorator):
+    def __init__(self, minDuration):
+        self._minDuration = minDuration
+
+    def __enter__(self):
+        self._lastEnter = time.time()
+        return self
+
+    def __exit__(self, *exc_info: Any):
+        elapsed = time.time() - self._lastEnter
+        if (self._minDuration > elapsed):
+            time.sleep (self._minDuration - elapsed)
 
 class DebuggerElement(IntEnum):
     StopProcess=0
@@ -36,23 +51,26 @@ class DebuggerElement(IntEnum):
 class _ZVLogChild:
     def __init__(self, conn: connection.Connection):
         self._conn = conn
-        self._num_cv_images = 0
         self._shutdown = False
         self._stop_when_all_windows_closed = False
         self._figures_by_name = dict()
-        self._zvViewer = None
+        self._zv_viewer_per_group = {}
+        self._already_displayed_data = False
 
     def _process_image (self, data):
-        img, name = data
+        img, name, group = data
         # Support for mask images.
         if img.dtype == np.bool:
             img = img.astype(np.uint8)*255
-        if self._zvViewer is None:
-            self._zvViewer = Viewer()
-            self._zvViewer.initialize ()
+        
+        viewer = self._zv_viewer_per_group[group]
+        if viewer is None:
+            viewer = Viewer()
+            viewer.initialize ()
+            self._zv_viewer_per_group[group] = viewer
+            self._already_displayed_data = True
         try:
-            self._zvViewer.addImage (name, img, -1, replace=True)
-            self._num_cv_images += 1
+            viewer.addImage (name, img, -1, replace=True)
         except:
             print (f"Could not add image with shape {img.shape} and dtype {img.dtype}")
         # cv2.imshow(name, img)        
@@ -83,29 +101,32 @@ class _ZVLogChild:
 
     def _shouldStop (self):
         # not dict returns True if empty
-        if self._num_cv_images < 1 and not self._figures_by_name and self._stop_when_all_windows_closed:
+        if self._already_displayed_data and not self._zv_viewer_per_group and not self._figures_by_name and self._stop_when_all_windows_closed:
             return True
         return self._shutdown
 
     def run (self):        
         while not self._shouldStop():
-            if self._zvViewer is not None:
-                self._zvViewer.renderFrame (1.0 / 30.0)
-                if self._zvViewer.exitRequested():
-                    self._num_cv_images = 0
-                    self._zvViewer = None
+            with RateLimit(1./30.0):
+                viewers_to_remove = []
+                for group, viewer in self._zv_viewer_per_group.items():
+                    viewer.renderFrame (0)
+                    if viewer.exitRequested():
+                        viewers_to_remove.append(group)
+                for group in viewers_to_remove:
+                    del self._zv_viewer_per_group[group]
 
-            if self._figures_by_name:
-                # This would always bring the window to front, which is not what I want.
-                # plt.pause(0.005)
-                manager = plt.get_current_fig_manager()
-                if manager is not None:
-                    manager.canvas.figure.canvas.flush_events()
-                    manager.canvas.figure.canvas.draw_idle()
-            
-            if self._conn.poll(0.005):
-                e = self._conn.recv()
-                self._process_input (e)    
+                if self._figures_by_name:
+                    # This would always bring the window to front, which is not what I want.
+                    # plt.pause(0.005)
+                    manager = plt.get_current_fig_manager()
+                    if manager is not None:
+                        manager.canvas.figure.canvas.flush_events()
+                        manager.canvas.figure.canvas.draw_idle()
+                
+                if self._conn.poll():
+                    e = self._conn.recv()
+                    self._process_input (e)    
 
 class ZVLogServer:
     def __init__(self, interface = '127.0.0.1', port = 7007):
@@ -169,10 +190,10 @@ class ZVLog:
         if self.child:
             self.parent_conn.send((DebuggerElement.StopProcess, None))
 
-    def image(self, name: str, img: np.ndarray):
+    def image(self, name: str, img: np.ndarray, group: str = 'default'):
         if not self._enabled:
             return
-        self._send((DebuggerElement.Image, (img, name)))
+        self._send((DebuggerElement.Image, (img, name, group)))
 
 
     def plot(self, name: str, fig: mpl.figure.Figure):
