@@ -48,4 +48,6 @@ inline ImGuiWindowFlags windowFlagsWithoutAnything()
             | ImGuiWindowFlags_NoNav);
 }
 
-}
+bool IsItemHovered(ImGuiHoveredFlags flags, float delaySeconds);
+
+} // zv

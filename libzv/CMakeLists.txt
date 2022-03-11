@@ -69,6 +69,7 @@ add_library(zv
     ImageWindowState.h
     ImguiGLFWWindow.cpp
     ImguiGLFWWindow.h
+    ImguiUtils.cpp
     ImguiUtils.h
     MathUtils.h
     OpenGL.cpp

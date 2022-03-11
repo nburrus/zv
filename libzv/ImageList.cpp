@@ -11,6 +11,9 @@
 
 #include <unordered_map>
 
+#include <filesystem>
+namespace fs = std::filesystem;
+
 namespace zv
 {
 
@@ -29,7 +32,7 @@ std::unique_ptr<ImageItem> imageItemFromData (const ImageSRGBA& im, const std::s
     entry->uniqueId = UniqueId::newId();
     entry->source = ImageItem::Source::Data;
     entry->sourceData = std::make_shared<ImageSRGBA>(im);
-    entry->sourceImagePath = name;
+    entry->prettyName = name;
     return entry;
 }
 
@@ -39,6 +42,7 @@ std::unique_ptr<ImageItem> imageItemFromPath (const std::string& imagePath)
     entry->uniqueId = UniqueId::newId();
     entry->source = ImageItem::Source::FilePath;
     entry->sourceImagePath = imagePath;
+    entry->prettyName = fs::path(entry->sourceImagePath).filename();
     return entry;
 }
 
@@ -68,7 +72,7 @@ std::unique_ptr<ImageItem> defaultImageItem ()
     auto entry = std::make_unique<ImageItem>();
     entry->uniqueId = UniqueId::newId();
     entry->source = ImageItem::Source::Callback;
-    entry->sourceImagePath = "<<default>>";
+    entry->prettyName = "<<default>>";
     entry->loadDataCallback = getDefaultImage;
     return entry;
 }
@@ -208,7 +212,7 @@ void ImageList::selectImage (int index)
 // Takes ownership.
 void ImageList::addImage (std::unique_ptr<ImageItem> image, int insertPosition, bool replaceExisting)
 {
-    if (impl->entries.size() == 1 && impl->entries[0]->sourceImagePath == "<<default>>")
+    if (impl->entries.size() == 1 && impl->entries[0]->prettyName == "<<default>>")
     {
         removeImage (0);
     }
@@ -219,7 +223,7 @@ void ImageList::addImage (std::unique_ptr<ImageItem> image, int insertPosition, 
     if (replaceExisting)
     {
         auto existing_element = std::find_if(impl->entries.begin(), impl->entries.end(), [&](const ImageItemPtr& e) {
-            return e->sourceImagePath == image->sourceImagePath;
+            return e->prettyName == image->prettyName;
         });
     
         if (existing_element != impl->entries.end())

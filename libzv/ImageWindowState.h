@@ -48,6 +48,8 @@ struct ImageWindowState
     InputState inputState;
     
     LayoutConfig layoutConfig;
+
+    bool infoOverlayEnabled = true;
 };
 
 } // zv

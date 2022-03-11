@@ -372,7 +372,7 @@ void ImageWindow::checkImguiGlobalImageKeyEvents ()
     for (const auto code : {
             GLFW_KEY_1, GLFW_KEY_2, GLFW_KEY_3, GLFW_KEY_4, 
             GLFW_KEY_UP, GLFW_KEY_DOWN, GLFW_KEY_LEFT, GLFW_KEY_RIGHT,
-            GLFW_KEY_O, GLFW_KEY_S, GLFW_KEY_W, GLFW_KEY_N, GLFW_KEY_A,
+            GLFW_KEY_O, GLFW_KEY_S, GLFW_KEY_W, GLFW_KEY_N, GLFW_KEY_A, GLFW_KEY_V,
             GLFW_KEY_SPACE, GLFW_KEY_BACKSPACE
         })
     {
@@ -425,6 +425,12 @@ void ImageWindow::processKeyEvent (int keycode)
             {
                 impl->viewer->onOpenImage();
             }
+            break;
+        }
+
+        case GLFW_KEY_V:
+        {
+            impl->mutableState.infoOverlayEnabled = !impl->mutableState.infoOverlayEnabled;
             break;
         }
 
@@ -738,7 +744,7 @@ void ImageWindow::renderFrame ()
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0,0));
     bool isOpen = true;
     
-    std::string mainWindowName = "zv - " + impl->currentImages[0].item->prettyName();
+    std::string mainWindowName = "zv - " + impl->currentImages[0].item->prettyName;
     glfwSetWindowTitle(impl->imguiGlfwWindow.glfwWindow(), mainWindowName.c_str());
 
     if (ImGui::Begin((mainWindowName + "###Image").c_str(), &isOpen, flags))
@@ -790,7 +796,9 @@ void ImageWindow::renderFrame ()
             if (!impl->currentImages[idx].data->cpuData->hasData())
             {
                 ImGui::SetCursorScreenPos (widgetGeometries[idx].topLeft);
-                ImGui::TextColored (ImVec4(1,0,0,1), "ERROR: could not load the image.\nPath: %s", impl->currentImages[idx].item->prettyName().c_str());
+                ImGui::TextColored(ImVec4(1, 0, 0, 1), "ERROR: could not load the image %s.\nPath: %s",
+                                   impl->currentImages[idx].item->prettyName.c_str(),
+                                   impl->currentImages[idx].item->sourceImagePath.c_str());
             }
             else
             {
@@ -820,13 +828,15 @@ void ImageWindow::renderFrame ()
                 ImGui::GetForegroundDrawList()->AddCircle(widgetGeometries[idx].topLeft + deltaFromTopLeft, 3.0, IM_COL32(0,0,0,180), 0, 1.f);
             }
 
-            const bool showStatusBar = (impl->mutableState.inputState.shiftIsPressed || controlsWindowState.shiftIsPressed);            
+            // const bool showStatusBar = (impl->mutableState.inputState.shiftIsPressed || controlsWindowState.shiftIsPressed);
+            const bool showStatusBar = impl->mutableState.infoOverlayEnabled;
             // ImGui::IsMouseDown(ImGuiMouseButton_Left) && !io.KeyCtrl;
             if (showStatusBar)
             {
                 impl->imguiGlfwWindow.PushMonoSpaceFont(io);
 
-                const bool showOnBottom = impl->cursorOverlayInfo.mousePosInTexture.y < 0.75;
+                float mouseYinWidget = (impl->cursorOverlayInfo.mousePos.y - impl->cursorOverlayInfo.imageWidgetTopLeft.y);
+                const bool showOnBottom = (impl->cursorOverlayInfo.imageWidgetSize.y - mouseYinWidget) > monoFontSize*2.2;
 
                 for (int idx = 0; idx < impl->currentImages.size(); ++idx)
                 {
@@ -842,7 +852,7 @@ void ImageWindow::renderFrame ()
                     PixelSRGBA sRgba = im(cInImage, rInImage);
                     const auto hsv = zv::convertToHSV(sRgba);
                     std::string caption = formatted("%s\n%4d, %4d (sRGB %3d %3d %3d) (HSV %3d %3d %3d)",
-                                                    impl->currentImages[idx].item->prettyName().c_str(),
+                                                    impl->currentImages[idx].item->prettyName.c_str(),
                                                     cInImage, rInImage,
                                                     sRgba.r, sRgba.g, sRgba.b,
                                                     intRnd(hsv.x*360.f), intRnd(hsv.y*100.f), intRnd(hsv.z*100.f/255.f));

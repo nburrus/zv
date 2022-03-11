@@ -191,6 +191,7 @@ void ControlsWindow::renderFrame ()
     const auto& io = ImGui::GetIO();
     const float monoFontSize = ImguiGLFWWindow::monoFontSize(io);
     auto* imageWindow = impl->viewer->imageWindow();
+    auto& imageWindowState = imageWindow->mutableState();
 
     if (impl->imguiGlfwWindow.closeRequested())
     {
@@ -228,6 +229,12 @@ void ControlsWindow::renderFrame ()
         }
 
         if (ImGui::BeginMenu("View"))
+        {
+            ImGui::MenuItem("Info overlay", "v", &imageWindowState.infoOverlayEnabled);
+            ImGui::EndMenu();
+        }
+
+        if (ImGui::BeginMenu("Geometry"))
         {
             if (ImGui::MenuItem("Original size", "n", false)) imageWindow->processKeyEvent (GLFW_KEY_N);
             if (ImGui::MenuItem("Double size", ">", false)) imageWindow->processKeyEvent ('>');
@@ -309,8 +316,6 @@ void ControlsWindow::renderFrame ()
             // close
             ImGuiFileDialog::Instance()->Close();
         }
-
-        auto& imageWindowState = imageWindow->mutableState();
                 
         ImageList& imageList = impl->viewer->imageList();
         if (ImGui::BeginListBox("##filelist", ImVec2(-FLT_MIN, 4 * ImGui::GetTextLineHeightWithSpacing())))
@@ -320,8 +325,9 @@ void ControlsWindow::renderFrame ()
             const int maxSelectedIndex = minSelectedIndex + imageWindowState.layoutConfig.numImages;
             for (int idx = 0; idx < imageList.numImages(); ++idx)
             {
+                const ImageItemPtr& itemPtr = imageList.imageItemFromIndex(idx);
                 bool selected = (idx >= minSelectedIndex && idx < maxSelectedIndex);
-                std::string name = imageList.imageItemFromIndex(idx)->prettyName();
+                const std::string& name = itemPtr->prettyName;
                 
                 // Make sure that the last part of the filename will be visible.
                 ImVec2 textSize = ImGui::CalcTextSize(name.c_str());
@@ -332,6 +338,16 @@ void ControlsWindow::renderFrame ()
                 if (ImGui::Selectable(name.c_str(), selected) && idx != minSelectedIndex)
                 {
                     imageList.selectImage (idx);
+                }
+
+                if ((itemPtr->source == ImageItem::Source::FilePath) 
+                    && zv::IsItemHovered(ImGuiHoveredFlags_RectOnly, 0.5))
+                {
+                    ImGui::BeginTooltip();
+                    ImGui::PushTextWrapPos(availableWidth);
+                    ImGui::TextUnformatted(itemPtr->sourceImagePath.c_str());
+                    ImGui::PopTextWrapPos();
+                    ImGui::EndTooltip();
                 }
             }
             ImGui::EndListBox();
