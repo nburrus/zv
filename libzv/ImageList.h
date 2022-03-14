@@ -15,6 +15,8 @@
 namespace zv
 {
 
+using ImageId = int64_t;
+
 struct ImageItem
 {
     enum class Source
@@ -25,12 +27,16 @@ struct ImageItem
         Callback,
     } source;
    
-    int64_t uniqueId = -1;
+    ImageId uniqueId = -1;
     std::string errorString;
     std::string sourceImagePath; // also used for the pretty name of other sources.
     std::string prettyName;
     std::shared_ptr<ImageSRGBA> sourceData;
-    std::function<ImageSRGBAPtr(void)> loadDataCallback;    
+    std::function<ImageSRGBAPtr(void)> loadDataCallback;
+
+    using EventCallbackType = std::function<void(ImageId, float, float, void* userData)>;
+    EventCallbackType eventCallback = nullptr;
+    void* eventCallbackData = nullptr;
 
     // Could add thumbnail, etc.
     // Everything should be lazy though.
@@ -66,9 +72,10 @@ public:
     int selectedIndex () const;
     void selectImage (int index);
     const ImageItemPtr& imageItemFromIndex (int index);
+    ImageItemPtr imageItemFromId (ImageId imageId);
 
     // Takes ownership.
-    void addImage (std::unique_ptr<ImageItem> image, int position, bool replaceExisting);
+    ImageId addImage (std::unique_ptr<ImageItem> image, int position, bool replaceExisting);
     void removeImage (int index);
 
     // Important to call this with a GL context set as it may release some GL textures.

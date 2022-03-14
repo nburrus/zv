@@ -102,7 +102,7 @@ class _ZVLogChild:
 
     def _shouldStop (self):
         # not dict returns True if empty        
-        if self._zvApp and self._zvApp.numViewers() == 0 and not self._figures_by_name and self._stop_when_all_windows_closed:
+        if self._zvApp and self._zvApp.numViewers == 0 and not self._figures_by_name and self._stop_when_all_windows_closed:
             return True
         return self._shutdown
 

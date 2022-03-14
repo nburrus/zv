@@ -210,8 +210,10 @@ void ImageList::selectImage (int index)
 }
 
 // Takes ownership.
-void ImageList::addImage (std::unique_ptr<ImageItem> image, int insertPosition, bool replaceExisting)
+ImageId ImageList::addImage (std::unique_ptr<ImageItem> image, int insertPosition, bool replaceExisting)
 {
+    ImageId imageId = image->uniqueId;
+
     if (impl->entries.size() == 1 && impl->entries[0]->prettyName == "<<default>>")
     {
         removeImage (0);
@@ -236,6 +238,7 @@ void ImageList::addImage (std::unique_ptr<ImageItem> image, int insertPosition, 
 
     // FIXME: using a vector with front insertion is not great. Could use a list for once, I guess.
     impl->entries.insert (impl->entries.begin() + insertPosition, std::move(image));
+    return imageId;
 }
 
 void ImageList::removeImage (int index)
@@ -255,6 +258,14 @@ const ImageItemPtr& ImageList::imageItemFromIndex (int index)
 {
     zv_assert (index < impl->entries.size(), "Image index out of bounds");
     return impl->entries[index];
+}
+
+ImageItemPtr ImageList::imageItemFromId (ImageId imageId)
+{
+    for (const auto& entry: impl->entries)
+        if (entry->uniqueId == imageId)
+            return entry;
+    return ImageItemPtr();
 }
 
 } // zv

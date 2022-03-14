@@ -623,6 +623,14 @@ void renderImageItem (const ImageItemAndData& item,
     bool showCursorOverlay = false;
     const bool pointerOverTheImage = ImGui::IsItemHovered() && currentIm.contains(mousePosInImage.x, mousePosInImage.y);
 
+    if (pointerOverTheImage)
+    {
+        if (item.item->eventCallback)
+        {
+            item.item->eventCallback(item.item->uniqueId, mousePosInImage.x, mousePosInImage.y, item.item->eventCallbackData);
+        }
+    }
+
     if (pointerOverTheImage && overlayInfo)
     {
         overlayInfo->itemAndData = item;

@@ -230,17 +230,22 @@ ImageList& Viewer::imageList()
     return impl->imageList;
 }
 
-void Viewer::addImageFromFile (const std::string& imagePath)
+ImageId Viewer::selectedImage () const
 {
-    impl->imageList.addImage (imageItemFromPath(imagePath), -1, true);
+    return impl->imageList.imageItemFromIndex(impl->imageList.selectedIndex())->uniqueId;
 }
 
-void Viewer::addImageData (const ImageSRGBA& image, const std::string& imageName, int insertPos, bool replaceExisting)
+ImageId Viewer::addImageFromFile (const std::string& imagePath)
+{
+    return impl->imageList.addImage (imageItemFromPath(imagePath), -1, true);
+}
+
+ImageId Viewer::addImageData (const ImageSRGBA& image, const std::string& imageName, int insertPos, bool replaceExisting)
 {    
-    impl->imageList.addImage (imageItemFromData (image, imageName), insertPos, replaceExisting);
+    return impl->imageList.addImage (imageItemFromData (image, imageName), insertPos, replaceExisting);
 }
 
-void Viewer::addPastedImage ()
+ImageId Viewer::addPastedImage ()
 {
     // Keep that old code around for now.
 #if 0
@@ -298,6 +303,18 @@ void Viewer::addPastedImage ()
         }
     }
 #endif
+    return -1;
+}
+
+void Viewer::setEventCallback (ImageId imageId, EventCallbackType callback, void* userData)
+{
+    ImageItemPtr itemPtr = impl->imageList.imageItemFromId(imageId);
+    zv_assert (itemPtr, "Could not find a matching image Id");
+    if (!itemPtr)
+        return;
+
+    itemPtr->eventCallback = callback;
+    itemPtr->eventCallbackData = userData;
 }
 
 } // zv

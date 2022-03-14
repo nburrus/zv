@@ -11,7 +11,21 @@
             "program": "${file}",
             "console": "integratedTerminal",
             "justMyCode": false,
-            // "args": [ "bdist_wheel" ]
-        }
+            "env": {
+                "PYTHONPATH": "${command:cmake.buildDirectory}/python:${workspaceFolder}/python"
+            }
+        },
+
+        {
+            "name": "zv-python",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/python/scripts/zv-python",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "env": {
+                "PYTHONPATH": "${command:cmake.buildDirectory}/python:${workspaceFolder}/python"
+            }
+        },
     ]
 }

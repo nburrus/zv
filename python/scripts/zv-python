@@ -3,9 +3,19 @@
 import zv
 import sys
 
+def callback(image_id, x, y, user_data):
+    if zv.imgui.IsMouseClicked(zv.imgui.MouseButton.Left, False):
+        print (f"Left button clicked {x} {y}!")
+    elif zv.imgui.IsMouseClicked(zv.imgui.MouseButton.Right, False):
+        print (f"Right button clicked {x} {y}!")
+
 app = zv.App()
 app.initialize(sys.argv)
 
-while app.numViewers() > 0:
-    app.updateOnce(1.0 / 30.0)
+viewer = app.getViewer()
+image_id = viewer.selectedImage
 
+viewer.setEventCallback(image_id, callback, None)
+
+while app.numViewers > 0:
+    app.updateOnce(1.0 / 30.0)

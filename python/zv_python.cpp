@@ -4,6 +4,9 @@
 
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
+#include <pybind11/functional.h>
+
+#include <imgui/imgui.h>
 
 using namespace zv;
 
@@ -12,16 +15,8 @@ using namespace zv;
 
 namespace py = pybind11;
 
-PYBIND11_MODULE(_zv, m) {
-    m.doc() = R"pbdoc(
-        zv python module
-        -----------------------
-        .. currentmodule:: zv
-        .. autosummary::
-           :toctree: _generate
-           add
-    )pbdoc";
-
+void register_App (py::module& m)
+{
     py::class_<App>(m, "App")
         .def(py::init<>())
 
@@ -29,7 +24,7 @@ PYBIND11_MODULE(_zv, m) {
             return app.initialize (argv);
         }, py::arg("argv") = std::vector<std::string>({"zv"}))
 
-        .def("numViewers", &App::numViewers)
+        .def_property_readonly("numViewers", &App::numViewers)
 
         // return_value_policy::reference_internal) is required for those,
         // since the returned objects are still owned by the app.
@@ -49,8 +44,13 @@ PYBIND11_MODULE(_zv, m) {
         .def("updateOnce", [](App& app, double minDuration) {
             app.updateOnce(minDuration);
         }, py::arg("minDuration") = 0.0);
+}
 
+void register_Viewer (py::module& m)
+{
     py::class_<Viewer>(m, "Viewer")
+        .def_property_readonly("selectedImage", &Viewer::selectedImage)
+        
         .def("addImageFromFile", &Viewer::addImageFromFile)
 
         .def("addImage", [](Viewer& viewer, const std::string& name, py::buffer buffer, int position, bool replace) {
@@ -132,8 +132,40 @@ PYBIND11_MODULE(_zv, m) {
                 }
             }
 
-            viewer.addImageData (image, name, position, replace);
-        }, py::arg("name"), py::arg("buffer"), py::arg("position") = -1, py::arg("replace") = false);
+            return viewer.addImageData (image, name, position, replace);
+        }, py::arg("name"), py::arg("buffer"), py::arg("position") = -1, py::arg("replace") = false)
+
+        // using EventCallbackType = std::function<void(ImageId, float, float, void* userData)>;
+        // void setEventCallback (ImageId imageId, EventCallbackType callback, void* userData);
+        .def("setEventCallback", &Viewer::setEventCallback);
+}
+
+void register_ImGui (py::module& zv_module)
+{
+    py::module_ m = zv_module.def_submodule("imgui", "zv GUI submodule.");
+    
+    py::enum_<ImGuiMouseButton_>(m, "MouseButton")
+        .value ("Left", ImGuiMouseButton_Left)
+        .value ("Right", ImGuiMouseButton_Right)
+        .value ("Middle", ImGuiMouseButton_Middle);
+    
+    m.def ("IsMouseDown", &ImGui::IsMouseDown);
+    m.def ("IsMouseClicked", &ImGui::IsMouseClicked);
+}
+
+PYBIND11_MODULE(_zv, m) {
+    m.doc() = R"pbdoc(
+        zv python module
+        -----------------------
+        .. currentmodule:: zv
+        .. autosummary::
+           :toctree: _generate
+           add
+    )pbdoc";
+
+    register_App (m);
+    register_Viewer (m);
+    register_ImGui (m);
 
 // PYTHON_VERSION_INFO comes from setup.py
 #ifdef PYTHON_VERSION_INFO

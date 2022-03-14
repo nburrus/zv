@@ -19,6 +19,7 @@ namespace zv
 class ImageWindow;
 class ControlsWindow;
 class ImageList;
+using ImageId = int64_t;
 
 struct ViewerState
 {
@@ -44,9 +45,13 @@ public:
     void renderFrame ();
 
 public:
-    void addImageFromFile (const std::string& imagePath);
-    void addImageData (const ImageSRGBA& image, const std::string& imageName, int insertPos = -1, bool replaceExisting = false);
-    void addPastedImage ();
+    ImageId addImageFromFile (const std::string& imagePath);
+    ImageId addImageData (const ImageSRGBA& image, const std::string& imageName, int insertPos = -1, bool replaceExisting = false);
+    ImageId addPastedImage ();
+    ImageId selectedImage () const;
+
+    using EventCallbackType = std::function<void(ImageId, float, float, void* userData)>;
+    void setEventCallback (ImageId imageId, EventCallbackType callback, void* userData);
         
 protected:
     // Controller-like global methods that member windows can call.
