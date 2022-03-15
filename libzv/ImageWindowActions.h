@@ -17,7 +17,7 @@ enum class ImageWindowAction
     Zoom_div2,
     Zoom_Inc10p,
     Zoom_Dec10p,
-    Zoom_MaxAvailable,
+    Zoom_Maxspect,
 
     File_OpenImage,
     View_ToggleOverlay,

@@ -20,8 +20,6 @@ int main (int argc, char* argv[])
     app.initialize (argc, argv);
     p.lap ("init");
     
-    app.createViewer ("secondViewer");
-
     zv::RateLimit rateLimit;
     bool firstFrame = true;
     while (app.numViewers() > 0)

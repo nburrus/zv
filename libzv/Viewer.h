@@ -25,7 +25,7 @@ using ImageId = int64_t;
 struct ViewerState
 {
     bool helpRequested = false;
-    bool controlsRequested = false;
+    bool toggleControlsRequested = false;
     bool dismissRequested = false;
     bool openImageRequested = false;
 };
@@ -61,7 +61,7 @@ protected:
     // Controller-like global methods that member windows can call.
     void onDismissRequested ();
     void onHelpRequested ();
-    void onControlsRequested ();
+    void onToggleControls ();
     void onImageWindowGeometryUpdated (const Rect& geometry);
     void onOpenImage ();
 

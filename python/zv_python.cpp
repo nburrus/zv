@@ -147,7 +147,7 @@ void register_Viewer (py::module& m)
 
         .def("setLayout", &Viewer::setLayout)
         .def("runAction", &Viewer::runAction);
-        
+
     py::enum_<ImageWindowAction>(m, "ImageWindowAction")
         .value ("Zoom_Normal", ImageWindowAction::Zoom_Normal)
         .value ("Zoom_RestoreAspectRatio", ImageWindowAction::Zoom_RestoreAspectRatio)
@@ -155,7 +155,7 @@ void register_Viewer (py::module& m)
         .value ("Zoom_div2", ImageWindowAction::Zoom_div2)
         .value ("Zoom_Inc10p", ImageWindowAction::Zoom_Inc10p)
         .value ("Zoom_Dec10p", ImageWindowAction::Zoom_Dec10p)
-        .value ("Zoom_MaxAvailable", ImageWindowAction::Zoom_MaxAvailable)        
+        .value ("Zoom_Maxspect", ImageWindowAction::Zoom_Maxspect)        
         .value ("File_OpenImage", ImageWindowAction::File_OpenImage)
         .value ("View_ToggleOverlay", ImageWindowAction::View_ToggleOverlay)
         .value ("View_NextImage", ImageWindowAction::View_NextImage)

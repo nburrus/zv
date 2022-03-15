@@ -198,9 +198,14 @@ void ControlsWindow::renderFrame ()
         setEnabled (false);
     }
 
-    if (ImGui::IsKeyPressed(GLFW_KEY_Q) || ImGui::IsKeyPressed(GLFW_KEY_ESCAPE))
+    if (ImGui::IsKeyPressed(GLFW_KEY_Q))
     {
         impl->viewer->onDismissRequested();
+    }
+
+    if (ImGui::IsKeyPressed(GLFW_KEY_ESCAPE))
+    {
+        impl->viewer->onToggleControls();
     }
 
     int menuBarHeight = 0;
@@ -236,9 +241,12 @@ void ControlsWindow::renderFrame ()
 
         if (ImGui::BeginMenu("Geometry"))
         {
-            if (ImGui::MenuItem("Original size", "n", false)) imageWindow->processKeyEvent (GLFW_KEY_N);
+            if (ImGui::MenuItem("Original", "n", false)) imageWindow->processKeyEvent (GLFW_KEY_N);
+            if (ImGui::MenuItem("Maxspect", "n", false)) imageWindow->processKeyEvent (GLFW_KEY_M);
             if (ImGui::MenuItem("Double size", ">", false)) imageWindow->processKeyEvent ('>');
             if (ImGui::MenuItem("Half size", "<", false)) imageWindow->processKeyEvent ('<');
+            if (ImGui::MenuItem("10%% larger", ".", false)) imageWindow->processKeyEvent (GLFW_KEY_PERIOD);
+            if (ImGui::MenuItem("10%% smaller", ",", false)) imageWindow->processKeyEvent (GLFW_KEY_COMMA);
             if (ImGui::MenuItem("Restore aspect ratio", "a", false)) imageWindow->processKeyEvent (GLFW_KEY_A);
             if (ImGui::BeginMenu("Layout"))
             {

@@ -67,8 +67,17 @@ struct Viewer::Impl
         {
             helpWindow.renderFrame();
         }
-        
-        if (state.controlsRequested || state.openImageRequested)
+
+        if (state.toggleControlsRequested && controlsWindow.isEnabled())
+        {
+            controlsWindow.setEnabled(false);
+            state.toggleControlsRequested = false;
+        }
+
+        bool activateControls = state.toggleControlsRequested && !controlsWindow.isEnabled();
+        activateControls |= state.openImageRequested;
+
+        if (activateControls)
         {
             if (!controlsWindow.isInitialized())
             {
@@ -85,9 +94,8 @@ struct Viewer::Impl
             {
                 controlsWindow.bringToFront();
             }
-            
-            state.controlsRequested = false;
         }
+        state.toggleControlsRequested = false;
 
         imageWindow.renderFrame();
 
@@ -205,9 +213,9 @@ void Viewer::onHelpRequested()
     impl->state.helpRequested = true;
 }
 
-void Viewer::onControlsRequested()
+void Viewer::onToggleControls()
 {
-    impl->state.controlsRequested = true;
+    impl->state.toggleControlsRequested = true;
 }
 
 void Viewer::onImageWindowGeometryUpdated (const Rect& geometry)

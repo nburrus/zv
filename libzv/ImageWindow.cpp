@@ -73,8 +73,34 @@ struct ImageLayout
     LayoutConfig config;
     std::vector<Rect> imageRects;
     
-    void adjustForConfig (const LayoutConfig& config)
+    ImageLayout ()
     {
+        imageRects.push_back(Rect::from_x_y_w_h(0.0,
+                                                0.0,
+                                                1.0,
+                                                1.0));
+    }
+
+    Point firstImSizeInRect (Point widgetRectSize, float gridPadding) const
+    {
+        Point imSize;
+        imSize.x = (widgetRectSize.x - (config.numCols - 1) * gridPadding) * imageRects[0].size.x;
+        imSize.y = (widgetRectSize.y - (config.numRows - 1) * gridPadding) * imageRects[0].size.y;
+        return imSize;
+    }
+
+    Point widgetRectForImageSize (Point firstImSize, float gridPadding) const
+    {
+        const auto& firstRect = imageRects[0];
+        Point widgetSize;
+        widgetSize.x = firstImSize.x / firstRect.size.x + (config.numCols - 1) * gridPadding;
+        widgetSize.y = firstImSize.y / firstRect.size.y + (config.numRows - 1) * gridPadding;
+        return widgetSize;
+    }
+
+    bool adjustForConfig (const LayoutConfig& config)
+    {
+        bool layoutChanged = (this->config != config);
         this->config = config;
         imageRects.resize (config.numImages());
         
@@ -90,6 +116,7 @@ struct ImageLayout
                                                      1.0/config.numRows);
             }
         }
+        return layoutChanged;
     }
 };
 
@@ -222,7 +249,8 @@ void ImageWindow::Impl::adjustForNewSelection ()
         }
     }
     
-    this->currentLayout.adjustForConfig(this->mutableState.layoutConfig);
+    Point firstImSizeInRectBefore = this->currentLayout.firstImSizeInRect (this->imageWidgetRect.current.size, gridPadding);
+    bool layoutChanged = this->currentLayout.adjustForConfig(this->mutableState.layoutConfig);
         
     // The first image will decide for all the other sizes.
     const auto& firstIm = *this->currentImages[0].data->cpuData;
@@ -237,24 +265,30 @@ void ImageWindow::Impl::adjustForNewSelection ()
     // Handle the case there the cpuImage is empty (e.g. failed to load the file).
     int firstImWidth = firstIm.width() > 0 ? firstIm.width() : 256;
     int firstImHeight = firstIm.height() > 0 ? firstIm.height() : 256;
-    this->imageWidgetRect.normal.size.x = firstImWidth / firstRect.size.x + (this->currentLayout.config.numCols - 1) * gridPadding;
-    this->imageWidgetRect.normal.size.y = firstImHeight / firstRect.size.y + (this->currentLayout.config.numRows - 1) * gridPadding;
-    
-    // Keep the current geometry if it was already set before.
-    if (!this->imageWidgetRect.current.origin.isValid())
+    this->imageWidgetRect.normal.size = this->currentLayout.widgetRectForImageSize(Point(firstImWidth, firstImHeight), gridPadding);
+
+    // Maintain the size of the first image after changing the layout.
+    if (layoutChanged)
     {
-        this->imageWidgetRect.current = this->imageWidgetRect.normal;
-        // Don't show it now, but tell it to show the window after
-        // updating the content, otherwise we can get annoying flicker.
-        this->updateAfterContentSwitch.inProgress = true;
-        this->updateAfterContentSwitch.needToResize = true;
-        this->updateAfterContentSwitch.numAlreadyRenderedFrames = 0;
-        this->updateAfterContentSwitch.targetWindowGeometry.origin.x = this->imageWidgetRect.normal.origin.x - this->windowBorderSize;
-        this->updateAfterContentSwitch.targetWindowGeometry.origin.y = this->imageWidgetRect.normal.origin.y - this->windowBorderSize;
-        this->updateAfterContentSwitch.targetWindowGeometry.size.x = this->imageWidgetRect.normal.size.x + 2 * this->windowBorderSize;
-        this->updateAfterContentSwitch.targetWindowGeometry.size.y = this->imageWidgetRect.normal.size.y + 2 * this->windowBorderSize;
-        this->updateAfterContentSwitch.screenToImageScale = 1.0;
-        this->viewer->onImageWindowGeometryUpdated (this->updateAfterContentSwitch.targetWindowGeometry);
+        this->imageWidgetRect.current.size = this->currentLayout.widgetRectForImageSize(firstImSizeInRectBefore, gridPadding);
+        this->shouldUpdateWindowSize = true;
+    }
+
+        // Keep the current geometry if it was already set before.
+        if (!this->imageWidgetRect.current.origin.isValid())
+        {
+            this->imageWidgetRect.current = this->imageWidgetRect.normal;
+            // Don't show it now, but tell it to show the window after
+            // updating the content, otherwise we can get annoying flicker.
+            this->updateAfterContentSwitch.inProgress = true;
+            this->updateAfterContentSwitch.needToResize = true;
+            this->updateAfterContentSwitch.numAlreadyRenderedFrames = 0;
+            this->updateAfterContentSwitch.targetWindowGeometry.origin.x = this->imageWidgetRect.normal.origin.x - this->windowBorderSize;
+            this->updateAfterContentSwitch.targetWindowGeometry.origin.y = this->imageWidgetRect.normal.origin.y - this->windowBorderSize;
+            this->updateAfterContentSwitch.targetWindowGeometry.size.x = this->imageWidgetRect.normal.size.x + 2 * this->windowBorderSize;
+            this->updateAfterContentSwitch.targetWindowGeometry.size.y = this->imageWidgetRect.normal.size.y + 2 * this->windowBorderSize;
+            this->updateAfterContentSwitch.screenToImageScale = 1.0;
+            this->viewer->onImageWindowGeometryUpdated(this->updateAfterContentSwitch.targetWindowGeometry);
     }
 
     this->mutableState.activeMode = ViewerMode::Original;    
@@ -377,7 +411,8 @@ void ImageWindow::checkImguiGlobalImageKeyEvents ()
     for (const auto code : {
             GLFW_KEY_1, GLFW_KEY_2, GLFW_KEY_3, GLFW_KEY_4, 
             GLFW_KEY_UP, GLFW_KEY_DOWN, GLFW_KEY_LEFT, GLFW_KEY_RIGHT,
-            GLFW_KEY_O, GLFW_KEY_S, GLFW_KEY_W, GLFW_KEY_N, GLFW_KEY_A, GLFW_KEY_V,
+            GLFW_KEY_O, GLFW_KEY_S, GLFW_KEY_W, 
+            GLFW_KEY_N, GLFW_KEY_A, GLFW_KEY_V, GLFW_KEY_PERIOD, GLFW_KEY_COMMA, GLFW_KEY_M,
             GLFW_KEY_SPACE, GLFW_KEY_BACKSPACE
         })
     {
@@ -430,7 +465,10 @@ void ImageWindow::processKeyEvent (int keycode)
         
         // Zoom
         case GLFW_KEY_N: runAction(ImageWindowAction::Zoom_Normal); break;
+        case GLFW_KEY_M: runAction(ImageWindowAction::Zoom_Maxspect); break;
         case GLFW_KEY_A: runAction (ImageWindowAction::Zoom_RestoreAspectRatio); break;
+        case GLFW_KEY_PERIOD: runAction (ImageWindowAction::Zoom_Inc10p); break;
+        case GLFW_KEY_COMMA: runAction (ImageWindowAction::Zoom_Dec10p); break;
         case '<': runAction (ImageWindowAction::Zoom_div2); break;
         case '>': runAction (ImageWindowAction::Zoom_x2); break;
 
@@ -701,7 +739,7 @@ void ImageWindow::renderFrame ()
 
     if (!io.WantCaptureKeyboard)
     {
-        if (ImGui::IsKeyPressed(GLFW_KEY_Q) || ImGui::IsKeyPressed(GLFW_KEY_ESCAPE) || impl->imguiGlfwWindow.closeRequested())
+        if (ImGui::IsKeyPressed(GLFW_KEY_Q) || impl->imguiGlfwWindow.closeRequested())
         {
             impl->mutableState.activeMode = ViewerMode::None;
             impl->imguiGlfwWindow.cancelCloseRequest ();
@@ -889,7 +927,7 @@ void ImageWindow::renderFrame ()
         if (ImGui::IsMouseClicked(ImGuiMouseButton_Right) && !io.KeyCtrl)
         {
             // xv-like controls focus.
-            if (impl->viewer) impl->viewer->onControlsRequested();
+            if (impl->viewer) impl->viewer->onToggleControls();
         }
     }
         
@@ -976,7 +1014,7 @@ void ImageWindow::runAction (ImageWindowAction action)
             break;
         }
 
-        case ImageWindowAction::Zoom_MaxAvailable: {
+        case ImageWindowAction::Zoom_Maxspect: {
             impl->imageWidgetRect.current.size.x = impl->monitorSize.x;
             impl->imageWidgetRect.current.size.y = impl->monitorSize.y;
             impl->adjustAspectRatio ();            
