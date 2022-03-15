@@ -639,10 +639,23 @@ void ImageWindow::renderFrame ()
     {
         for (int idx = 0; idx < impl->currentImages.size(); ++idx)
         {
-            if (!impl->currentImages[idx].data)
-                continue;
+            const int imageListIdx = imageList.selectedIndex() + idx;
             
-            const ImageItemPtr& item = imageList.imageItemFromIndex (imageList.selectedIndex() + idx);
+            if (!impl->currentImages[idx].data)
+            {
+                // Was a new image added?
+                if (imageListIdx < imageList.numImages())
+                {
+                    contentChanged = true;
+                    break;
+                }
+                else
+                {
+                    continue;
+                }
+            }
+            
+            const ImageItemPtr& item = imageList.imageItemFromIndex (imageListIdx);
             if (impl->currentImages[idx].item->uniqueId != item->uniqueId)
             {
                 contentChanged = true;
