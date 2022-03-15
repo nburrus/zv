@@ -5,7 +5,9 @@ import sys
 
 def callback(image_id, x, y, user_data):
     if zv.imgui.IsMouseClicked(zv.imgui.MouseButton.Left, False):
-        print (f"Left button clicked {x} {y}!")
+        control_str = "[Control] " if zv.imgui.IsKeyDown(zv.imgui.Key.LeftCtrl) else ""
+        print (f"{control_str}Left button clicked {x} {y}!")
+        print ("")
         viewer.runAction (zv.ImageWindowAction.Zoom_Normal)
     elif zv.imgui.IsMouseClicked(zv.imgui.MouseButton.Right, False):
         print (f"Right button clicked {x} {y}!")

@@ -47,7 +47,7 @@ public:
 
 public:
     ImageId addImageFromFile (const std::string& imagePath);
-    ImageId addImageData (const ImageSRGBA& image, const std::string& imageName, int insertPos = -1, bool replaceExisting = false);
+    ImageId addImageData (const ImageSRGBA& image, const std::string& imageName, int insertPos = -1, bool replaceExisting = true);
     ImageId addPastedImage ();
     ImageId selectedImage () const;
 
