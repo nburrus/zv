@@ -317,4 +317,14 @@ void Viewer::setEventCallback (ImageId imageId, EventCallbackType callback, void
     itemPtr->eventCallbackData = userData;
 }
 
+void Viewer::setLayout (int nrows, int ncols)
+{
+    impl->imageWindow.addCommand (ImageWindow::layoutCommand(nrows, ncols));
+}
+
+void Viewer::runAction (ImageWindowAction action)
+{
+    impl->imageWindow.addCommand (ImageWindow::actionCommand(action));
+}
+
 } // zv

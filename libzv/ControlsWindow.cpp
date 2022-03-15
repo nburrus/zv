@@ -240,29 +240,39 @@ void ControlsWindow::renderFrame ()
             if (ImGui::MenuItem("Double size", ">", false)) imageWindow->processKeyEvent ('>');
             if (ImGui::MenuItem("Half size", "<", false)) imageWindow->processKeyEvent ('<');
             if (ImGui::MenuItem("Restore aspect ratio", "a", false)) imageWindow->processKeyEvent (GLFW_KEY_A);
-            if (ImGui::BeginMenu("Grid"))
+            if (ImGui::BeginMenu("Layout"))
             {
                 if (ImGui::MenuItem("Single image", "1"))
                 {
-                    imageWindow->setLayout(1,1,1);
+                    imageWindow->addCommand(ImageWindow::layoutCommand(1,1));
                 }
-                if (ImGui::BeginMenu("2 images"))
+                if (ImGui::MenuItem("2 columns", "2"))
                 {
-                    if (ImGui::MenuItem("1x2", "2")) imageWindow->setLayout(2,1,2);
-                    if (ImGui::MenuItem("2x1")) imageWindow->setLayout(2,2,1);
-                    ImGui::EndMenu();
+                    imageWindow->addCommand(ImageWindow::layoutCommand(1,2));
                 }
-                if (ImGui::BeginMenu("3 images"))
+                if (ImGui::MenuItem("3 columns", "3"))
                 {
-                    if (ImGui::MenuItem("1x3", "3")) imageWindow->setLayout(3,1,3);
-                    if (ImGui::MenuItem("3x1")) imageWindow->setLayout(3,3,1);
-                    if (ImGui::MenuItem("2x2")) imageWindow->setLayout(3,2,2);
-                    ImGui::EndMenu();
+                    imageWindow->addCommand(ImageWindow::layoutCommand(1,3));
                 }
-                if (ImGui::BeginMenu("4 images"))
+                if (ImGui::MenuItem("2 rows"))
                 {
-                    if (ImGui::MenuItem("2x2", "4")) imageWindow->setLayout(4,2,2);
-                    ImGui::EndMenu();
+                    imageWindow->addCommand(ImageWindow::layoutCommand(2,1));
+                }
+                if (ImGui::MenuItem("3 rows"))
+                {
+                    imageWindow->addCommand(ImageWindow::layoutCommand(3,1));
+                }
+                if (ImGui::MenuItem("2x2"))
+                {
+                    imageWindow->addCommand(ImageWindow::layoutCommand(2,2));
+                }
+                if (ImGui::MenuItem("2x3"))
+                {
+                    imageWindow->addCommand(ImageWindow::layoutCommand(2,3));
+                }
+                if (ImGui::MenuItem("3x4"))
+                {
+                    imageWindow->addCommand(ImageWindow::layoutCommand(3,4));
                 }
                 ImGui::EndMenu();
             }
@@ -322,7 +332,7 @@ void ControlsWindow::renderFrame ()
         {
             const float availableWidth = ImGui::GetContentRegionAvail().x;
             const int minSelectedIndex = imageList.selectedIndex();
-            const int maxSelectedIndex = minSelectedIndex + imageWindowState.layoutConfig.numImages;
+            const int maxSelectedIndex = minSelectedIndex + imageWindowState.layoutConfig.numImages();
             for (int idx = 0; idx < imageList.numImages(); ++idx)
             {
                 const ImageItemPtr& itemPtr = imageList.imageItemFromIndex(idx);

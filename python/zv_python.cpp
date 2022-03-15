@@ -5,6 +5,7 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <pybind11/functional.h>
+#include <pybind11/numpy.h>
 
 #include <imgui/imgui.h>
 
@@ -53,7 +54,7 @@ void register_Viewer (py::module& m)
         
         .def("addImageFromFile", &Viewer::addImageFromFile)
 
-        .def("addImage", [](Viewer& viewer, const std::string& name, py::buffer buffer, int position, bool replace) {
+        .def("addImage", [](Viewer& viewer, const std::string& name, py::array buffer, int position, bool replace) {
             /* Request a buffer descriptor from Python */
             py::buffer_info info = buffer.request();
 
@@ -61,6 +62,11 @@ void register_Viewer (py::module& m)
 
             if (info.ndim != 2 && info.ndim != 3)
                 throw std::runtime_error("Image dimension must be 2 (grayscale) or 3 (color)");
+
+            if (!(buffer.flags() & py::array::c_style))
+            {
+                throw std::runtime_error("Input image must be contiguous and c_style. You might want to use np.ascontiguousarray().");
+            }
 
             // (H,W,1) is the same as (H,W), treat it as grayscale.
             int actual_dims = info.ndim;
@@ -137,7 +143,23 @@ void register_Viewer (py::module& m)
 
         // using EventCallbackType = std::function<void(ImageId, float, float, void* userData)>;
         // void setEventCallback (ImageId imageId, EventCallbackType callback, void* userData);
-        .def("setEventCallback", &Viewer::setEventCallback);
+        .def("setEventCallback", &Viewer::setEventCallback)
+
+        .def("setLayout", &Viewer::setLayout)
+        .def("runAction", &Viewer::runAction);
+        
+    py::enum_<ImageWindowAction>(m, "ImageWindowAction")
+        .value ("Zoom_Normal", ImageWindowAction::Zoom_Normal)
+        .value ("Zoom_RestoreAspectRatio", ImageWindowAction::Zoom_RestoreAspectRatio)
+        .value ("Zoom_x2", ImageWindowAction::Zoom_x2)
+        .value ("Zoom_div2", ImageWindowAction::Zoom_div2)
+        .value ("Zoom_Inc10p", ImageWindowAction::Zoom_Inc10p)
+        .value ("Zoom_Dec10p", ImageWindowAction::Zoom_Dec10p)
+        .value ("Zoom_MaxAvailable", ImageWindowAction::Zoom_MaxAvailable)        
+        .value ("File_OpenImage", ImageWindowAction::File_OpenImage)
+        .value ("View_ToggleOverlay", ImageWindowAction::View_ToggleOverlay)
+        .value ("View_NextImage", ImageWindowAction::View_NextImage)
+        .value ("View_PrevImage", ImageWindowAction::View_PrevImage);
 }
 
 void register_ImGui (py::module& zv_module)

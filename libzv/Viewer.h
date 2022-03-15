@@ -7,6 +7,7 @@
 #pragma once
 
 #include <libzv/Image.h>
+#include <libzv/ImageWindowActions.h>
 
 #include <memory>
 #include <functional>
@@ -52,6 +53,9 @@ public:
 
     using EventCallbackType = std::function<void(ImageId, float, float, void* userData)>;
     void setEventCallback (ImageId imageId, EventCallbackType callback, void* userData);
+
+    void setLayout (int nrows, int ncols);
+    void runAction (ImageWindowAction action);
         
 protected:
     // Controller-like global methods that member windows can call.

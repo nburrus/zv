@@ -20,7 +20,7 @@ std::string viewerModeName (ViewerMode mode);
 
 struct LayoutConfig
 {
-    int numImages = 1;
+    int numImages() const { return numRows*numCols; }
     int numRows = 1;
     int numCols = 1;
     

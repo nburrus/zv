@@ -68,6 +68,7 @@ add_library(zv
     ImageList.h
     ImageWindow.cpp
     ImageWindow.h
+    ImageWindowActions.h
     ImageWindowState.h
     ImguiGLFWWindow.cpp
     ImguiGLFWWindow.h

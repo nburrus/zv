@@ -42,6 +42,7 @@
 
 #include <clip/clip.h>
 
+#include <deque>
 #include <cstdio>
 
 namespace zv
@@ -75,13 +76,13 @@ struct ImageLayout
     void adjustForConfig (const LayoutConfig& config)
     {
         this->config = config;
-        imageRects.resize (config.numImages);
+        imageRects.resize (config.numImages());
         
         for (int r = 0; r < config.numRows; ++r)
         for (int c = 0; c < config.numCols; ++c)
         {
             const int idx = r*config.numCols + c;
-            if (idx < config.numImages)
+            if (idx < config.numImages())
             {
                 imageRects[idx] = Rect::from_x_y_w_h(double(c)/config.numCols,
                                                      double(r)/config.numRows,
@@ -114,6 +115,8 @@ struct ImageWindow::Impl
 
     ImageCursorOverlay inlineCursorOverlay;
     CursorOverlayInfo cursorOverlayInfo;
+
+    std::deque<Command> pendingCommands;
 
     struct {
         bool requested = false;
@@ -192,7 +195,7 @@ void ImageWindow::Impl::adjustForNewSelection ()
     // It's very important that this gets called while the GL context is bound
     // as it may release some GLTexture in the cache. Would be nice to make this
     // code more robust.
-    this->currentImages.resize (this->mutableState.layoutConfig.numImages);
+    this->currentImages.resize (this->mutableState.layoutConfig.numImages());
     for (int i = 0; i < this->currentImages.size(); ++i)
     {
         const int imgIndex = firstIndex + i;
@@ -341,13 +344,9 @@ bool ImageWindow::initialize (GLFWwindow* parentWindow, Viewer* viewer)
     return true;
 }
 
-void ImageWindow::setLayout (int numImages, int numRows, int numCols)
+void ImageWindow::addCommand (Command&& command)
 {
-    LayoutConfig config;
-    config.numImages = numImages;
-    config.numCols = numCols;
-    config.numRows = numRows;
-    impl->mutableState.layoutConfig = config;
+    impl->pendingCommands.push_back (std::move(command));
 }
 
 ImageWindowState& ImageWindow::mutableState ()
@@ -401,18 +400,10 @@ void ImageWindow::processKeyEvent (int keycode)
     switch (keycode)
     {
         case GLFW_KEY_UP:
-        case GLFW_KEY_BACKSPACE:
-        {
-            impl->viewer->imageList().selectImage (impl->viewer->imageList().selectedIndex() - impl->currentLayout.config.numImages);
-            break;
-        }
+        case GLFW_KEY_BACKSPACE: runAction(ImageWindowAction::View_PrevImage); break;
 
         case GLFW_KEY_DOWN:
-        case GLFW_KEY_SPACE:
-        {
-            impl->viewer->imageList().selectImage (impl->viewer->imageList().selectedIndex() + impl->currentLayout.config.numImages);
-            break;
-        }
+        case GLFW_KEY_SPACE: runAction(ImageWindowAction::View_NextImage); break;
 
         case GLFW_KEY_S:
         {
@@ -429,53 +420,26 @@ void ImageWindow::processKeyEvent (int keycode)
             // No image saving for now.
             if (io.KeyCtrl)
             {
-                impl->viewer->onOpenImage();
+                runAction (ImageWindowAction::File_OpenImage);
             }
             break;
         }
 
-        case GLFW_KEY_V:
-        {
-            impl->mutableState.infoOverlayEnabled = !impl->mutableState.infoOverlayEnabled;
-            break;
-        }
+        // View
+        case GLFW_KEY_V: runAction (ImageWindowAction::View_ToggleOverlay); break;
+        
+        // Zoom
+        case GLFW_KEY_N: runAction(ImageWindowAction::Zoom_Normal); break;
+        case GLFW_KEY_A: runAction (ImageWindowAction::Zoom_RestoreAspectRatio); break;
+        case '<': runAction (ImageWindowAction::Zoom_div2); break;
+        case '>': runAction (ImageWindowAction::Zoom_x2); break;
 
-        case GLFW_KEY_N: 
-        {
-            impl->imageWidgetRect.current = impl->imageWidgetRect.normal;
-            impl->shouldUpdateWindowSize = true;
-            break;
-        }
+        // Layout
+        case GLFW_KEY_1: addCommand(ImageWindow::layoutCommand(1,1)); break;
+        case GLFW_KEY_2: addCommand(ImageWindow::layoutCommand(1,2)); break;
+        case GLFW_KEY_3: addCommand(ImageWindow::layoutCommand(1,3)); break;
+        case GLFW_KEY_4: addCommand(ImageWindow::layoutCommand(2,2)); break;
 
-        case GLFW_KEY_A:
-        {
-            impl->adjustAspectRatio ();
-            break;
-        }
-
-        case GLFW_KEY_1: setLayout(1,1,1); break;
-        case GLFW_KEY_2: setLayout(2,1,2); break;
-        case GLFW_KEY_3: setLayout(3,1,3); break;
-        case GLFW_KEY_4: setLayout(4,2,2); break;
-
-        case '<':
-        {
-            if (impl->imageWidgetRect.current.size.x > 64 && impl->imageWidgetRect.current.size.y > 64)
-            {
-                impl->imageWidgetRect.current.size.x *= 0.5f;
-                impl->imageWidgetRect.current.size.y *= 0.5f;
-                impl->shouldUpdateWindowSize = true;
-            }
-            break;
-        }
-
-        case '>':
-        {
-            impl->imageWidgetRect.current.size.x *= 2.f;
-            impl->imageWidgetRect.current.size.y *= 2.f;
-            impl->shouldUpdateWindowSize = true;
-            break;
-        }
     }
 }
 
@@ -663,6 +627,10 @@ void renderImageItem (const ImageItemAndData& item,
 
 void ImageWindow::renderFrame ()
 {    
+    for (Command& command : impl->pendingCommands)
+        command.execFunc (*this);
+    impl->pendingCommands.clear ();
+
     ImageList& imageList = impl->viewer->imageList();
        
     bool contentChanged = (impl->mutableState.layoutConfig != impl->currentLayout.config);
@@ -943,6 +911,102 @@ void ImageWindow::renderFrame ()
 
     // Sync persistent settings that might have changed. This is no-op is none changed.
     // DaltonLensPrefs::setDaltonizeDeficiencyKind((int)impl->mutableState.daltonizeParams.kind);
+}
+
+void ImageWindow::runAction (ImageWindowAction action)
+{
+    switch (action)
+    {
+        case ImageWindowAction::Zoom_Normal: {
+            fprintf (stderr, "Running action Zoom_Normal\n");
+            impl->imageWidgetRect.current = impl->imageWidgetRect.normal;
+            impl->shouldUpdateWindowSize = true;
+            break;
+        }
+
+        case ImageWindowAction::Zoom_RestoreAspectRatio: {
+            impl->adjustAspectRatio (); 
+            break;
+        }
+
+        case ImageWindowAction::Zoom_x2: {
+            impl->imageWidgetRect.current.size.x *= 2.f;
+            impl->imageWidgetRect.current.size.y *= 2.f;
+            impl->shouldUpdateWindowSize = true;
+            break;
+        }
+
+        case ImageWindowAction::Zoom_div2: {
+            if (impl->imageWidgetRect.current.size.x > 64 && impl->imageWidgetRect.current.size.y > 64)
+            {
+                impl->imageWidgetRect.current.size.x *= 0.5f;
+                impl->imageWidgetRect.current.size.y *= 0.5f;
+                impl->shouldUpdateWindowSize = true;
+            }
+            break;
+        }
+
+        case ImageWindowAction::Zoom_Inc10p: {
+            impl->imageWidgetRect.current.size.x *= 1.1f;
+            impl->imageWidgetRect.current.size.y *= 1.1f;
+            impl->shouldUpdateWindowSize = true;
+            break;
+        }
+
+        case ImageWindowAction::Zoom_Dec10p: {
+            if (impl->imageWidgetRect.current.size.x > 64 && impl->imageWidgetRect.current.size.y > 64)
+            {
+                impl->imageWidgetRect.current.size.x *= 0.9f;
+                impl->imageWidgetRect.current.size.y *= 0.9f;
+                impl->shouldUpdateWindowSize = true;
+            }
+            break;
+        }
+
+        case ImageWindowAction::Zoom_MaxAvailable: {
+            impl->imageWidgetRect.current.size.x = impl->monitorSize.x;
+            impl->imageWidgetRect.current.size.y = impl->monitorSize.y;
+            impl->adjustAspectRatio ();            
+            break;
+        }
+
+        case ImageWindowAction::File_OpenImage: {
+            impl->viewer->onOpenImage();
+            break;
+        }
+
+        case ImageWindowAction::View_ToggleOverlay: {
+            impl->mutableState.infoOverlayEnabled = !impl->mutableState.infoOverlayEnabled;
+            break;
+        }
+
+        case ImageWindowAction::View_NextImage: {
+            impl->viewer->imageList().selectImage (impl->viewer->imageList().selectedIndex() + impl->currentLayout.config.numImages());
+            break;
+        }
+
+        case ImageWindowAction::View_PrevImage: {
+            impl->viewer->imageList().selectImage (impl->viewer->imageList().selectedIndex() - impl->currentLayout.config.numImages());
+            break;
+        }
+    }
+}
+
+ImageWindow::Command ImageWindow::actionCommand (ImageWindowAction action)
+{
+    return Command([action](ImageWindow& window) {
+        window.runAction (action);
+    });
+}
+
+ImageWindow::Command ImageWindow::layoutCommand(int numRows, int numCols)
+{
+    return Command([numRows,numCols](ImageWindow &window) {
+        LayoutConfig config;
+        config.numCols = numCols;
+        config.numRows = numRows;
+        window.impl->mutableState.layoutConfig = config; 
+    });
 }
 
 } // zv

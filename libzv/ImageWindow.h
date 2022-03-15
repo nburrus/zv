@@ -8,6 +8,7 @@
 
 #include <libzv/MathUtils.h>
 #include <libzv/Image.h>
+#include <libzv/ImageWindowActions.h>
 
 #include <memory>
 #include <functional>
@@ -25,6 +26,21 @@ struct CursorOverlayInfo;
 class ImageWindow
 {
 public:
+    struct Command
+    {
+        using ExecFunc = std::function<void(ImageWindow &)>;
+
+        Command(const ExecFunc &f) : execFunc(f) {}
+        Command() {}
+
+        // Prevent copies as it should not be required.
+        Command(Command&&) = default;
+
+        ExecFunc execFunc = nullptr;
+        // Could add undo later on.
+    };
+
+public:
     ImageWindow();
     ~ImageWindow();
     
@@ -40,7 +56,8 @@ public:
     bool isEnabled () const;
     void setEnabled (bool enabled);
     
-    void setLayout (int numImages, int numRows, int numCols);
+    // Force a move semantic to avoid copies of the embedded std::function.
+    void addCommand (Command&& command);
 
     zv::Rect geometry () const;
 
@@ -50,9 +67,17 @@ public:
     void saveCurrentImage ();
 
 public:
+    static Command actionCommand (ImageWindowAction action);
+    static Command layoutCommand(int nrows, int ncols);
+
+public:
     // State that one can modify directly between frames.
     ImageWindowState& mutableState ();
     
+private:
+    // Public accessors can use actionCommand
+    void runAction (ImageWindowAction action);
+
 private:
     struct Impl;
     friend struct Impl;
