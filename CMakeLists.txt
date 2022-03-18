@@ -131,6 +131,8 @@ add_subdirectory(zv)
 add_subdirectory(deps/pybind11)
 add_subdirectory(python)
 
+add_subdirectory(client)
+
 # enable_testing()
 # add_subdirectory(tests)
 
