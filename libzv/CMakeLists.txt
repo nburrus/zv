@@ -106,7 +106,6 @@ target_include_directories(zv PUBLIC
 
 target_include_directories(zv PRIVATE
      ${DEPS_DIR}/cppuserprefs
-     ${DEPS_DIR}/asio
 )
 
 if (USE_NFD)

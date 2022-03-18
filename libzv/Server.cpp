@@ -8,10 +8,13 @@
 
 #include <libzv/Utils.h>
 
-#include <kissnet.hpp>
+#include <client/kissnet_zv.h>
+#include <client/Message.h>
 
 #include <thread>
 #include <iostream>
+
+namespace kn = kissnet;
 
 namespace zv
 {
@@ -29,7 +32,16 @@ struct ServerThread
     {
         try
         {
-            
+            kn::socket<kissnet::protocol::tcp> server(kn::endpoint(hostname, port));
+            server.bind();
+            server.listen();
+
+            auto client = server.accept();
+            while (!_shouldDisconnect)
+            {
+                // Message msg = readMessage ();
+                // client.recv();
+            }
         }
         catch (std::exception &e)
         {
@@ -38,6 +50,7 @@ struct ServerThread
     }
 
     std::thread _thread;
+    bool _shouldDisconnect = false;
 };
 
 struct Server::Impl

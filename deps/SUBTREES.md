@@ -22,6 +22,3 @@ git subtree add --prefix deps/cppuserprefs git@github.com:nburrus/cppuserprefs.g
 
 # pybind11
 git subtree add --prefix deps/pybind11 git@github.com:pybind/pybind11.git stable --squash
-
-# Asio
-Only copied the includes from git@github.com:chriskohlhoff/asio.git : bba12d10501418fd3789ce01c9f86a77d37df7ed (asio version 1.22.1)
