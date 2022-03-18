@@ -46,25 +46,29 @@ std::unique_ptr<ImageItem> imageItemFromPath (const std::string& imagePath)
     return entry;
 }
 
-ImageSRGBAPtr getDefaultImage ()
+std::unique_ptr<ImageItemData> getDefaultImage ()
 {
     static ImageSRGBAPtr image;
-    if (image)
-        return image;
-
-    int width = 256;
-    int height = 256;
-    image = std::make_shared<ImageSRGBA>(width,height);
-    for (int r = 0; r < height; ++r)
+    
+    if (!image)
     {
-        auto* rowPtr = image->atRowPtr(r);
-        for (int c = 0; c < width; ++c)
+        int width = 256;
+        int height = 256;
+        image = std::make_shared<ImageSRGBA>(width, height);
+        for (int r = 0; r < height; ++r)
         {
-            rowPtr[c] = PixelSRGBA(r%256, c%256, (r+c)%256, 255);
+            auto *rowPtr = image->atRowPtr(r);
+            for (int c = 0; c < width; ++c)
+            {
+                rowPtr[c] = PixelSRGBA(r % 256, c % 256, (r + c) % 256, 255);
+            }
         }
     }
 
-    return image;
+    auto output = std::make_unique<StaticImageItemData>();
+    output->cpuData = image;
+    output->status = ImageItemData::Status::Ready;
+    return output;
 }
 
 std::unique_ptr<ImageItem> defaultImageItem ()
@@ -79,30 +83,39 @@ std::unique_ptr<ImageItem> defaultImageItem ()
 
 std::unique_ptr<ImageItemData> loadImageData(const ImageItem& input)
 {
-    auto output = std::make_unique<ImageItemData>();
+    std::unique_ptr<ImageItemData> output;
     
     switch (input.source)
     {
         case ImageItem::Source::Data:
         {
-            output->cpuData = input.sourceData;
+            auto* staticData = new StaticImageItemData();
+            staticData->status = ImageItemData::Status::Ready;
+            staticData->cpuData = input.sourceData;
+            output.reset (staticData);
             break;
         }
 
         case ImageItem::Source::FilePath:
         {
-            output->cpuData = std::make_shared<ImageSRGBA>();
+            auto* staticData = new StaticImageItemData();
+            staticData->status = ImageItemData::Status::Ready;
+            staticData->cpuData = std::make_shared<ImageSRGBA>();
+
             bool couldLoad = readPngImage (input.sourceImagePath, *output->cpuData);
             if (!couldLoad)
             {
                 zv_dbg("Could not load %s", input.sourceImagePath.c_str());
+                staticData->status = ImageItemData::Status::FailedToLoad;
             }
+
+            output.reset (staticData);
             break;
         }
 
         case ImageItem::Source::Callback:
         {
-            output->cpuData = input.loadDataCallback();
+            output = input.loadDataCallback();
             break;
         }
 

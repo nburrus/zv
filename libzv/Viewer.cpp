@@ -253,6 +253,11 @@ ImageId Viewer::addImageData (const ImageSRGBA& image, const std::string& imageN
     return impl->imageList.addImage (imageItemFromData (image, imageName), insertPos, replaceExisting);
 }
 
+ImageId Viewer::addImageItem (ImageItemUniquePtr imageItem, int insertPos, bool replaceExisting)
+{
+    return impl->imageList.addImage (std::move(imageItem), insertPos, replaceExisting);
+}
+
 ImageId Viewer::addPastedImage ()
 {
     // Keep that old code around for now.

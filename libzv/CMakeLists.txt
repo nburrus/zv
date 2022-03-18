@@ -84,6 +84,8 @@ add_library(zv
     Prefs.cpp
     Prefs.h
     ProggyVector_font.hpp
+    Server.cpp
+    Server.h
     Utils.cpp
     Utils.h
     Viewer.cpp
@@ -104,6 +106,7 @@ target_include_directories(zv PUBLIC
 
 target_include_directories(zv PRIVATE
      ${DEPS_DIR}/cppuserprefs
+     ${DEPS_DIR}/asio
 )
 
 if (USE_NFD)

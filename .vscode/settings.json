@@ -74,6 +74,7 @@
         "complex": "cpp",
         "forward_list": "cpp",
         "typeindex": "cpp",
-        "valarray": "cpp"
+        "valarray": "cpp",
+        "*.ipp": "cpp"
     },
 }

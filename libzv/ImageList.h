@@ -17,6 +17,44 @@ namespace zv
 
 using ImageId = int64_t;
 
+struct ImageItemData
+{
+    virtual ~ImageItemData () {}
+
+    enum class Status
+    {
+        FailedToLoad = -2,
+        Unknown = -1,
+        Ready = 0,
+        StillLoading = 1,
+    };
+
+    Status status = Status::Unknown;
+
+    // Update is the only operation that can actually change the content.
+    // Returns true if the content changed.
+    virtual bool update () = 0;
+
+    // In a context compatible with ImageWindowContext
+    std::shared_ptr<ImageSRGBA> cpuData;
+    std::unique_ptr<GLTexture> textureData;
+};
+using ImageItemDataPtr = std::shared_ptr<ImageItemData>;
+using ImageItemDataUniquePtr = std::unique_ptr<ImageItemData>;
+
+struct StaticImageItemData : public ImageItemData
+{
+    virtual bool update () override { return false; }
+};
+
+// Going to be much more complex.
+struct NetworkImageItemData : public ImageItemData
+{
+    virtual bool update () override;
+    struct Impl;
+    std::unique_ptr<Impl> impl;
+};
+
 struct ImageItem
 {
     enum class Source
@@ -32,7 +70,7 @@ struct ImageItem
     std::string sourceImagePath; // also used for the pretty name of other sources.
     std::string prettyName;
     std::shared_ptr<ImageSRGBA> sourceData;
-    std::function<ImageSRGBAPtr(void)> loadDataCallback;
+    std::function<ImageItemDataUniquePtr()> loadDataCallback;
 
     using EventCallbackType = std::function<void(ImageId, float, float, void* userData)>;
     EventCallbackType eventCallback = nullptr;
@@ -42,21 +80,15 @@ struct ImageItem
     // Everything should be lazy though.
 };
 using ImageItemPtr = std::shared_ptr<ImageItem>;
+using ImageItemUniquePtr = std::unique_ptr<ImageItem>;
 
 std::unique_ptr<ImageItem> imageItemFromPath (const std::string& imagePath);
 std::unique_ptr<ImageItem> imageItemFromData (const ImageSRGBA& im, const std::string& name);
 
-struct ImageItemData
-{
-    std::shared_ptr<ImageSRGBA> cpuData;
-    
-    // In a context compatible with ImageWindowContext
-    std::unique_ptr<GLTexture> textureData;
-};
-using ImageItemDataPtr = std::shared_ptr<ImageItemData>;
-
 struct ImageItemAndData
 {
+    bool hasValidData() const { return data && data->status == ImageItemData::Status::Ready; }
+
     ImageItemPtr item;
     ImageItemDataPtr data;
 };

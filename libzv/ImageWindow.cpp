@@ -230,7 +230,7 @@ void ImageWindow::Impl::adjustForNewSelection ()
         {
             this->currentImages[i].item = imageList.imageItemFromIndex(firstIndex + i);
             this->currentImages[i].data = imageList.getData(this->currentImages[i].item.get());
-            if (this->currentImages[i].data->cpuData->hasData())
+            if (this->currentImages[i].hasValidData())
             {
                 auto &textureData = this->currentImages[i].data->textureData;
                 if (!textureData)
@@ -670,7 +670,7 @@ void ImageWindow::renderFrame ()
     impl->pendingCommands.clear ();
 
     ImageList& imageList = impl->viewer->imageList();
-       
+
     bool contentChanged = (impl->mutableState.layoutConfig != impl->currentLayout.config);
     contentChanged |= impl->currentImages.empty();
     if (!contentChanged)
@@ -699,6 +699,17 @@ void ImageWindow::renderFrame ()
                 contentChanged = true;
                 break;
             }
+        }
+    }
+
+    // Try to update any item data that might have changed (async network load
+    // finished, file changed..).
+    for (int idx = 0; idx < impl->currentImages.size(); ++idx)
+    {
+        if (impl->currentImages[idx].data && impl->currentImages[idx].data->update ())
+        {
+            impl->currentImages[idx].data->textureData.reset ();
+            contentChanged = true;
         }
     }
 
@@ -803,7 +814,7 @@ void ImageWindow::renderFrame ()
         for (int c = 0; c < impl->currentLayout.config.numCols; ++c)
         {
             const int idx = r*impl->currentLayout.config.numCols + c;
-            if (idx < impl->currentImages.size() && impl->currentImages[idx].data)
+            if (idx < impl->currentImages.size() && impl->currentImages[idx].hasValidData())
             {
                 const auto& rect = impl->currentLayout.imageRects[idx];
                 const ImVec2 imageWidgetSize = ImVec2(globalImageWidgetContentSize.x * rect.size.x, 
@@ -823,7 +834,7 @@ void ImageWindow::renderFrame ()
 
         for (int idx = 0; idx < impl->currentImages.size(); ++idx)
         {
-            if (!impl->currentImages[idx].data)
+            if (!impl->currentImages[idx].hasValidData())
                 continue;
             
             if (!impl->currentImages[idx].data->cpuData->hasData())
@@ -848,7 +859,7 @@ void ImageWindow::renderFrame ()
         {            
             for (int idx = 0; idx < impl->currentImages.size(); ++idx)
             {
-                if (!impl->currentImages[idx].data)
+                if (!impl->currentImages[idx].hasValidData())
                     continue;
 
                 if (impl->cursorOverlayInfo.itemAndData.item->uniqueId == impl->currentImages[idx].item->uniqueId)
@@ -873,7 +884,7 @@ void ImageWindow::renderFrame ()
 
                 for (int idx = 0; idx < impl->currentImages.size(); ++idx)
                 {
-                    if (!impl->currentImages[idx].data)
+                    if (!impl->currentImages[idx].hasValidData())
                         continue;
                     
                     const auto& im = *impl->currentImages[idx].data->cpuData;

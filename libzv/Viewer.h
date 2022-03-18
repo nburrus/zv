@@ -22,6 +22,10 @@ class ControlsWindow;
 class ImageList;
 using ImageId = int64_t;
 
+struct ImageItem;
+using ImageItemPtr = std::shared_ptr<ImageItem>;
+using ImageItemUniquePtr = std::unique_ptr<ImageItem>;
+
 struct ViewerState
 {
     bool helpRequested = false;
@@ -50,6 +54,8 @@ public:
     ImageId addImageData (const ImageSRGBA& image, const std::string& imageName, int insertPos = -1, bool replaceExisting = true);
     ImageId addPastedImage ();
     ImageId selectedImage () const;
+
+    ImageId addImageItem (ImageItemUniquePtr imageItem, int insertPos, bool replaceExisting = true);
 
     using EventCallbackType = std::function<void(ImageId, float, float, void* userData)>;
     void setEventCallback (ImageId imageId, EventCallbackType callback, void* userData);

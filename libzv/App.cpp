@@ -8,6 +8,7 @@
 
 #include <libzv/Viewer.h>
 #include <libzv/Utils.h>
+#include <libzv/Server.h>
 
 #include "GeneratedConfig.h"
 
@@ -26,6 +27,8 @@ struct App::Impl
     Impl (App& that) : that(that) {}
     App& that;
 
+    Server server;
+
     RateLimit rateLimit;
 
     std::unique_ptr<argparse::ArgumentParser> argsParser;
@@ -34,6 +37,8 @@ struct App::Impl
     
     void updateOnce ()
     {
+        server.updateOnce ();
+
         std::vector<std::string> viewersToRemove;
         for (auto& nameAndViewer : viewers)
         {
@@ -111,11 +116,19 @@ bool App::initialize (const std::vector<std::string>& args)
        zv_dbg("No images provided, using default.");
    }
 
+   impl->server.start ();
+   impl->server.setImageReceivedCallback ([this](ImageItemUniquePtr imageItem, int flags) {
+       bool replace = flags;
+       impl->viewers[0]->addImageItem (std::move(imageItem), -1, replace);
+   });
+
    return true;
 }
 
 void App::shutdown()
 {
+    impl->server.stop ();
+
     for (auto& nameAndViewer : impl->viewers)
         nameAndViewer.second->shutdown();
     impl->viewers.clear ();
