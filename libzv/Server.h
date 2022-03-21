@@ -14,6 +14,17 @@
 namespace zv
 {
 
+// Going to be much more complex.
+struct NetworkImageItemData : public ImageItemData
+{
+    NetworkImageItemData ();
+    virtual ~NetworkImageItemData ();
+
+    virtual bool update () override;
+    struct Impl;
+    std::unique_ptr<Impl> impl;
+};
+
 class Server
 {
 public:

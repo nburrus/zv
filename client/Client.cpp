@@ -79,7 +79,7 @@ private:
             {
                 try
                 {
-                    sendMessage(std::move(messagesToSend.front()));
+                    sendMessage(*_socket, std::move(messagesToSend.front()));
                     messagesToSend.pop_front();
                 }
                 catch (const std::exception& e)
@@ -90,16 +90,6 @@ private:
                 }
             }
         }
-    }
-
-    void sendMessage (const Message& msg)
-    {
-        KnWriter w (*_socket);
-        w.sendInt32 ((int32_t)msg.kind);
-        w.sendUInt64 (msg.payloadSizeInBytes);
-        std::clog << "[DEBUG][WRITER] Payload sent: " << msg.payloadSizeInBytes << std::endl;
-        if (msg.payloadSizeInBytes > 0)
-            w.sendAllBytes (msg.payload.data(), msg.payloadSizeInBytes);
     }
 
 private:
@@ -198,7 +188,6 @@ private:
     Message recvMessage ()
     {
         KnReader r (_socket);
-        // const auto [data_size, status_code] = _socket.recv(static_buffer);
         Message msg;
         msg.kind = (MessageKind)r.recvUInt32 ();
         msg.payloadSizeInBytes = r.recvUInt64 ();

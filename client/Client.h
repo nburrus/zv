@@ -4,6 +4,8 @@
 // of the BSD license.  See the LICENSE file for details.
 //
 
+#pragma once
+
 #include <functional>
 #include <memory>
 #include <string>

@@ -47,14 +47,6 @@ struct StaticImageItemData : public ImageItemData
     virtual bool update () override { return false; }
 };
 
-// Going to be much more complex.
-struct NetworkImageItemData : public ImageItemData
-{
-    virtual bool update () override;
-    struct Impl;
-    std::unique_ptr<Impl> impl;
-};
-
 struct ImageItem
 {
     enum class Source
@@ -63,6 +55,7 @@ struct ImageItem
         FilePath,
         Data,
         Callback,
+        Network
     } source;
    
     ImageId uniqueId = -1;

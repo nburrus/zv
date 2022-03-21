@@ -4,7 +4,11 @@
 // of the BSD license.  See the LICENSE file for details.
 //
 
+#pragma once
+
 #include "kissnet.hpp"
+
+#include "Message.h"
 
 #include <vector>
 
@@ -50,11 +54,23 @@ public:
 
     uint32_t recvInt32() { return recvValue<int32_t>(); }
     uint32_t recvUInt32() { return recvValue<uint32_t>(); }
-    uint64_t recvUInt64() { return recvValue<uint64_t>(); }
+    uint64_t recvUInt64() { return recvValue<uint64_t>(); }    
 
 private:
     kn::tcp_socket& s;    
 };
+
+static Message recvMessage (kn::tcp_socket& s)
+{
+    KnReader r(s);
+    Message msg;
+    msg.kind = (MessageKind)r.recvUInt32();
+    msg.payloadSizeInBytes = r.recvUInt64();
+    msg.payload.resize(msg.payloadSizeInBytes);
+    if (msg.payloadSizeInBytes > 0)
+        r.recvAllBytes(msg.payload.data(), msg.payloadSizeInBytes);
+    return msg;
+}
 
 class KnWriter
 {
@@ -85,5 +101,14 @@ public:
 private:
     kn::tcp_socket& s;
 };
+
+static void sendMessage (kn::tcp_socket& s, const Message& msg)
+{
+    KnWriter w (s);
+    w.sendInt32 ((int32_t)msg.kind);
+    w.sendUInt64 (msg.payloadSizeInBytes);
+    if (msg.payloadSizeInBytes > 0)
+        w.sendAllBytes (msg.payload.data(), msg.payloadSizeInBytes);
+}
 
 } // zv

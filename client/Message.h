@@ -4,6 +4,8 @@
 // of the BSD license.  See the LICENSE file for details.
 //
 
+#pragma once
+
 #include <vector>
 
 namespace zv
@@ -72,7 +74,7 @@ enum class MessageKind : int32_t
     RequestImageBuffer = 3, // the server needs the data for the given image name.
 
     // Output image data.
-    // uniqueId:uint64_t imageBuffer:ImageBuffer
+    // uniqueIdInClient:uint64_t imageBuffer:ImageBuffer
     ImageBuffer = 4,
 };
 
@@ -140,6 +142,17 @@ struct PayloadReader
     uint32_t readUInt32() { return readValue<uint32_t>(); }
     uint64_t readUInt64() { return readValue<uint64_t>(); }
 
+    void readBytes (uint8_t* outputPtr, size_t numBytes)
+    {
+        std::copy(payload.begin() + offset, payload.begin() + offset + numBytes, outputPtr);
+        offset += numBytes;
+    }
+
+    void skipBytes (size_t numBytes)
+    {
+        offset += numBytes;
+    }
+
     void readBlob(std::vector<uint8_t> &outputData)
     {
         size_t numBytes = readUInt64();
@@ -150,8 +163,7 @@ struct PayloadReader
         }
 
         outputData.resize(numBytes);
-        std::copy(payload.begin() + offset, payload.begin() + offset + numBytes, outputData.begin());
-        offset += numBytes;
+        readBytes (outputData.data(), numBytes);
     }
 
     void readStringUTF8(std::string& s)
