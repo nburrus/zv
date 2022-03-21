@@ -922,6 +922,13 @@ namespace kissnet
 				kissnet_fatal_error("setting socket to nonblock returned an error");
 		}
 
+		void set_reuseaddr(bool reuse) const
+		{
+			const int reuse_int = reuse ? 1 : 0;
+			if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<const char*>(&reuse_int), sizeof(reuse_int)) != 0)
+				kissnet_fatal_error("setting socket SO_REUSEADDR mode returned an error");			
+		}
+
 		///Set the socket option for broadcasts
 		/// \param state By default "true". If put to false, it will disable broadcasts
 		void set_broadcast(bool state = true) const

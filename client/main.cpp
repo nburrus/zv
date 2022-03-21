@@ -5,7 +5,7 @@
 
 using namespace std::chrono_literals;
 
-int main ()
+int main (int argc, char** argv)
 {
     zv::Client client;
 
@@ -17,7 +17,7 @@ int main ()
     for (int i = 0; i < 5; ++i)
     {
         std::fill (imData.begin(), imData.end(), i*16);
-        std::string name = "TestImage-" + std::to_string(i);
+        std::string name = "TestImage-" + std::to_string(argc) + "-" + std::to_string(i);
         client.addImage (i, name, view);
         std::this_thread::sleep_for(100ms);
     }

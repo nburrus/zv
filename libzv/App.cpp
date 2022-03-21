@@ -37,7 +37,12 @@ struct App::Impl
     
     void updateOnce ()
     {
-        server.updateOnce ();
+        server.updateOnce([this](ImageItemUniquePtr imageItem, int flags) {
+            bool replace = flags;
+            auto viewerIt = this->viewers.begin();
+            zv_assert (viewerIt != this->viewers.end(), "No viewer!");
+            viewerIt->second->addImageItem (std::move(imageItem), -1, replace); 
+        });
 
         std::vector<std::string> viewersToRemove;
         for (auto& nameAndViewer : viewers)
@@ -117,12 +122,6 @@ bool App::initialize (const std::vector<std::string>& args)
    }
 
    impl->server.start ();
-   impl->server.setImageReceivedCallback ([this](ImageItemUniquePtr imageItem, int flags) {
-       bool replace = flags;
-       auto viewerIt = impl->viewers.begin();
-       zv_assert (viewerIt != impl->viewers.end(), "No viewer!");
-       viewerIt->second->addImageItem (std::move(imageItem), -1, replace);
-   });
 
    return true;
 }

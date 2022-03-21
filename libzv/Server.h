@@ -36,12 +36,11 @@ public:
 
     void stop ();
     
+    using ImageReceivedCallback = std::function<void(ImageItemUniquePtr, int flags)>;
+
     // Call the callbacks, etc. in the calling thread. This
     // avoids having to handle callbacks from any thread.
-    void updateOnce ();
-
-    using ImageReceivedCallback = std::function<void(ImageItemUniquePtr, int flags)>;
-    void setImageReceivedCallback (const ImageReceivedCallback& callback);
+    void updateOnce (const ImageReceivedCallback& callback);
 
 private:
     struct Impl;

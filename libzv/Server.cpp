@@ -12,6 +12,7 @@
 #include <client/kissnet_zv.h>
 #include <client/Message.h>
 
+#include <set>
 #include <deque>
 #include <thread>
 #include <condition_variable>
@@ -124,7 +125,7 @@ private:
             });
             // Mutex locked again.
 
-            std::clog << "[DEBUG][WRITER] Got event, checking if anything to send." << std::endl;
+            zv_dbg ("[DEBUG][WRITER] Got event, checking if anything to send.");
             std::deque<Message> messagesToSend;
             messagesToSend.swap(_outputQueue);
             lk.unlock ();
@@ -133,12 +134,14 @@ private:
             {
                 try
                 {
-                    sendMessage(*_socket, std::move(messagesToSend.front()));
+                    Message msg = std::move(messagesToSend.front());
+                    zv_dbg ("Sending message kind %d", (int)msg.kind);
+                    sendMessage(*_socket, std::move(msg));
                     messagesToSend.pop_front();
                 }
                 catch (const std::exception& e)
                 {
-                    std::clog << "Got an exception, stopping the connection: " << e.what() << std::endl;
+                    zv_dbg ("Got an exception, stopping the connection: %s", e.what());
                     _shouldDisconnect = true;
                     break;
                 }
@@ -155,9 +158,19 @@ private:
     std::deque<Message> _outputQueue;
 };
 
-struct ServerThread
+struct ConnectionSubject
 {
-    ~ServerThread()
+    virtual ~ConnectionSubject() {}
+};
+
+struct ConnectionObserver
+{
+    virtual void onConnectionEnded (ConnectionSubject*) = 0;
+};
+
+struct ServerConnectionThread : public ConnectionSubject
+{
+    ~ServerConnectionThread()
     {
         stop ();
     }
@@ -168,10 +181,12 @@ struct ServerThread
         uint32_t flags;
     };
 
-    void start (const std::string& hostname, int port)
+    void start (ConnectionObserver* observer, std::unique_ptr<kn::tcp_socket> socket)
     {
-        _thread = std::thread([this, hostname, port]() {
-            run (hostname, port);
+        _observer = observer;
+        _clientSocket = std::move(socket);
+        _thread = std::thread([this]() {
+            run ();
         });
     }
 
@@ -183,16 +198,10 @@ struct ServerThread
             _thread.join();
     }
 
-    void run (const std::string& hostname, int port)
+    void run ()
     {
         try
         {
-            kn::tcp_socket server(kn::endpoint(hostname, port));
-            server.bind();
-            server.listen();
-
-            _clientSocket = std::make_unique<kn::tcp_socket>(server.accept());
-
             _writerThread.start (_clientSocket.get());
 
             while (!_shouldDisconnect)
@@ -269,7 +278,7 @@ struct ServerThread
                 }
             }
 
-            zv_dbg("Stopping the server.");
+            zv_dbg("Stopping a connexion.");
             _writerThread.stop();
 
             if (_clientSocket)
@@ -280,30 +289,27 @@ struct ServerThread
         }
         catch (std::exception &e)
         {
-            std::cerr << "Server got exception: " << e.what() << std::endl;
-        }    
-    }
+            std::cerr << "Server connection got exception: " << e.what() << std::endl;
+        }
 
+        if (_observer)
+            _observer->onConnectionEnded (this);
+    }
     
 public:
     // These are meant to be called from the main thread.
 
-    void setImageReceivedCallback(const Server::ImageReceivedCallback& callback)
-    {
-        _imageReceivedCallback = callback;
-    }
-
-    void updateMainThead ()
+    void updateMainThead (const Server::ImageReceivedCallback& imageReceivedCallback)
     {
         std::lock_guard<std::mutex> lk (_incomingImagesMutex);
         while (!_incomingImages.empty())
         {
             IncomingImage im = std::move(_incomingImages.front());
             _incomingImages.pop_front();
-            if (_imageReceivedCallback)
+            if (imageReceivedCallback)
             {
                 im.item->uniqueId = UniqueId::newId();
-                _imageReceivedCallback (std::move(im.item), im.flags /* flags */);
+                imageReceivedCallback (std::move(im.item), im.flags /* flags */);
             }
         }
     }
@@ -343,6 +349,7 @@ private:
     }
 
 private:
+    ConnectionObserver* _observer = nullptr;
     std::thread _thread;
     bool _shouldDisconnect = false;
     std::unique_ptr<kn::tcp_socket> _clientSocket;
@@ -354,8 +361,125 @@ private:
     
     // <ImageID in client, ImageItemData>
     std::unordered_map<uint64_t, ImageContextPtr> _availableImages;
+};
 
-    Server::ImageReceivedCallback _imageReceivedCallback = nullptr;
+struct ServerThread : public ConnectionObserver
+{
+    ~ServerThread()
+    {
+        stop ();
+    }
+
+    void start (const std::string& hostname, int port)
+    {
+        _serverSocket = kn::tcp_socket(kn::endpoint(hostname, port));
+        _listenThread = std::thread([this, hostname, port]() {
+            run ();
+        });
+    }
+
+    void stop ()
+    {
+        _shouldStop = true;
+        
+        // Force pending accept calls to stop.
+        // Calling shutdown first seems more robust.
+        // https://stackoverflow.com/questions/4160347/close-vs-shutdown-socket
+        _serverSocket.shutdown ();
+        _serverSocket.close ();
+
+        if (_listenThread.joinable())
+            _listenThread.join();
+    }
+
+    void startClientThread (std::unique_ptr<kn::tcp_socket> s)
+    {
+        auto* clientThread = new ServerConnectionThread();
+        std::lock_guard<std::mutex> lk (_clientThreadsMutex);
+        _clientThreads.insert (clientThread);
+        clientThread->start (this, std::move(s));
+    }
+
+    virtual void onConnectionEnded (ConnectionSubject* connSubject) override    
+    {
+        zv_dbg ("Got notified that a client disconnected");
+
+        ServerConnectionThread* conn = dynamic_cast<ServerConnectionThread*>(connSubject);
+        zv_assert(conn, "Invalid connection !");
+
+        {
+            std::lock_guard<std::mutex> lk (_clientThreadsMutex);
+            _deadThreads.push_back(conn);
+        }
+    }
+
+    void run ()
+    {
+        try
+        {
+            _serverSocket.set_reuseaddr (true);
+            _serverSocket.bind();
+            _serverSocket.listen();
+
+            while (!_shouldStop)
+            {
+                startClientThread (std::make_unique<kn::tcp_socket>(_serverSocket.accept()));
+
+                // Periodic cleanup.
+                cleanDeadThreads ();
+            }
+        }
+        catch (std::exception &e)
+        {
+            zv_dbg ("Server got exception: %s", e.what());
+        }
+
+        for (auto& client : _clientThreads)
+        {
+            client->stop ();
+        }
+        cleanDeadThreads ();
+
+        for (auto* client : _clientThreads)
+            delete client;
+        _clientThreads.clear ();
+
+        _serverSocket.close ();
+    }
+    
+public:
+    
+    void updateMainThead (const Server::ImageReceivedCallback& imageReceivedCallback)
+    {
+        std::lock_guard<std::mutex> lk (_clientThreadsMutex);
+        for (auto& client : _clientThreads)
+            client->updateMainThead (imageReceivedCallback);
+    }
+
+private:
+    void cleanDeadThreads()
+    {
+        // Periodic removal of dead threads.
+        {
+            std::lock_guard<std::mutex> lk (_clientThreadsMutex);
+            for (const auto& conn : _deadThreads)
+            {
+                _clientThreads.erase(conn);
+                delete conn;
+            }
+            _deadThreads.clear();
+        }
+    }
+
+private:
+    std::thread _listenThread;
+    bool _shouldStop = false;
+
+    kn::tcp_socket _serverSocket;
+    
+    std::mutex _clientThreadsMutex;
+    std::set<ServerConnectionThread*> _clientThreads;
+    std::vector<ServerConnectionThread*> _deadThreads;
 };
 
 struct Server::Impl
@@ -383,14 +507,9 @@ void Server::stop ()
     impl->_serverThread.stop ();
 }
 
-void Server::updateOnce ()
+void Server::updateOnce (const ImageReceivedCallback &callback)
 {
-    impl->_serverThread.updateMainThead ();
-}
-
-void Server::setImageReceivedCallback(const ImageReceivedCallback &callback)
-{
-    impl->_serverThread.setImageReceivedCallback (callback);
+    impl->_serverThread.updateMainThead (callback);
 }
 
 } // zv
