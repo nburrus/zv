@@ -840,9 +840,21 @@ void ImageWindow::renderFrame ()
             if (!impl->currentImages[idx].data->cpuData->hasData())
             {
                 ImGui::SetCursorScreenPos (widgetGeometries[idx].topLeft);
-                ImGui::TextColored(ImVec4(1, 0, 0, 1), "ERROR: could not load the image %s.\nPath: %s",
+                switch (impl->currentImages[idx].data->status)
+                {
+                    case ImageItemData::Status::FailedToLoad: {
+                        ImGui::TextColored(ImVec4(1, 0, 0, 1), "ERROR: could not load the image %s.\nPath: %s",
                                    impl->currentImages[idx].item->prettyName.c_str(),
                                    impl->currentImages[idx].item->sourceImagePath.c_str());
+                        break;
+                    }
+
+                    case ImageItemData::Status::StillLoading: {
+                        ImGui::TextColored(ImVec4(1, 0, 0, 1), "Loading the image...");
+                        break;
+                    }
+                }
+                
             }
             else
             {

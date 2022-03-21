@@ -23,6 +23,20 @@ namespace kn = kissnet;
 namespace zv
 {
 
+struct ClientPayloadWriter : PayloadWriter
+{
+    ClientPayloadWriter(std::vector<uint8_t>& payload) : PayloadWriter (payload) {}
+
+    void appendImageBuffer (const ImageView& imageBuffer)
+    {
+        appendUInt32 (imageBuffer.width);
+        appendUInt32 (imageBuffer.height);
+        appendUInt32 (imageBuffer.bytesPerRow);
+        if (imageBuffer.bytesPerRow > 0)
+            appendBytes (imageBuffer.pixels_RGBA32, imageBuffer.numBytes());
+    }
+};
+
 class ClientWriteThread
 {
 public:
@@ -101,6 +115,30 @@ private:
     std::condition_variable _messageAdded;
 };
 
+class MessageImageWriter : public ImageWriter
+{
+public:
+    MessageImageWriter (Message& msg, uint64_t imageId) : msg (msg), writer (msg.payload)
+    {
+        msg.kind = MessageKind::ImageBuffer;
+        writer.appendUInt64 (imageId);
+    }
+
+    ~MessageImageWriter ()
+    {
+        msg.payloadSizeInBytes = msg.payload.size();
+    }
+
+    virtual void write (const ImageView& imageView) override
+    {
+        writer.appendImageBuffer (imageView);
+    }
+
+private:
+    Message& msg;
+    ClientPayloadWriter writer;
+};
+
 class ClientThread
 {
 public:
@@ -109,10 +147,27 @@ public:
         stop ();
     }
 
-    void start(const std::string &hostname, int port)
+    bool isConnected () const
+    {
+        return _socket.is_valid();
+    }
+
+    bool start(const std::string &hostname, int port)
     {
         _socket = kn::tcp_socket(kn::endpoint(hostname, port));
+        
+        try
+        {
+            _socket.connect ();
+        }
+        catch (const std::exception& e)
+        {
+            std::clog << "Could not connect to ZV client: " << e.what() << std::endl;
+            return false;
+        }
+
         _thread = std::thread([this]() { runMainLoop(); });
+        return true;
     }
 
     void stop ()
@@ -128,13 +183,57 @@ public:
         return _writeThread.enqueueMessage (std::move(msg));
     }
 
+    void addImage (uint64_t imageId, const std::string& imageName, const Client::GetDataCallback& getDataCallback, bool replaceExisting)
+    {
+        if (!_socket.is_valid())
+            return;
+
+        {
+            std::lock_guard<std::mutex> lk(_getDataCallbacksMutex);
+            assert(_getDataCallbacks.find(imageId) == _getDataCallbacks.end());
+            _getDataCallbacks[imageId] = getDataCallback;
+        }
+        addImage(imageId, imageName, ImageView(), replaceExisting);
+    }
+
+    void addImage (uint64_t imageId, const std::string& imageName, const ImageView& imageBuffer, bool replaceExisting)
+    {
+        if (!_socket.is_valid())
+            return;
+
+        // uniqueId:uint64_t name:StringUTF8 flags:uint32_t imageBuffer:ImageBuffer
+        // ImageBuffer
+        //      format: uint32_t
+        //      width:uint32_t
+        //      height:uint32_t
+        //      bytesPerRow:uint32_t
+        //      buffer:Blob
+        Message msg;
+        msg.kind = MessageKind::Image;
+        msg.payloadSizeInBytes = (
+            sizeof(uint64_t) // imageId
+            + imageName.size() + sizeof(uint64_t) // name
+            + sizeof(uint32_t) // flags
+            + sizeof(uint32_t)*3 + imageBuffer.numBytes() // image buffer
+        );
+        msg.payload.reserve (msg.payloadSizeInBytes);
+
+        uint32_t flags = replaceExisting;
+        ClientPayloadWriter w (msg.payload);
+        w.appendUInt64 (imageId);
+        w.appendStringUTF8 (imageName);    
+        w.appendUInt32 (flags);
+        w.appendImageBuffer (imageBuffer);
+        assert (msg.payload.size() == msg.payloadSizeInBytes);
+
+        enqueueMessage (std::move(msg));
+    }
+
 private: 
     // The main loop will keep reading.
     // The write loop will keep writing.
     void runMainLoop ()
     {
-        _socket.connect ();
-
         _writeThread.start (&_socket);
         _writeThread.enqueueMessage (versionMessage(1));
 
@@ -171,6 +270,32 @@ private:
                     assert(serverVersion == 1);
                     break;
                 }
+
+                case MessageKind::RequestImageBuffer:
+                {
+                    // uniqueId:uint64_t
+                    PayloadReader r (msg.payload);
+                    uint64_t imageId = r.readUInt64();
+
+                    Message outputMessage;
+                    {
+                        MessageImageWriter msgWriter(outputMessage, imageId);
+                        Client::GetDataCallback callback;
+                        {
+                            std::lock_guard<std::mutex> lk(_getDataCallbacksMutex);
+                            auto callbackIt = _getDataCallbacks.find(imageId);
+                            assert(callbackIt != _getDataCallbacks.end());
+                            callback = callbackIt->second;
+                        }
+
+                        if (callback)
+                        {
+                            callback(msgWriter);
+                        }
+                    }
+                    _writeThread.enqueueMessage (std::move(outputMessage));
+                    break;
+                }
                 }
             }
             catch (const std::exception& e)
@@ -203,19 +328,9 @@ private:
 
     kn::tcp_socket _socket;
     bool _shouldDisconnect = false;
-};
 
-struct ClientPayloadWriter : PayloadWriter
-{
-    ClientPayloadWriter(std::vector<uint8_t>& payload) : PayloadWriter (payload) {}
-
-    void appendImageBuffer (const Client::ImageView& imageBuffer)
-    {
-        appendUInt32 (imageBuffer.width);
-        appendUInt32 (imageBuffer.height);
-        appendUInt32 (imageBuffer.bytesPerRow);
-        appendBytes (imageBuffer.pixels_RGBA32, imageBuffer.numBytes());
-    }
+    std::mutex _getDataCallbacksMutex;
+    std::unordered_map<uint64_t, Client::GetDataCallback> _getDataCallbacks;
 };
 
 struct Client::Impl
@@ -223,41 +338,30 @@ struct Client::Impl
     ClientThread _clientThread;
 };
 
-Client::Client(const std::string& hostname, int port) : impl (new Impl())
+Client::Client() : impl (new Impl())
+{    
+}
+
+bool Client::connect (const std::string& hostname, int port)
 {
-    impl->_clientThread.start (hostname, port);
+    return impl->_clientThread.start (hostname, port);
+}
+
+bool Client::isConnected () const
+{
+    return impl->_clientThread.isConnected ();
 }
 
 Client::~Client() = default;
 
 void Client::addImage (uint64_t imageId, const std::string& imageName, const ImageView& imageBuffer, bool replaceExisting)
 {
-    // uniqueId:uint64_t name:StringUTF8 flags:uint32_t imageBuffer:ImageBuffer
-    // ImageBuffer
-    //      format: uint32_t
-    //      width:uint32_t
-    //      height:uint32_t
-    //      bytesPerRow:uint32_t
-    //      buffer:Blob
-    Message msg;
-    msg.kind = MessageKind::Image;
-    msg.payloadSizeInBytes = (
-        sizeof(uint64_t) // imageId
-        + imageName.size() + sizeof(uint64_t) // name
-        + sizeof(uint32_t) // flags
-        + sizeof(uint32_t)*3 + imageBuffer.numBytes() // image buffer
-    );
-    msg.payload.reserve (msg.payloadSizeInBytes);
+    impl->_clientThread.addImage (imageId, imageName, imageBuffer, replaceExisting);
+}
 
-    uint32_t flags = replaceExisting;
-    ClientPayloadWriter w (msg.payload);
-    w.appendUInt64 (imageId);
-    w.appendStringUTF8 (imageName);    
-    w.appendUInt32 (flags);
-    w.appendImageBuffer (imageBuffer);
-    assert (msg.payload.size() == msg.payloadSizeInBytes);
-
-    impl->_clientThread.enqueueMessage (std::move(msg));
+void Client::addImage (uint64_t imageId, const std::string& imageName, const GetDataCallback& getDataCallback, bool replaceExisting)
+{
+    impl->_clientThread.addImage (imageId, imageName, getDataCallback, replaceExisting);
 }
 
 } // zv

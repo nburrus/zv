@@ -18,6 +18,11 @@
 #include <condition_variable>
 #include <iostream>
 
+#include <libzv/Platform.h>
+#if PLATFORM_UNIX
+# include <signal.h>
+#endif
+
 namespace kn = kissnet;
 
 namespace zv
@@ -318,7 +323,9 @@ private:
     ImageItemDataUniquePtr onLoadData (const ImageContextPtr& ctx)
     {
         auto dataPtr = std::make_unique<NetworkImageItemData>();
+        dataPtr->impl->ctx = ctx;
         dataPtr->status = ImageItemData::Status::StillLoading;
+        dataPtr->cpuData = std::make_shared<ImageSRGBA>();
         Message msg = requestImageBufferMessage (ctx->clientImageId);
         _writerThread.enqueueMessage (std::move(msg));
         return dataPtr;
@@ -372,6 +379,18 @@ struct ServerThread : public ConnectionObserver
 
     void start (const std::string& hostname, int port)
     {
+        // https://riptutorial.com/posix/example/17424/handle-sigpipe-generated-by-write---in-a-thread-safe-manner
+        // https://stackoverflow.com/questions/23889062/c-how-to-handle-sigpipe-in-a-multithreaded-environment
+#if PLATFORM_UNIX
+        sigset_t sig_block, sig_restore, sig_pending;
+        sigemptyset(&sig_block);
+        sigaddset(&sig_block, SIGPIPE);
+        if (pthread_sigmask(SIG_BLOCK, &sig_block, &sig_restore) != 0) 
+        {
+            zv_assert (false, "Could not block sigmask");
+        }
+#endif
+
         _serverSocket = kn::tcp_socket(kn::endpoint(hostname, port));
         _listenThread = std::thread([this, hostname, port]() {
             run ();
