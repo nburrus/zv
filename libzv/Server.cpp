@@ -157,11 +157,30 @@ private:
 
 struct ServerThread
 {
+    ~ServerThread()
+    {
+        stop ();
+    }
+
+    struct IncomingImage
+    {
+        ImageItemUniquePtr item;
+        uint32_t flags;
+    };
+
     void start (const std::string& hostname, int port)
     {
         _thread = std::thread([this, hostname, port]() {
             run (hostname, port);
         });
+    }
+
+    void stop ()
+    {
+        _shouldDisconnect = true;
+        _writerThread.enqueueMessage (closeMessage());
+        if (_thread.joinable())
+            _thread.join();
     }
 
     void run (const std::string& hostname, int port)
@@ -173,12 +192,20 @@ struct ServerThread
             server.listen();
 
             _clientSocket = std::make_unique<kn::tcp_socket>(server.accept());
+
+            _writerThread.start (_clientSocket.get());
+
             while (!_shouldDisconnect)
             {
                 Message msg = recvMessage ();
+                zv_dbg ("Received message kind=%d", (int)msg.kind);
                 switch (msg.kind)
                 {
                 case MessageKind::Close: {
+                    if (!_shouldDisconnect)
+                    {
+                        _writerThread.enqueueMessage (closeMessage ());
+                    }
                     _shouldDisconnect = true;
                     break;
                 }                
@@ -192,11 +219,11 @@ struct ServerThread
                     reader.readStringUTF8(imageItem->prettyName);
                     const uint32_t flags = reader.readUInt32();
                     
-                    imageItem->source = ImageItem::Source::Network;
                     ImageSRGBA imageContent;
                     reader.readImageBuffer (imageContent);
                     if (imageContent.hasData())
                     {
+                        imageItem->source = ImageItem::Source::Data;
                         imageItem->sourceData = std::make_shared<ImageSRGBA>(std::move(imageContent));
                     }
                     else
@@ -205,6 +232,7 @@ struct ServerThread
                         ctx->clientImageId = clientImageId;
                         ctx->clientSocket = _clientSocket.get();
                         _availableImages[clientImageId] = ctx;
+                        imageItem->source = ImageItem::Source::Callback;
                         imageItem->loadDataCallback = [this, ctx]()
                         {
                             return this->onLoadData(ctx);
@@ -213,7 +241,7 @@ struct ServerThread
 
                     {
                         std::lock_guard<std::mutex> lk (_incomingImagesMutex);
-                        _incomingImages.push_back(std::move(imageItem));
+                        _incomingImages.push_back(IncomingImage {std::move(imageItem), flags});
                     }
                     break;
                 }
@@ -240,16 +268,43 @@ struct ServerThread
                 }
                 }
             }
+
+            zv_dbg("Stopping the server.");
+            _writerThread.stop();
+
+            if (_clientSocket)
+            {
+                _clientSocket->close();
+                _clientSocket.reset();
+            }
         }
         catch (std::exception &e)
         {
             std::cerr << "Server got exception: " << e.what() << std::endl;
-        }
-        
-        if (_clientSocket)
+        }    
+    }
+
+    
+public:
+    // These are meant to be called from the main thread.
+
+    void setImageReceivedCallback(const Server::ImageReceivedCallback& callback)
+    {
+        _imageReceivedCallback = callback;
+    }
+
+    void updateMainThead ()
+    {
+        std::lock_guard<std::mutex> lk (_incomingImagesMutex);
+        while (!_incomingImages.empty())
         {
-            _clientSocket->close();
-            _clientSocket.reset();
+            IncomingImage im = std::move(_incomingImages.front());
+            _incomingImages.pop_front();
+            if (_imageReceivedCallback)
+            {
+                im.item->uniqueId = UniqueId::newId();
+                _imageReceivedCallback (std::move(im.item), im.flags /* flags */);
+            }
         }
     }
 
@@ -287,6 +342,7 @@ private:
         return msg;
     }
 
+private:
     std::thread _thread;
     bool _shouldDisconnect = false;
     std::unique_ptr<kn::tcp_socket> _clientSocket;
@@ -294,10 +350,12 @@ private:
     ServerWriterThread _writerThread;
 
     std::mutex _incomingImagesMutex;
-    std::deque<ImageItemUniquePtr> _incomingImages;
+    std::deque<IncomingImage> _incomingImages;
     
     // <ImageID in client, ImageItemData>
     std::unordered_map<uint64_t, ImageContextPtr> _availableImages;
+
+    Server::ImageReceivedCallback _imageReceivedCallback = nullptr;
 };
 
 struct Server::Impl
@@ -322,17 +380,17 @@ void Server::start (const std::string& hostname, int port)
 
 void Server::stop ()
 {
-
+    impl->_serverThread.stop ();
 }
 
 void Server::updateOnce ()
 {
-
+    impl->_serverThread.updateMainThead ();
 }
 
 void Server::setImageReceivedCallback(const ImageReceivedCallback &callback)
 {
-    
+    impl->_serverThread.setImageReceivedCallback (callback);
 }
 
 } // zv

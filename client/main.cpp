@@ -16,7 +16,9 @@ int main ()
 
     for (int i = 0; i < 5; ++i)
     {
-        client.addImage (i, "TestImage", view);
+        std::fill (imData.begin(), imData.end(), i*16);
+        std::string name = "TestImage-" + std::to_string(i);
+        client.addImage (i, name, view);
         std::this_thread::sleep_for(100ms);
     }
 

@@ -17,6 +17,11 @@ namespace zv
 
 using ImageId = int64_t;
 
+struct UniqueId
+{
+    static int64_t newId();
+};
+
 struct ImageItemData
 {
     virtual ~ImageItemData () {}
@@ -55,7 +60,6 @@ struct ImageItem
         FilePath,
         Data,
         Callback,
-        Network
     } source;
    
     ImageId uniqueId = -1;

@@ -17,14 +17,11 @@ namespace fs = std::filesystem;
 namespace zv
 {
 
-struct UniqueId
+int64_t UniqueId::newId()
 {
-    static int64_t newId()
-    {
-        static uint64_t lastId = 0;
-        return lastId++;
-    }
-};
+    static uint64_t lastId = 0;
+    return lastId++;
+}
 
 std::unique_ptr<ImageItem> imageItemFromData (const ImageSRGBA& im, const std::string& name)
 {

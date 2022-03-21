@@ -119,7 +119,9 @@ bool App::initialize (const std::vector<std::string>& args)
    impl->server.start ();
    impl->server.setImageReceivedCallback ([this](ImageItemUniquePtr imageItem, int flags) {
        bool replace = flags;
-       impl->viewers[0]->addImageItem (std::move(imageItem), -1, replace);
+       auto viewerIt = impl->viewers.begin();
+       zv_assert (viewerIt != impl->viewers.end(), "No viewer!");
+       viewerIt->second->addImageItem (std::move(imageItem), -1, replace);
    });
 
    return true;

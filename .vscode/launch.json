@@ -27,5 +27,57 @@
                 "PYTHONPATH": "${command:cmake.buildDirectory}/python:${workspaceFolder}/python"
             }
         },
+
+        {
+            "name": "zv",
+            "type": "cppdbg",
+            "request": "launch",
+            // Resolved by CMake Tools:
+            "program": "/home/nb/Perso/zv/build/zv/zv",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",            
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ]
+        },
+
+        {
+            "name": "zv-client",
+            "type": "cppdbg",
+            "request": "launch",
+            // Resolved by CMake Tools:
+            "program": "/home/nb/Perso/zv/build/client/zv-client",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ],
+            "preLaunchTask": "Sleepdelay",
+        }
+    ],
+
+    "compounds": [
+        {
+            "name": "Server/Client",
+            "configurations": [
+                "zv",
+                "zv-client"
+            ],
+            "stopAll": true
+        }
     ]
 }
