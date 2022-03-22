@@ -17,6 +17,14 @@
 #include <cassert>
 #include <iostream>
 
+#if defined(WIN32) || defined(_WIN32) || defined(__WIN32) && !defined(__CYGWIN__)
+# define PLATFORM_WINDOWS 1
+#endif
+
+#if !PLATFORM_WINDOWS
+# include <signal.h>
+#endif
+
 using namespace std::chrono_literals;
 namespace kn = kissnet;
 
@@ -160,6 +168,16 @@ public:
 
     bool start(const std::string &hostname, int port)
     {
+#if !PLATFORM_WINDOWS
+        sigset_t sig_block, sig_restore, sig_pending;
+        sigemptyset(&sig_block);
+        sigaddset(&sig_block, SIGPIPE);
+        if (pthread_sigmask(SIG_BLOCK, &sig_block, &sig_restore) != 0) 
+        {
+            // Could not block sigmask?
+            assert (false);
+        }
+#endif
         _socket = kn::tcp_socket(kn::endpoint(hostname, port));
         
         try

@@ -199,6 +199,12 @@ struct ServerConnectionThread : public ConnectionSubject
     {
         _shouldDisconnect = true;
         _writerThread.enqueueMessage (closeMessage());
+        _writerThread.stop ();
+
+        // Kill the socket to break blocking recvs.
+        _clientSocket->shutdown();
+        _clientSocket->close();
+
         if (_thread.joinable())
             _thread.join();
     }
@@ -283,7 +289,7 @@ struct ServerConnectionThread : public ConnectionSubject
                 }
             }
 
-            zv_dbg("Stopping a connexion.");
+            zv_dbg("Stopping a connection.");
             _writerThread.stop();
 
             if (_clientSocket)
