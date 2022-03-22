@@ -18,7 +18,7 @@ namespace zv
 struct ImageView
 {
     ImageView() {}
-    ImageView(uint8_t *pixels_RGBA32, int width, int height, int bytesPerRow = 0)
+    ImageView(void* pixels_RGBA32, int width, int height, int bytesPerRow = 0)
         : pixels_RGBA32(pixels_RGBA32), width(width), height(height), bytesPerRow(bytesPerRow)
     {
         if (this->bytesPerRow == 0)
@@ -27,7 +27,7 @@ struct ImageView
 
     inline size_t numBytes() const { return height * bytesPerRow; }
 
-    uint8_t *pixels_RGBA32 = nullptr;
+    void* pixels_RGBA32 = nullptr;
     int width = 0;
     int height = 0;
     int bytesPerRow = 0;
@@ -45,8 +45,17 @@ public:
     Client ();
     ~Client ();
 
+public:
+    // We don't strictly need it to be a singleton, but it's convenient
+    // for the logImage utility.
+    static Client& instance();
+
+public:
+    static uint64_t nextUniqueId ();
+
     bool isConnected () const;
     bool connect (const std::string& hostname = "127.0.0.1", int port = 4207);
+    void waitUntilDisconnected ();
 
     using GetDataCallback = std::function<bool(ImageWriter&)>;
     void addImage (uint64_t imageId, const std::string& imageName, const ImageView& imageBuffer, bool replaceExisting = true);
@@ -56,5 +65,9 @@ private:
     struct Impl;
     std::unique_ptr<Impl> impl;
 };
+
+bool connect (const std::string& hostname = "127.0.0.1", int port = 4207);
+void logImageRGBA (const std::string& name, void* pixels_RGBA32, int width, int height, int bytesPerRow = 0);
+void waitUntilDisconnected ();
 
 } // zv

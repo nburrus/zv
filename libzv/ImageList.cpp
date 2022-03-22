@@ -99,7 +99,7 @@ std::unique_ptr<ImageItemData> loadImageData(const ImageItem& input)
             staticData->status = ImageItemData::Status::Ready;
             staticData->cpuData = std::make_shared<ImageSRGBA>();
 
-            bool couldLoad = readPngImage (input.sourceImagePath, *output->cpuData);
+            bool couldLoad = readPngImage (input.sourceImagePath, *staticData->cpuData);
             if (!couldLoad)
             {
                 zv_dbg("Could not load %s", input.sourceImagePath.c_str());

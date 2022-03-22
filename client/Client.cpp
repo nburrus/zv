@@ -33,7 +33,7 @@ struct ClientPayloadWriter : PayloadWriter
         appendUInt32 (imageBuffer.height);
         appendUInt32 (imageBuffer.bytesPerRow);
         if (imageBuffer.bytesPerRow > 0)
-            appendBytes (imageBuffer.pixels_RGBA32, imageBuffer.numBytes());
+            appendBytes ((uint8_t*)imageBuffer.pixels_RGBA32, imageBuffer.numBytes());
     }
 };
 
@@ -150,6 +150,12 @@ public:
     bool isConnected () const
     {
         return _socket.is_valid();
+    }
+
+    void waitUntilDisconnected ()
+    {
+        if (_thread.joinable())
+            _thread.join ();
     }
 
     bool start(const std::string &hostname, int port)
@@ -342,6 +348,8 @@ Client::Client() : impl (new Impl())
 {    
 }
 
+Client::~Client() = default;
+
 bool Client::connect (const std::string& hostname, int port)
 {
     return impl->_clientThread.start (hostname, port);
@@ -352,7 +360,10 @@ bool Client::isConnected () const
     return impl->_clientThread.isConnected ();
 }
 
-Client::~Client() = default;
+void Client::waitUntilDisconnected ()
+{
+    impl->_clientThread.waitUntilDisconnected ();
+}
 
 void Client::addImage (uint64_t imageId, const std::string& imageName, const ImageView& imageBuffer, bool replaceExisting)
 {
@@ -362,6 +373,36 @@ void Client::addImage (uint64_t imageId, const std::string& imageName, const Ima
 void Client::addImage (uint64_t imageId, const std::string& imageName, const GetDataCallback& getDataCallback, bool replaceExisting)
 {
     impl->_clientThread.addImage (imageId, imageName, getDataCallback, replaceExisting);
+}
+
+Client& Client::instance()
+{
+    static std::unique_ptr<Client> client = std::make_unique<Client>();
+    return *client.get();
+}
+
+uint64_t Client::nextUniqueId ()
+{
+    static uint64_t nextId = 1;
+    return nextId++;
+}
+
+bool connect (const std::string& hostname, int port)
+{
+    Client& client = Client::instance();
+    return client.connect (hostname, port);
+}
+
+void logImageRGBA (const std::string& name, void* pixels_RGBA32, int width, int height, int bytesPerRow)
+{
+    Client& client = Client::instance();
+    client.addImage (client.nextUniqueId(), name, ImageView((uint8_t*)pixels_RGBA32, width, height, bytesPerRow));
+}
+
+void waitUntilDisconnected ()
+{
+    Client& client = Client::instance();
+    client.waitUntilDisconnected ();
 }
 
 } // zv

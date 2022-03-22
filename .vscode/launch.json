@@ -34,7 +34,6 @@
             "request": "launch",
             // Resolved by CMake Tools:
             "program": "/home/nb/Perso/zv/build/zv/zv",
-            "args": [],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",            
             "externalConsole": false,
@@ -46,6 +45,7 @@
                     "ignoreFailures": true
                 }
             ]
+            // "args": [ "/home/nb/Perso/zv/tests/rgbgrid.png" ],
         },
 
         {
