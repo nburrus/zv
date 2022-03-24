@@ -9,8 +9,8 @@
 #include <libzv/Utils.h>
 #include <libzv/ImageList.h>
 
-#include <client/kissnet_zv.h>
-#include <client/Message.h>
+#include <client-kissnet/kissnet_zv.h>
+#include <client-kissnet/Message.h>
 
 #include <set>
 #include <deque>
