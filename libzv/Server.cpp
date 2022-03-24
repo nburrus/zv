@@ -10,7 +10,7 @@
 #include <libzv/ImageList.h>
 
 #include <client-kissnet/kissnet_zv.h>
-#include <client-kissnet/Message.h>
+#include <client-znet/Message.h>
 
 #include <set>
 #include <deque>

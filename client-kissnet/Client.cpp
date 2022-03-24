@@ -7,7 +7,7 @@
 #include "Client.h"
 
 #include "kissnet_zv.h"
-#include "Message.h"
+#include "../client-znet/Message.h"
 
 #include <thread>
 #include <mutex>

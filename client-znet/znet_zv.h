@@ -8,6 +8,8 @@
 
 #include "znet.hpp"
 
+#include "Message.h"
+
 ZNPP_NS_BEGIN
 
 inline bool doRecvExactly(TcpSocket& socket, char* buf, unsigned len, std::function<void(NetErrorCode)>&& h)
@@ -37,6 +39,111 @@ inline bool doSendExactly(TcpSocket& socket, const char* buf, unsigned len, std:
         }
     });
 }
+
+class MessageReceiver
+{
+public:
+    using OnMessageCb = std::function<void(NetErrorCode, const zv::Message& msg)>;
+
+    MessageReceiver (const TcpSocketPtr& socket) : _socket (socket) 
+    {}
+
+public:
+    void recvMessage (OnMessageCb&& cb)
+    {
+        assert (!_incomingMsg.isValid());
+        _cb = std::move (cb);
+
+        doRecvExactly(*_socket,
+                      (char *)_incomingMsg.header.rawBytes(),
+                      sizeof(zv::MessageHeader),
+                      [this](NetErrorCode code) { onMessageHeader(code); });
+    }
+
+private:
+    void onMessageHeader (NetErrorCode err)
+    {
+        if (err != NEC_SUCCESS)
+        {
+            triggerCallback (err);
+            return;
+        }
+            
+        _incomingMsg.payload.resize (_incomingMsg.header.payloadSizeInBytes);
+        if (_incomingMsg.header.payloadSizeInBytes <= 0)
+        {
+            triggerCallback (err);
+            return;
+        }
+
+        doRecvExactly(*_socket,
+                      (char *)_incomingMsg.payload.data(),
+                      _incomingMsg.payload.size(),
+                      [this](NetErrorCode err) { triggerCallback(err); });
+    }
+
+    void triggerCallback (NetErrorCode err)
+    {
+        // Make the members invalid in case the callback
+        // calls a new receive.
+        zv::Message msg = std::move(_incomingMsg);
+        _incomingMsg.setInvalid ();
+        OnMessageCb cb = std::move(_cb);
+        _cb = nullptr;
+        cb(err, msg);
+    }
+
+private:
+    TcpSocketPtr _socket;
+    zv::Message _incomingMsg;
+    OnMessageCb _cb;
+};
+using MessageReceiverPtr = std::shared_ptr<MessageReceiver>;
+
+class MessageSender
+{
+public:
+    using OnSentCb = std::function<void(NetErrorCode)>;
+
+public:
+    MessageSender (const TcpSocketPtr& socket) : _socket (socket) 
+    {}
+
+public:
+    void sendMessage (zv::Message&& msg, OnSentCb&& cb)
+    {
+        assert (!_outgoingMsg.isValid());
+        _outgoingMsg = std::move(msg);
+        _cb = std::move(cb);
+
+        doSendExactly(*_socket,
+                      (char *)_outgoingMsg.header.rawBytes(),
+                      sizeof(_outgoingMsg.header),
+                      [this](NetErrorCode err) {
+            if (err != NEC_SUCCESS)
+                return triggerCallback (err);
+
+            doSendExactly(*_socket, 
+                          (const char*)_outgoingMsg.payload.data(), 
+                          _outgoingMsg.payload.size(), 
+                          [this](NetErrorCode error) { triggerCallback (error); });
+        });
+    }
+
+private:
+    void triggerCallback (NetErrorCode err)
+    {
+        _cb(err);
+        _outgoingMsg.setInvalid ();
+        _cb = nullptr;
+    }
+
+private:
+    TcpSocketPtr _socket;
+    zv::Message _outgoingMsg;
+    OnSentCb _cb;
+};
+using MessageSenderPtr = std::shared_ptr<MessageSender>;
 
 ZNPP_NS_END
 

@@ -8,7 +8,7 @@
 
 #include "kissnet.hpp"
 
-#include "Message.h"
+#include "../client-znet/Message.h"
 
 #include <vector>
 

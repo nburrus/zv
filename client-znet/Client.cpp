@@ -181,6 +181,8 @@ private:
             return;
 
         _shouldDisconnect = true;
+        _receiver.reset ();
+        _sender.reset ();
         _socket->doClose ();
         _socket.reset ();
         setStatus (Status::Disconnected);
@@ -193,12 +195,12 @@ private:
         _statusChanged.notify_all ();
     }
 
-    void onMessage(zn::NetErrorCode error)
+    void onMessage(zn::NetErrorCode error, const Message& msg)
     {        
         if (error != zn::NEC_SUCCESS)
             return disconnect();
 
-        switch (_incomingMsg.header.kind)
+        switch (msg.header.kind)
         {
         case MessageKind::Invalid:
         {
@@ -216,7 +218,7 @@ private:
 
         case MessageKind::Version:
         {
-            PayloadReader r(_incomingMsg.payload);
+            PayloadReader r(msg.payload);
             int32_t serverVersion = r.readInt32();
             std::clog << "[DEBUG][READER] Server version = " << serverVersion << std::endl;
             assert(serverVersion == 1);
@@ -226,7 +228,7 @@ private:
         case MessageKind::RequestImageBuffer:
         {
             // uniqueId:uint64_t
-            PayloadReader r(_incomingMsg.payload);
+            PayloadReader r(msg.payload);
             uint64_t imageId = r.readUInt64();
 
             Message outputMessage;
@@ -250,76 +252,35 @@ private:
         }
         }
 
-        _incomingMsg.setInvalid ();
-
         // Keep reading.
         recvMessage();
     }
 
-    void onMessageHeader (zn::NetErrorCode error)
-    {
-        if (error != zn::NEC_SUCCESS)
-            return disconnect();
-
-        _incomingMsg.payload.resize (_incomingMsg.header.payloadSizeInBytes);
-        if (_incomingMsg.header.payloadSizeInBytes <= 0)
-        {
-            return;
-        }
-
-        zn::doRecvExactly(*_socket,
-                          (char *)_incomingMsg.payload.data(),
-                          _incomingMsg.payload.size(),
-                          [this](zn::NetErrorCode code) { onMessage(code); });
-    }
-
-    void recvMessage ()
-    {
-        // Somehow got multiple calls to recvMessage?
-        assert (!_incomingMsg.isValid());
-
-        zn::doRecvExactly(*_socket,
-                          (char *)_incomingMsg.header.rawBytes(),
-                          sizeof(MessageHeader),
-                          [this](zn::NetErrorCode code) { onMessageHeader(code); });
-    }
-
     void sendNextMessage ()
     {
-        // Already one message in-flight.
-        if (_outgoingMsg.isValid())
+        if (!_sender)
             return;
 
         // Grab the next one from the queue.
+        Message msg;
         {
             std::unique_lock<std::mutex> lk(_outputQueueMutex);
             if (_outputQueue.empty())
                 return;
 
-            _outgoingMsg = std::move(_outputQueue.front());
+            msg = std::move(_outputQueue.front());
             _outputQueue.pop_front();
         }
 
-        zn::doSendExactly(*_socket,
-                          (char *)_outgoingMsg.header.rawBytes(),
-                          sizeof(_outgoingMsg.header),
-                          [this](zn::NetErrorCode error) {
-            if (error != zn::NEC_SUCCESS)
-                return disconnect();
-
-            zn::doSendExactly(*_socket, 
-                              (const char*)_outgoingMsg.payload.data(), 
-                              _outgoingMsg.payload.size(), 
-                              [this](zn::NetErrorCode error) {                                                
-                
-                if (error != zn::NEC_SUCCESS)
-                    return disconnect();
-
-                _outgoingMsg.setInvalid ();
-
-                // We're done, schedule the next one.
-                sendNextMessage (); 
-            });
+        _sender->sendMessage (std::move(msg), [this](zn::NetErrorCode err) {
+            if (err != zn::NEC_SUCCESS)
+            {
+                disconnect ();
+            }
+            else
+            {
+                sendNextMessage ();
+            }
         });
     }
 
@@ -346,10 +307,14 @@ private:
                 return disconnect ();
             }
 
-            setStatus (Status::Connected);
-
             // Start the receive message loop.
-            recvMessage();
+            _receiver = std::make_shared<zn::MessageReceiver>(_socket);
+            recvMessage ();
+
+            _sender = std::make_shared<zn::MessageSender>(_socket);
+            sendNextMessage ();
+
+            setStatus (Status::Connected);
         });
         if (!ok)
         {
@@ -368,14 +333,19 @@ private:
         disconnect ();
     }
 
+    void recvMessage ()
+    {
+        if (!_receiver)
+            return;
+        _receiver->recvMessage([this](zn::NetErrorCode err, const Message &msg) { onMessage(err, msg); });
+    }
+
 private: 
     std::thread _thread; 
     zn::EventLoopPtr _eventLoop;
     zn::TcpSocketPtr _socket;
-    
-    // Buffer for the next message.
-    Message _incomingMsg;
-    Message _outgoingMsg;
+    zn::MessageReceiverPtr _receiver;
+    zn::MessageSenderPtr _sender;
 
     bool _shouldDisconnect = false;
     Status _status = Status::Init;
