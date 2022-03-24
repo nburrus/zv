@@ -132,6 +132,7 @@ add_subdirectory(deps/pybind11)
 add_subdirectory(python)
 
 add_subdirectory(client)
+add_subdirectory(client-znet)
 
 # enable_testing()
 # add_subdirectory(tests)

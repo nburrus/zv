@@ -128,13 +128,13 @@ class MessageImageWriter : public ImageWriter
 public:
     MessageImageWriter (Message& msg, uint64_t imageId) : msg (msg), writer (msg.payload)
     {
-        msg.kind = MessageKind::ImageBuffer;
+        msg.header.kind = MessageKind::ImageBuffer;
         writer.appendUInt64 (imageId);
     }
 
     ~MessageImageWriter ()
     {
-        msg.payloadSizeInBytes = msg.payload.size();
+        msg.header.payloadSizeInBytes = msg.payload.size();
     }
 
     virtual void write (const ImageView& imageView) override
@@ -233,14 +233,14 @@ public:
         //      bytesPerRow:uint32_t
         //      buffer:Blob
         Message msg;
-        msg.kind = MessageKind::Image;
-        msg.payloadSizeInBytes = (
+        msg.header.kind = MessageKind::Image;
+        msg.header.payloadSizeInBytes = (
             sizeof(uint64_t) // imageId
             + imageName.size() + sizeof(uint64_t) // name
             + sizeof(uint32_t) // flags
             + sizeof(uint32_t)*3 + imageBuffer.numBytes() // image buffer
         );
-        msg.payload.reserve (msg.payloadSizeInBytes);
+        msg.payload.reserve (msg.header.payloadSizeInBytes);
 
         uint32_t flags = replaceExisting;
         ClientPayloadWriter w (msg.payload);
@@ -248,7 +248,7 @@ public:
         w.appendStringUTF8 (imageName);    
         w.appendUInt32 (flags);
         w.appendImageBuffer (imageBuffer);
-        assert (msg.payload.size() == msg.payloadSizeInBytes);
+        assert (msg.payload.size() == msg.header.payloadSizeInBytes);
 
         enqueueMessage (std::move(msg));
     }
@@ -266,7 +266,7 @@ private:
             try 
             {
                 Message msg = recvMessage();
-                switch (msg.kind)
+                switch (msg.header.kind)
                 {
                 case MessageKind::Invalid:
                 {
@@ -338,11 +338,11 @@ private:
     {
         KnReader r (_socket);
         Message msg;
-        msg.kind = (MessageKind)r.recvUInt32 ();
-        msg.payloadSizeInBytes = r.recvUInt64 ();
-        msg.payload.resize (msg.payloadSizeInBytes);
-        if (msg.payloadSizeInBytes > 0)
-            r.recvAllBytes (msg.payload.data(), msg.payloadSizeInBytes);
+        msg.header.kind = (MessageKind)r.recvUInt32 ();
+        msg.header.payloadSizeInBytes = r.recvUInt64 ();
+        msg.payload.resize (msg.header.payloadSizeInBytes);
+        if (msg.header.payloadSizeInBytes > 0)
+            r.recvAllBytes (msg.payload.data(), msg.header.payloadSizeInBytes);
         return msg;
     }
 

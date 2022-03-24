@@ -140,7 +140,7 @@ private:
                 try
                 {
                     Message msg = std::move(messagesToSend.front());
-                    zv_dbg ("Sending message kind %d", (int)msg.kind);
+                    zv_dbg ("Sending message kind %d", (int)msg.header.kind);
                     sendMessage(*_socket, std::move(msg));
                     messagesToSend.pop_front();
                 }
@@ -218,8 +218,8 @@ struct ServerConnectionThread : public ConnectionSubject
             while (!_shouldDisconnect)
             {
                 Message msg = recvMessage ();
-                zv_dbg ("Received message kind=%d", (int)msg.kind);
-                switch (msg.kind)
+                zv_dbg ("Received message kind=%d", (int)msg.header.kind);
+                switch (msg.header.kind)
                 {
                 case MessageKind::Close: {
                     if (!_shouldDisconnect)
@@ -340,12 +340,12 @@ private:
     static Message requestImageBufferMessage(uint64_t imageIdInClient)
     {
         Message msg;
-        msg.kind = MessageKind::RequestImageBuffer;
-        msg.payloadSizeInBytes = sizeof(uint64_t);
-        msg.payload.reserve(msg.payloadSizeInBytes);
+        msg.header.kind = MessageKind::RequestImageBuffer;
+        msg.header.payloadSizeInBytes = sizeof(uint64_t);
+        msg.payload.reserve(msg.header.payloadSizeInBytes);
         PayloadWriter w(msg.payload);
         w.appendUInt64(imageIdInClient);
-        assert(msg.payload.size() == msg.payloadSizeInBytes);
+        assert(msg.payload.size() == msg.header.payloadSizeInBytes);
         return msg;
     }
 
@@ -353,11 +353,11 @@ private:
     {
         KnReader r (*_clientSocket);
         Message msg;
-        msg.kind = (MessageKind)r.recvUInt32 ();
-        msg.payloadSizeInBytes = r.recvUInt64 ();
-        msg.payload.resize (msg.payloadSizeInBytes);
-        if (msg.payloadSizeInBytes > 0)
-            r.recvAllBytes (msg.payload.data(), msg.payloadSizeInBytes);
+        msg.header.kind = (MessageKind)r.recvUInt32 ();
+        msg.header.payloadSizeInBytes = r.recvUInt64 ();
+        msg.payload.resize (msg.header.payloadSizeInBytes);
+        if (msg.header.payloadSizeInBytes > 0)
+            r.recvAllBytes (msg.payload.data(), msg.header.payloadSizeInBytes);
         return msg;
     }
 

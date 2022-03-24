@@ -6,13 +6,45 @@
 
 #pragma once
 
-#include "kissnet.hpp"
+#include "znet.hpp"
+
+ZNPP_NS_BEGIN
+
+inline bool doRecvExactly(TcpSocket& socket, char* buf, unsigned len, std::function<void(NetErrorCode)>&& h)
+{
+    return socket.doRecv(buf, len, [&socket, buf, len, h=std::move(h)] (NetErrorCode err, unsigned count) mutable {
+        if (count == len || err != NEC_SUCCESS)
+        {
+            h(err);
+        }
+        else
+        {
+            doRecvExactly(socket, buf + count, len - count, std::move(h));
+        }
+    });
+}
+
+inline bool doSendExactly(TcpSocket& socket, const char* buf, unsigned len, std::function<void(NetErrorCode)>&& h)
+{
+    return socket.doSend(buf, len, [&socket, buf, len, h=std::move(h)](NetErrorCode err, unsigned count) mutable {
+        if (count == len || err != NEC_SUCCESS)
+        {
+            h(err);
+        }
+        else
+        {
+            doSendExactly(socket, buf + count, len - count, std::move(h));
+        }
+    });
+}
+
+ZNPP_NS_END
+
+#if 0
 
 #include "Message.h"
 
 #include <vector>
-
-namespace kn = kissnet;
 
 namespace zv
 {
@@ -64,11 +96,11 @@ static Message recvMessage (kn::tcp_socket& s)
 {
     KnReader r(s);
     Message msg;
-    msg.header.kind = (MessageKind)r.recvUInt32();
-    msg.header.payloadSizeInBytes = r.recvUInt64();
-    msg.payload.resize(msg.header.payloadSizeInBytes);
-    if (msg.header.payloadSizeInBytes > 0)
-        r.recvAllBytes(msg.payload.data(), msg.header.payloadSizeInBytes);
+    msg.kind = (MessageKind)r.recvUInt32();
+    msg.payloadSizeInBytes = r.recvUInt64();
+    msg.payload.resize(msg.payloadSizeInBytes);
+    if (msg.payloadSizeInBytes > 0)
+        r.recvAllBytes(msg.payload.data(), msg.payloadSizeInBytes);
     return msg;
 }
 
@@ -105,10 +137,12 @@ private:
 static void sendMessage (kn::tcp_socket& s, const Message& msg)
 {
     KnWriter w (s);
-    w.sendInt32 ((int32_t)msg.header.kind);
-    w.sendUInt64 (msg.header.payloadSizeInBytes);
-    if (msg.header.payloadSizeInBytes > 0)
-        w.sendAllBytes (msg.payload.data(), msg.header.payloadSizeInBytes);
+    w.sendInt32 ((int32_t)msg.kind);
+    w.sendUInt64 (msg.payloadSizeInBytes);
+    if (msg.payloadSizeInBytes > 0)
+        w.sendAllBytes (msg.payload.data(), msg.payloadSizeInBytes);
 }
 
 } // zv
+
+#endif
