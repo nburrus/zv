@@ -109,15 +109,15 @@ public:
 
     void stop ()
     {
-        _shouldDisconnect = true;
-
         if (_thread.joinable())
         {
-            _eventLoop->post([this]() { disconnect(); });
+            {
+                std::lock_guard<std::mutex> lk(_eventLoopMutex);
+                if (_eventLoop)
+                    _eventLoop->post([this]() { disconnect(); });
+            }
             _thread.join();
         }
-
-        _eventLoop.reset ();
     }
 
     void addImage (uint64_t imageId, const std::string& imageName, const Client::GetDataCallback& getDataCallback, bool replaceExisting)
@@ -281,6 +281,8 @@ private:
                     disconnect ();
             });
 
+            _senderQueue->enqueueMessage (versionMessage(1));
+
             setStatus (Status::Connected);
         });
         if (!ok)
@@ -298,6 +300,11 @@ private:
         }
         
         disconnect ();
+        
+        {
+            std::lock_guard<std::mutex> lk(_eventLoopMutex);
+            _eventLoop.reset();
+        }
     }
 
     void recvMessage ()
@@ -309,7 +316,10 @@ private:
 
 private: 
     std::thread _thread; 
+    
+    std::mutex _eventLoopMutex;
     zn::EventLoopPtr _eventLoop;
+
     zn::TcpSocketPtr _socket;
     zn::MessageReceiverPtr _receiver;
     zn::MessageSenderQueuePtr _senderQueue;

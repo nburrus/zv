@@ -4,12 +4,15 @@
 // of the BSD license.  See the LICENSE file for details.
 //
 
+#define ZNPP_STATIC_API
+#define ZNPP_DEFINE_ENV
+#include <client-znet/znet_zv.h>
+
 #include "Server.h"
 
 #include <libzv/Utils.h>
 #include <libzv/ImageList.h>
 
-#include <client-kissnet/kissnet_zv.h>
 #include <client-znet/Message.h>
 
 #include <set>
@@ -18,12 +21,7 @@
 #include <condition_variable>
 #include <iostream>
 
-#include <libzv/Platform.h>
-#if PLATFORM_UNIX
-# include <signal.h>
-#endif
-
-namespace kn = kissnet;
+namespace zn = zsummer::network;
 
 namespace zv
 {
@@ -86,96 +84,13 @@ struct ServerPayloadReader : PayloadReader
     }
 };
 
-struct ServerWriterThread
-{
-    ServerWriterThread ()
-    {}
+class ClientHandler
+{    
+public:
+    using DisconnectCallback = std::function<void(void)>;
 
-    ~ServerWriterThread ()
-    {
-        stop();
-    }
-
-    void start (kn::tcp_socket* socket)
-    {
-        _socket = socket;
-        _writeThread = std::thread([this]() {
-            run ();
-        });
-    }
-
-    void stop ()
-    {
-        _messageAdded.notify_all();
-        _shouldDisconnect = true;
-        if (_writeThread.joinable())
-            _writeThread.join();
-    }
-
-    void enqueueMessage (Message&& msg)
-    {
-        std::lock_guard<std::mutex> _(_outputQueueMutex);
-        _outputQueue.push_back (std::move(msg));
-        _messageAdded.notify_all();
-    }
-
-private:
-    void run ()
-    {
-        while (!_shouldDisconnect)
-        {
-            std::unique_lock<std::mutex> lk (_outputQueueMutex);
-            _messageAdded.wait (lk, [this]() {
-                return _shouldDisconnect || !_outputQueue.empty();
-            });
-            // Mutex locked again.
-
-            zv_dbg ("[DEBUG][WRITER] Got event, checking if anything to send.");
-            std::deque<Message> messagesToSend;
-            messagesToSend.swap(_outputQueue);
-            lk.unlock ();
-
-            while (!messagesToSend.empty())
-            {
-                try
-                {
-                    Message msg = std::move(messagesToSend.front());
-                    zv_dbg ("Sending message kind %d", (int)msg.header.kind);
-                    sendMessage(*_socket, std::move(msg));
-                    messagesToSend.pop_front();
-                }
-                catch (const std::exception& e)
-                {
-                    zv_dbg ("Got an exception, stopping the connection: %s", e.what());
-                    _shouldDisconnect = true;
-                    break;
-                }
-            }
-        }
-    }
-
-private:
-    kn::tcp_socket* _socket = nullptr;
-    bool _shouldDisconnect = false;
-    std::thread _writeThread;
-    std::condition_variable _messageAdded;
-    std::mutex _outputQueueMutex;
-    std::deque<Message> _outputQueue;
-};
-
-struct ConnectionSubject
-{
-    virtual ~ConnectionSubject() {}
-};
-
-struct ConnectionObserver
-{
-    virtual void onConnectionEnded (ConnectionSubject*) = 0;
-};
-
-struct ServerConnectionThread : public ConnectionSubject
-{
-    ~ServerConnectionThread()
+public:
+    ~ClientHandler()
     {
         stop ();
     }
@@ -186,130 +101,38 @@ struct ServerConnectionThread : public ConnectionSubject
         uint32_t flags;
     };
 
-    void start (ConnectionObserver* observer, std::unique_ptr<kn::tcp_socket> socket)
+    bool isConnected ()
     {
-        _observer = observer;
-        _clientSocket = std::move(socket);
-        _thread = std::thread([this]() {
-            run ();
-        });
+        return _socket != nullptr;
     }
 
+    void start (const zn::EventLoopPtr& eventLoop, 
+                const zn::TcpSocketPtr& socket,
+                DisconnectCallback&& onDisconnectCb)
+    {
+        _eventLoop = eventLoop;
+        _socket = socket;
+        _onDisconnectCb = std::move(onDisconnectCb);
+
+        _receiver = std::make_shared<zn::MessageReceiver>(_socket);
+        _senderQueue = std::make_shared<zn::MessageSenderQueue>(_eventLoop, _socket, [this](zn::NetErrorCode err) {
+            if (err != zn::NEC_SUCCESS)
+                disconnect ();
+        });
+
+        recvMessage ();
+        _senderQueue->enqueueMessage (versionMessage(1));
+    }
+
+    // Meant to be called by the manager.
     void stop ()
     {
-        _shouldDisconnect = true;
-        _writerThread.enqueueMessage (closeMessage());
-        _writerThread.stop ();
-
-        // Kill the socket to break blocking recvs.
-        _clientSocket->shutdown();
-        _clientSocket->close();
-
-        if (_thread.joinable())
-            _thread.join();
+        // Don't want to tell the guy calling you that you disconnected..
+        _onDisconnectCb = nullptr;
+        disconnect ();
     }
 
-    void run ()
-    {
-        try
-        {
-            _writerThread.start (_clientSocket.get());
-
-            while (!_shouldDisconnect)
-            {
-                Message msg = recvMessage ();
-                zv_dbg ("Received message kind=%d", (int)msg.header.kind);
-                switch (msg.header.kind)
-                {
-                case MessageKind::Close: {
-                    if (!_shouldDisconnect)
-                    {
-                        _writerThread.enqueueMessage (closeMessage ());
-                    }
-                    _shouldDisconnect = true;
-                    break;
-                }                
-
-                case MessageKind::Image: {
-                    // uniqueId:uint64_t name:StringUTF8 flags:uint32_t imageBuffer:ImageBuffer
-                    ImageItemUniquePtr imageItem = std::make_unique<ImageItem>();
-                    // imageItem->uniqueId will be set later, once transmistted to the main thread.
-                    ServerPayloadReader reader (msg.payload);
-                    const uint64_t clientImageId = reader.readUInt64();
-                    reader.readStringUTF8(imageItem->prettyName);
-                    const uint32_t flags = reader.readUInt32();
-                    
-                    ImageSRGBA imageContent;
-                    reader.readImageBuffer (imageContent);
-                    if (imageContent.hasData())
-                    {
-                        imageItem->source = ImageItem::Source::Data;
-                        imageItem->sourceData = std::make_shared<ImageSRGBA>(std::move(imageContent));
-                    }
-                    else
-                    {
-                        ImageContextPtr ctx = std::make_shared<ImageContext>();
-                        ctx->clientImageId = clientImageId;
-                        ctx->clientSocket = _clientSocket.get();
-                        _availableImages[clientImageId] = ctx;
-                        imageItem->source = ImageItem::Source::Callback;
-                        imageItem->loadDataCallback = [this, ctx]()
-                        {
-                            return this->onLoadData(ctx);
-                        };
-                    }
-
-                    {
-                        std::lock_guard<std::mutex> lk (_incomingImagesMutex);
-                        _incomingImages.push_back(IncomingImage {std::move(imageItem), flags});
-                    }
-                    break;
-                }
-
-                case MessageKind::ImageBuffer: {
-                    // uniqueId:uint64_t imageBuffer:ImageBuffer
-                    ServerPayloadReader reader (msg.payload);
-                    uint64_t clientImageId = reader.readUInt64 ();
-                    auto it = _availableImages.find (clientImageId);
-                    if (it == _availableImages.end())
-                    {
-                        zv_assert (false, "Unknown client image id!");
-                        break;
-                    }
-
-                    const ImageContextPtr& ctx = it->second;
-                    {
-                        std::lock_guard<std::mutex> _(ctx->lock);
-                        ctx->maybeLoadedImage = std::make_shared<ImageSRGBA>();
-                        reader.readImageBuffer(*ctx->maybeLoadedImage);
-                        zv_assert (ctx->clientSocket == _clientSocket.get(), "Client socket changed!");
-                    }
-                    break;
-                }
-                }
-            }
-
-            zv_dbg("Stopping a connection.");
-            _writerThread.stop();
-
-            if (_clientSocket)
-            {
-                _clientSocket->close();
-                _clientSocket.reset();
-            }
-        }
-        catch (std::exception &e)
-        {
-            std::cerr << "Server connection got exception: " << e.what() << std::endl;
-        }
-
-        if (_observer)
-            _observer->onConnectionEnded (this);
-    }
-    
-public:
     // These are meant to be called from the main thread.
-
     void updateMainThead (const Server::ImageReceivedCallback& imageReceivedCallback)
     {
         std::lock_guard<std::mutex> lk (_incomingImagesMutex);
@@ -326,6 +149,105 @@ public:
     }
 
 private:
+    void recvMessage ()
+    {
+        if (!_receiver)
+            return;
+        _receiver->recvMessage([this](zn::NetErrorCode err, const Message &msg) { onMessage(err, msg); });
+    }
+
+    void disconnect ()
+    {
+        if (!_socket)
+            return;
+        _receiver.reset ();
+        _senderQueue.reset ();
+        _socket->doClose ();
+        _socket.reset ();
+
+        if (_onDisconnectCb)
+        {
+            DisconnectCallback cb = std::move(_onDisconnectCb);
+            _onDisconnectCb = nullptr;
+            cb();
+        }
+    }
+
+    void onMessage (zn::NetErrorCode err, const zv::Message& msg)
+    {
+        if (err != zn::NEC_SUCCESS)
+        {
+            disconnect ();
+            return;
+        }
+
+        zv_dbg("Received message kind=%d", (int)msg.header.kind);
+        switch (msg.header.kind)
+        {
+        case MessageKind::Image:
+        {
+            // uniqueId:uint64_t name:StringUTF8 flags:uint32_t imageBuffer:ImageBuffer
+            ImageItemUniquePtr imageItem = std::make_unique<ImageItem>();
+            // imageItem->uniqueId will be set later, once transmistted to the main thread.
+            ServerPayloadReader reader(msg.payload);
+            const uint64_t clientImageId = reader.readUInt64();
+            reader.readStringUTF8(imageItem->prettyName);
+            const uint32_t flags = reader.readUInt32();
+
+            ImageSRGBA imageContent;
+            reader.readImageBuffer(imageContent);
+            if (imageContent.hasData())
+            {
+                imageItem->source = ImageItem::Source::Data;
+                imageItem->sourceData = std::make_shared<ImageSRGBA>(std::move(imageContent));
+            }
+            else
+            {
+                ImageContextPtr ctx = std::make_shared<ImageContext>();
+                ctx->clientImageId = clientImageId;
+                ctx->clientSocket = _socket.get();
+                _availableImages[clientImageId] = ctx;
+                imageItem->source = ImageItem::Source::Callback;
+                imageItem->loadDataCallback = [this, ctx]()
+                {
+                    return this->onLoadData(ctx);
+                };
+            }
+
+            {
+                std::lock_guard<std::mutex> lk(_incomingImagesMutex);
+                _incomingImages.push_back(IncomingImage{std::move(imageItem), flags});
+            }
+            break;
+        }
+
+        case MessageKind::ImageBuffer:
+        {
+            // uniqueId:uint64_t imageBuffer:ImageBuffer
+            ServerPayloadReader reader(msg.payload);
+            uint64_t clientImageId = reader.readUInt64();
+            auto it = _availableImages.find(clientImageId);
+            if (it == _availableImages.end())
+            {
+                zv_assert(false, "Unknown client image id!");
+                break;
+            }
+
+            const ImageContextPtr &ctx = it->second;
+            {
+                std::lock_guard<std::mutex> _(ctx->lock);
+                ctx->maybeLoadedImage = std::make_shared<ImageSRGBA>();
+                reader.readImageBuffer(*ctx->maybeLoadedImage);
+                zv_assert(ctx->clientSocket == _socket.get(), "Client socket changed!");
+            }
+            break;
+        }
+        }
+
+        recvMessage ();
+    }
+
+private:
     ImageItemDataUniquePtr onLoadData (const ImageContextPtr& ctx)
     {
         auto dataPtr = std::make_unique<NetworkImageItemData>();
@@ -333,7 +255,7 @@ private:
         dataPtr->status = ImageItemData::Status::StillLoading;
         dataPtr->cpuData = std::make_shared<ImageSRGBA>();
         Message msg = requestImageBufferMessage (ctx->clientImageId);
-        _writerThread.enqueueMessage (std::move(msg));
+        _senderQueue->enqueueMessage (std::move(msg));
         return dataPtr;
     }
 
@@ -347,164 +269,149 @@ private:
         w.appendUInt64(imageIdInClient);
         assert(msg.payload.size() == msg.header.payloadSizeInBytes);
         return msg;
-    }
-
-    Message recvMessage ()
-    {
-        KnReader r (*_clientSocket);
-        Message msg;
-        msg.header.kind = (MessageKind)r.recvUInt32 ();
-        msg.header.payloadSizeInBytes = r.recvUInt64 ();
-        msg.payload.resize (msg.header.payloadSizeInBytes);
-        if (msg.header.payloadSizeInBytes > 0)
-            r.recvAllBytes (msg.payload.data(), msg.header.payloadSizeInBytes);
-        return msg;
-    }
+    }    
 
 private:
-    ConnectionObserver* _observer = nullptr;
-    std::thread _thread;
-    bool _shouldDisconnect = false;
-    std::unique_ptr<kn::tcp_socket> _clientSocket;
+    zn::EventLoopPtr _eventLoop;
+    zn::TcpSocketPtr _socket;
 
-    ServerWriterThread _writerThread;
+    zn::MessageReceiverPtr _receiver;
+    zn::MessageSenderQueuePtr _senderQueue;
 
+    // To share with the main thread.
     std::mutex _incomingImagesMutex;
     std::deque<IncomingImage> _incomingImages;
     
     // <ImageID in client, ImageItemData>
     std::unordered_map<uint64_t, ImageContextPtr> _availableImages;
-};
 
-struct ServerThread : public ConnectionObserver
+    std::function<void(void)> _onDisconnectCb;
+};
+using ClientHandlerPtr = std::shared_ptr<ClientHandler>;
+
+class ServerThread
 {
+public:    
     ~ServerThread()
     {
         stop ();
     }
 
-    void start (const std::string& hostname, int port)
+    void updateMainThead (const Server::ImageReceivedCallback& imageReceivedCallback)
     {
-        // https://riptutorial.com/posix/example/17424/handle-sigpipe-generated-by-write---in-a-thread-safe-manner
-        // https://stackoverflow.com/questions/23889062/c-how-to-handle-sigpipe-in-a-multithreaded-environment
-#if PLATFORM_UNIX
-        sigset_t sig_block, sig_restore, sig_pending;
-        sigemptyset(&sig_block);
-        sigaddset(&sig_block, SIGPIPE);
-        if (pthread_sigmask(SIG_BLOCK, &sig_block, &sig_restore) != 0) 
-        {
-            zv_assert (false, "Could not block sigmask");
-        }
-#endif
+        std::lock_guard<std::mutex> _(_clientHandlersMutex);
+        for (auto& client : _clientHandlers)
+            client.second->updateMainThead (imageReceivedCallback);
+    }
 
-        _serverSocket = kn::tcp_socket(kn::endpoint(hostname, port));
-        _listenThread = std::thread([this, hostname, port]() {
-            run ();
+    bool start (const std::string& hostname, int port)
+    {
+        _eventLoop = std::make_shared<zn::EventLoop>();
+        bool ok = _eventLoop->initialize ();
+        if (!ok)
+            return false;
+
+        _accept = std::make_shared<zn::TcpAccept>();
+        ok = _accept->initialize (_eventLoop);
+        if (!ok)
+            return false;
+
+        ok = _accept->openAccept (hostname, port);
+        if (!ok)
+        {
+            std::clog << "Could not start listening on port " << port << std::endl;
+            return false;
+        }
+
+        _serverThread = std::thread([this]() {
+            runLoop ();
         });
+
+        return true;
     }
 
     void stop ()
     {
+        if (_serverThread.joinable())
+        {
+            {
+                std::lock_guard<std::mutex> _ (_eventLoopMutex);
+                if (_eventLoop)
+                    _eventLoop->post([this]() { disconnect(); });
+            }
+            _serverThread.join();
+        }
+    }
+
+private:
+    void onClientDisconnected (const zn::TcpSocketPtr& socket)
+    {
+        std::lock_guard<std::mutex> _ (_clientHandlersMutex);
+        _clientHandlers.erase (socket);
+    }
+
+    void acceptNext ()
+    {
+        zn::TcpSocketPtr nextSocket = std::make_shared<zn::TcpSocket>();
+        _accept->doAccept (nextSocket, [this](zn::NetErrorCode err, zn::TcpSocketPtr socket) {
+            if (err != zn::NEC_SUCCESS)
+            {
+                disconnect ();
+                return;
+            }
+
+            ClientHandlerPtr client = std::make_shared<ClientHandler>();
+            
+            {
+                std::lock_guard<std::mutex> _(_clientHandlersMutex);
+                _clientHandlers[socket] = client;
+            }
+
+            client->start(_eventLoop, socket, [this, socket]()
+                          { onClientDisconnected(socket); });
+
+            acceptNext();
+        });
+    }
+
+    void runLoop ()
+    {
+        acceptNext ();
+
+        while (!_shouldStop)
+        {
+            // onMessage will be called once read.
+            bool success = _eventLoop->runOnce ();
+            if (!success)
+                disconnect ();
+        }
+
+        std::lock_guard<std::mutex> _ (_eventLoopMutex);
+        _eventLoop.reset ();
+    }
+
+    void disconnect ()
+    {
         _shouldStop = true;
+
+        std::lock_guard<std::mutex> _(_clientHandlersMutex);
+        for (auto& client : _clientHandlers)
+            client.second->stop ();
         
-        // Force pending accept calls to stop.
-        // Calling shutdown first seems more robust.
-        // https://stackoverflow.com/questions/4160347/close-vs-shutdown-socket
-        _serverSocket.shutdown ();
-        _serverSocket.close ();
-
-        if (_listenThread.joinable())
-            _listenThread.join();
-    }
-
-    void startClientThread (std::unique_ptr<kn::tcp_socket> s)
-    {
-        auto* clientThread = new ServerConnectionThread();
-        std::lock_guard<std::mutex> lk (_clientThreadsMutex);
-        _clientThreads.insert (clientThread);
-        clientThread->start (this, std::move(s));
-    }
-
-    virtual void onConnectionEnded (ConnectionSubject* connSubject) override    
-    {
-        zv_dbg ("Got notified that a client disconnected");
-
-        ServerConnectionThread* conn = dynamic_cast<ServerConnectionThread*>(connSubject);
-        zv_assert(conn, "Invalid connection !");
-
-        {
-            std::lock_guard<std::mutex> lk (_clientThreadsMutex);
-            _deadThreads.push_back(conn);
-        }
-    }
-
-    void run ()
-    {
-        try
-        {
-            _serverSocket.set_reuseaddr (true);
-            _serverSocket.bind();
-            _serverSocket.listen();
-
-            while (!_shouldStop)
-            {
-                startClientThread (std::make_unique<kn::tcp_socket>(_serverSocket.accept()));
-
-                // Periodic cleanup.
-                cleanDeadThreads ();
-            }
-        }
-        catch (std::exception &e)
-        {
-            zv_dbg ("Server got exception: %s", e.what());
-        }
-
-        for (auto& client : _clientThreads)
-        {
-            client->stop ();
-        }
-        cleanDeadThreads ();
-
-        for (auto* client : _clientThreads)
-            delete client;
-        _clientThreads.clear ();
-
-        _serverSocket.close ();
-    }
-    
-public:
-    
-    void updateMainThead (const Server::ImageReceivedCallback& imageReceivedCallback)
-    {
-        std::lock_guard<std::mutex> lk (_clientThreadsMutex);
-        for (auto& client : _clientThreads)
-            client->updateMainThead (imageReceivedCallback);
+        _clientHandlers.clear ();
+        _accept.reset ();
     }
 
 private:
-    void cleanDeadThreads()
-    {
-        // Periodic removal of dead threads.
-        {
-            std::lock_guard<std::mutex> lk (_clientThreadsMutex);
-            for (const auto& conn : _deadThreads)
-            {
-                _clientThreads.erase(conn);
-                delete conn;
-            }
-            _deadThreads.clear();
-        }
-    }
-
-private:
-    std::thread _listenThread;
+    std::thread _serverThread;
     bool _shouldStop = false;
 
-    kn::tcp_socket _serverSocket;
+    std::mutex _eventLoopMutex;
+    zn::EventLoopPtr _eventLoop;
+    zn::TcpAcceptPtr _accept;
     
-    std::mutex _clientThreadsMutex;
-    std::set<ServerConnectionThread*> _clientThreads;
-    std::vector<ServerConnectionThread*> _deadThreads;
+    std::mutex _clientHandlersMutex;
+    std::unordered_map<zn::TcpSocketPtr, ClientHandlerPtr> _clientHandlers;
 };
 
 struct Server::Impl
