@@ -20,19 +20,6 @@ int main (int argc, char* argv[])
     app.initialize (argc, argv);
     p.lap ("init");
     
-    zv::RateLimit rateLimit;
-    bool firstFrame = true;
-    while (app.numViewers() > 0)
-    {
-        app.updateOnce ();
-        if (firstFrame)
-        {
-            p.lap ("firstUpdate");
-            p.stop ();
-            firstFrame = false;
-        }
-        rateLimit.sleepIfNecessary (1 / 30.);
-    }
-    
+    app.run ();    
     return 0;
 }

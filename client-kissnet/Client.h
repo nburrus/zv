@@ -33,7 +33,7 @@ struct ImageView
     int bytesPerRow = 0;
 };
 
-class ImageWriter
+class ImageViewWriter
 {
 public:
     virtual void write (const ImageView& imageView) = 0;
@@ -57,7 +57,7 @@ public:
     bool connect (const std::string& hostname = "127.0.0.1", int port = 4207);
     void waitUntilDisconnected ();
 
-    using GetDataCallback = std::function<bool(ImageWriter&)>;
+    using GetDataCallback = std::function<bool(ImageViewWriter&)>;
     void addImage (uint64_t imageId, const std::string& imageName, const ImageView& imageBuffer, bool replaceExisting = true);
     void addImage (uint64_t imageId, const std::string& imageName, const GetDataCallback& getDataCallback, bool replaceExisting = true);
 

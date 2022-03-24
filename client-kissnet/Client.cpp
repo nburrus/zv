@@ -16,6 +16,7 @@
 #include <deque>
 #include <cassert>
 #include <iostream>
+#include <unordered_map>
 
 #if defined(WIN32) || defined(_WIN32) || defined(__WIN32) && !defined(__CYGWIN__)
 # define PLATFORM_WINDOWS 1
@@ -123,16 +124,16 @@ private:
     std::condition_variable _messageAdded;
 };
 
-class MessageImageWriter : public ImageWriter
+class MessageImageViewWriter : public ImageViewWriter
 {
 public:
-    MessageImageWriter (Message& msg, uint64_t imageId) : msg (msg), writer (msg.payload)
+    MessageImageViewWriter (Message& msg, uint64_t imageId) : msg (msg), writer (msg.payload)
     {
         msg.header.kind = MessageKind::ImageBuffer;
         writer.appendUInt64 (imageId);
     }
 
-    ~MessageImageWriter ()
+    ~MessageImageViewWriter ()
     {
         msg.header.payloadSizeInBytes = msg.payload.size();
     }
@@ -303,7 +304,7 @@ private:
 
                     Message outputMessage;
                     {
-                        MessageImageWriter msgWriter(outputMessage, imageId);
+                        MessageImageViewWriter msgWriter(outputMessage, imageId);
                         Client::GetDataCallback callback;
                         {
                             std::lock_guard<std::mutex> lk(_getDataCallbacksMutex);
@@ -320,6 +321,8 @@ private:
                     _writeThread.enqueueMessage (std::move(outputMessage));
                     break;
                 }
+
+                default: break;
                 }
             }
             catch (const std::exception& e)

@@ -36,6 +36,8 @@ public:
     void removeViewer (const std::string& name);
 
     void updateOnce (double minDuration = 0.0);
+
+    void run ();
    
 private:
     struct Impl;

@@ -4,7 +4,7 @@
 // of the BSD license.  See the LICENSE file for details.
 //
 
-#define ZNPP_STATIC_API
+#define ZN_IMPLEMENTATION
 #define ZNPP_DEFINE_ENV
 #include <client-znet/znet_zv.h>
 
@@ -242,6 +242,9 @@ private:
             }
             break;
         }
+
+        default:
+            break;
         }
 
         recvMessage ();

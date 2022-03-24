@@ -141,9 +141,10 @@ public:
 private:
     void triggerCallback (NetErrorCode err)
     {
-        _cb(err);
-        _outgoingMsg.setInvalid ();
+        OnSentCb cb = std::move(_cb);
         _cb = nullptr;
+        _outgoingMsg.setInvalid ();
+        cb(err);
     }
 
 private:

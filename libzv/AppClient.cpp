@@ -4,13 +4,12 @@
 // of the BSD license.  See the LICENSE file for details.
 //
 
-#define ZNPP_STATIC_API
-#define ZNPP_DEFINE_ENV
-#include "znet_zv.h"
+#include "AppClient.h"
 
-#include "Client.h"
+#include <libzv/Utils.h>
 
-#include "Message.h"
+#include <client-znet/znet_zv.h>
+#include <client-znet/Message.h>
 
 #include <thread>
 #include <mutex>
@@ -26,45 +25,45 @@ namespace zn = zsummer::network;
 namespace zv
 {
 
-struct ClientPayloadWriter : PayloadWriter
+struct AppClientPayloadWriter : PayloadWriter
 {
-    ClientPayloadWriter(std::vector<uint8_t>& payload) : PayloadWriter (payload) {}
+    AppClientPayloadWriter(std::vector<uint8_t>& payload) : PayloadWriter (payload) {}
 
-    void appendImageBuffer (const ImageView& imageBuffer)
+    void appendImageBuffer (const ImageSRGBA& image)
     {
-        appendUInt32 (imageBuffer.width);
-        appendUInt32 (imageBuffer.height);
-        appendUInt32 (imageBuffer.bytesPerRow);
-        if (imageBuffer.bytesPerRow > 0)
-            appendBytes ((uint8_t*)imageBuffer.pixels_RGBA32, imageBuffer.numBytes());
+        appendUInt32 (image.width());
+        appendUInt32 (image.height());
+        appendUInt32 (image.bytesPerRow());
+        if (image.bytesPerRow() > 0)
+            appendBytes (image.rawBytes(), image.sizeInBytes());
     }
 };
 
-class MessageImageViewWriter : public ImageViewWriter
+class MessageImageWriter : public ImageWriter
 {
 public:
-    MessageImageViewWriter (Message& msg, uint64_t imageId) : msg (msg), writer (msg.payload)
+    MessageImageWriter (Message& msg, uint64_t imageId) : msg (msg), writer (msg.payload)
     {
         msg.header.kind = MessageKind::ImageBuffer;
         writer.appendUInt64 (imageId);
     }
 
-    ~MessageImageViewWriter ()
+    ~MessageImageWriter ()
     {
         msg.header.payloadSizeInBytes = msg.payload.size();
     }
 
-    virtual void write (const ImageView& imageView) override
+    virtual void write (const ImageSRGBA& image) override
     {
-        writer.appendImageBuffer (imageView);
+        writer.appendImageBuffer (image);
     }
 
 private:
     Message& msg;
-    ClientPayloadWriter writer;
+    AppClientPayloadWriter writer;
 };
 
-class ClientThread
+class AppClientThread
 {
 public:
     enum class Status
@@ -77,7 +76,7 @@ public:
     };
 
 public:
-    ~ClientThread()
+    ~AppClientThread()
     {
         stop ();
     }
@@ -120,7 +119,7 @@ public:
         }
     }
 
-    void addImage (uint64_t imageId, const std::string& imageName, const Client::GetDataCallback& getDataCallback, bool replaceExisting)
+    void addImage (uint64_t imageId, const std::string& imageName, const AppClient::GetDataCallback& getDataCallback, bool replaceExisting)
     {
         if (!isConnected())
             return;
@@ -130,10 +129,10 @@ public:
             assert(_getDataCallbacks.find(imageId) == _getDataCallbacks.end());
             _getDataCallbacks[imageId] = getDataCallback;
         }
-        addImage(imageId, imageName, ImageView(), replaceExisting);
+        addImage(imageId, imageName, ImageSRGBA(), replaceExisting);
     }
 
-    void addImage (uint64_t imageId, const std::string& imageName, const ImageView& imageBuffer, bool replaceExisting)
+    void addImage (uint64_t imageId, const std::string& imageName, const ImageSRGBA& imageBuffer, bool replaceExisting)
     {
         if (!isConnected())
             return;
@@ -151,12 +150,12 @@ public:
             sizeof(uint64_t) // imageId
             + imageName.size() + sizeof(uint64_t) // name
             + sizeof(uint32_t) // flags
-            + sizeof(uint32_t)*3 + imageBuffer.numBytes() // image buffer
+            + sizeof(uint32_t)*3 + imageBuffer.sizeInBytes() // image buffer
         );
         msg.payload.reserve (msg.header.payloadSizeInBytes);
 
         uint32_t flags = replaceExisting;
-        ClientPayloadWriter w (msg.payload);
+        AppClientPayloadWriter w (msg.payload);
         w.appendUInt64 (imageId);
         w.appendStringUTF8 (imageName);    
         w.appendUInt32 (flags);
@@ -226,8 +225,8 @@ private:
 
             Message outputMessage;
             {
-                MessageImageViewWriter msgWriter(outputMessage, imageId);
-                Client::GetDataCallback callback;
+                MessageImageWriter msgWriter(outputMessage, imageId);
+                AppClient::GetDataCallback callback;
                 {
                     std::lock_guard<std::mutex> lk(_getDataCallbacksMutex);
                     auto callbackIt = _getDataCallbacks.find(imageId);
@@ -336,7 +335,7 @@ private:
     std::deque<Message> _outputQueue;
 
     std::mutex _getDataCallbacksMutex;
-    std::unordered_map<uint64_t, Client::GetDataCallback> _getDataCallbacks;
+    std::unordered_map<uint64_t, AppClient::GetDataCallback> _getDataCallbacks;
 };
 
 } // zv
@@ -344,70 +343,57 @@ private:
 namespace zv
 {
 
-struct Client::Impl
+struct AppClient::Impl
 {
-    ClientThread _clientThread;
+    AppClientThread _clientThread;
+    uint64_t nextId = 0;
 };
 
-Client::Client() : impl (new Impl())
+AppClient::AppClient() : impl (new Impl())
 {    
 }
 
-Client::~Client() = default;
+AppClient::~AppClient() = default;
 
-bool Client::connect (const std::string& hostname, int port)
+bool AppClient::connect (const std::string& hostname, int port)
 {
     return impl->_clientThread.start (hostname, port); 
 }
 
-bool Client::isConnected () const
+bool AppClient::isConnected () const
 {
     return impl->_clientThread.isConnected ();
 }
 
-void Client::waitUntilDisconnected ()
+void AppClient::waitUntilDisconnected ()
 {
     impl->_clientThread.waitUntilDisconnected ();
 }
 
-void Client::addImage (uint64_t imageId, const std::string& imageName, const ImageView& imageBuffer, bool replaceExisting)
+void AppClient::addImage (uint64_t imageId, const std::string& imageName, const ImageSRGBA& imageBuffer, bool replaceExisting)
 {
     impl->_clientThread.addImage (imageId, imageName, imageBuffer, replaceExisting);
 }
 
-void Client::addImage (uint64_t imageId, const std::string& imageName, const GetDataCallback& getDataCallback, bool replaceExisting)
+void AppClient::addImage (uint64_t imageId, const std::string& imageName, GetDataCallback&& getDataCallback, bool replaceExisting)
 {
     impl->_clientThread.addImage (imageId, imageName, getDataCallback, replaceExisting);
 }
 
-Client& Client::instance()
+void AppClient::addImageFromFile (const std::string& imPath)
 {
-    static std::unique_ptr<Client> client = std::make_unique<Client>();
-    return *client.get();
-}
-
-uint64_t Client::nextUniqueId ()
-{
-    static uint64_t nextId = 1;
-    return nextId++;
-}
-
-bool connect (const std::string& hostname, int port)
-{
-    Client& client = Client::instance();
-    return client.connect (hostname, port);
-}
-
-void logImageRGBA (const std::string& name, void* pixels_RGBA32, int width, int height, int bytesPerRow)
-{
-    Client& client = Client::instance();
-    client.addImage (client.nextUniqueId(), name, ImageView((uint8_t*)pixels_RGBA32, width, height, bytesPerRow));
-}
-
-void waitUntilDisconnected ()
-{
-    Client& client = Client::instance();
-    client.waitUntilDisconnected ();
+    uint64_t imageId = impl->nextId++;
+    auto cb = [imPath](ImageWriter& writer) {
+        zv_dbg ("%s requested", imPath.c_str());
+        ImageSRGBA image;
+        bool ok = readPngImage (imPath, image);
+        if (!ok)
+            return false;
+        zv_dbg ("Writing the image.");
+        writer.write (image);
+        return true;
+    };
+    addImage (imageId, imPath, std::move(cb), true);
 }
 
 } // zv

@@ -56,7 +56,7 @@ enum class MessageKind : int32_t
     Invalid = -1,
 
     // No payload. Just request a close message.
-    Close = 0,
+    Close = 0, // now unsused with the znet backend.
 
     // version:uint32_t
     Version = 1,

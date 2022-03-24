@@ -33,7 +33,7 @@
             "type": "cppdbg",
             "request": "launch",
             // Resolved by CMake Tools:
-            "program": "/home/nb/Perso/zv/build/zv/zv",
+            "program": "${workspaceFolder}/build/zv/zv",
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",            
             "externalConsole": false,
@@ -53,7 +53,7 @@
             "type": "cppdbg",
             "request": "launch",
             // Resolved by CMake Tools:
-            "program": "/home/nb/Perso/zv/build/client-znet/zv-client",
+            "program": "${workspaceFolder}/build/client-znet/zv-client",
             "args": [],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",

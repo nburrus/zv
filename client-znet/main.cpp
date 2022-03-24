@@ -3,6 +3,7 @@
 #include <thread>
 #include <chrono>
 #include <iostream>
+#include <vector>
 
 using namespace std::chrono_literals;
 
@@ -29,7 +30,7 @@ int main (int argc, char** argv)
 
     // uint64_t imageId, const std::string& imageName, const GetDataCallback& getDataCallback, bool replaceExisting = true
     std::string filename = "/home/nb/Perso/zv/tests/rgbgrid.png";
-    client.addImage (5, "withCallback", [filename](zv::ImageWriter& writer) {
+    client.addImage (5, "withCallback", [filename](zv::ImageViewWriter& writer) {
         std::clog << "Image " << filename << " requested" << std::endl;
         std::vector<uint8_t> imData (2048*1024*4);
         std::fill (imData.begin(), imData.end(), 127);
