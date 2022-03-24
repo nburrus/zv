@@ -163,17 +163,10 @@ public:
         w.appendImageBuffer (imageBuffer);
         assert (msg.payload.size() == msg.header.payloadSizeInBytes);
 
-        enqueueMessage (std::move(msg));
+        _senderQueue->enqueueMessage (std::move(msg));
     }
 
 private: 
-    void enqueueMessage (Message&& msg)
-    {
-        std::lock_guard<std::mutex> _(_outputQueueMutex);
-        _outputQueue.push_back(std::move(msg));
-        _eventLoop->post(std::bind(&ClientThread::sendNextMessage, this));
-    }
-
     void disconnect ()
     {
         // Already disconnected.
@@ -182,7 +175,7 @@ private:
 
         _shouldDisconnect = true;
         _receiver.reset ();
-        _sender.reset ();
+        _senderQueue.reset ();
         _socket->doClose ();
         _socket.reset ();
         setStatus (Status::Disconnected);
@@ -247,42 +240,14 @@ private:
                     callback(msgWriter);
                 }
             }
-            enqueueMessage(std::move(outputMessage));
+            _senderQueue->enqueueMessage(std::move(outputMessage));
             break;
         }
         }
 
         // Keep reading.
         recvMessage();
-    }
-
-    void sendNextMessage ()
-    {
-        if (!_sender)
-            return;
-
-        // Grab the next one from the queue.
-        Message msg;
-        {
-            std::unique_lock<std::mutex> lk(_outputQueueMutex);
-            if (_outputQueue.empty())
-                return;
-
-            msg = std::move(_outputQueue.front());
-            _outputQueue.pop_front();
-        }
-
-        _sender->sendMessage (std::move(msg), [this](zn::NetErrorCode err) {
-            if (err != zn::NEC_SUCCESS)
-            {
-                disconnect ();
-            }
-            else
-            {
-                sendNextMessage ();
-            }
-        });
-    }
+    }    
 
     // The main loop will keep reading.
     // The write loop will keep writing.
@@ -311,8 +276,10 @@ private:
             _receiver = std::make_shared<zn::MessageReceiver>(_socket);
             recvMessage ();
 
-            _sender = std::make_shared<zn::MessageSender>(_socket);
-            sendNextMessage ();
+            _senderQueue = std::make_shared<zn::MessageSenderQueue>(_eventLoop, _socket, [this](zn::NetErrorCode err) {
+                if (err != zn::NEC_SUCCESS)
+                    disconnect ();
+            });
 
             setStatus (Status::Connected);
         });
@@ -345,7 +312,7 @@ private:
     zn::EventLoopPtr _eventLoop;
     zn::TcpSocketPtr _socket;
     zn::MessageReceiverPtr _receiver;
-    zn::MessageSenderPtr _sender;
+    zn::MessageSenderQueuePtr _senderQueue;
 
     bool _shouldDisconnect = false;
     Status _status = Status::Init;

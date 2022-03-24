@@ -10,6 +10,9 @@
 
 #include "Message.h"
 
+#include <mutex>
+#include <deque>
+
 ZNPP_NS_BEGIN
 
 inline bool doRecvExactly(TcpSocket& socket, char* buf, unsigned len, std::function<void(NetErrorCode)>&& h)
@@ -110,6 +113,11 @@ public:
     {}
 
 public:
+    bool hasMessageInFlight () const
+    {
+        return _outgoingMsg.isValid();
+    }
+
     void sendMessage (zv::Message&& msg, OnSentCb&& cb)
     {
         assert (!_outgoingMsg.isValid());
@@ -144,6 +152,66 @@ private:
     OnSentCb _cb;
 };
 using MessageSenderPtr = std::shared_ptr<MessageSender>;
+
+class MessageSenderQueue
+{
+public:
+    MessageSenderQueue (const EventLoopPtr& eventLoop, 
+                        const TcpSocketPtr& socket,
+                        MessageSender::OnSentCb&& onMessageSentCb)
+    : _eventLoop (eventLoop),
+      _socket (socket),
+      _onMessageSentCb (std::move(onMessageSentCb))
+    {
+        _sender = std::make_shared<MessageSender>(_socket);
+    }
+
+    void enqueueMessage (zv::Message&& msg)
+    {
+        std::lock_guard<std::mutex> _(_outputQueueMutex);
+        _outputQueue.push_back(std::move(msg));
+        _eventLoop->post([this]() { sendNextMessage(); });
+    }
+
+private:
+    void sendNextMessage ()
+    {
+        if (!_sender)
+            return;
+
+        if (_sender->hasMessageInFlight())
+            return;
+
+        // Grab the next one from the queue.
+        zv::Message msg;
+        {
+            std::unique_lock<std::mutex> lk(_outputQueueMutex);
+            if (_outputQueue.empty())
+                return;
+
+            msg = std::move(_outputQueue.front());
+            _outputQueue.pop_front();
+        }
+
+        _sender->sendMessage (std::move(msg), [this](NetErrorCode err) {
+            _onMessageSentCb (err);
+            if (err == NEC_SUCCESS)
+            {
+                sendNextMessage ();
+            }
+        });
+    }
+
+private:
+    EventLoopPtr _eventLoop;
+    TcpSocketPtr _socket;
+    MessageSenderPtr _sender;
+    MessageSender::OnSentCb _onMessageSentCb;
+
+    std::mutex _outputQueueMutex;
+    std::deque<zv::Message> _outputQueue;
+};
+using MessageSenderQueuePtr = std::shared_ptr<MessageSenderQueue>;
 
 ZNPP_NS_END
 
