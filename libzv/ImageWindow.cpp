@@ -834,7 +834,7 @@ void ImageWindow::renderFrame ()
 
         for (int idx = 0; idx < impl->currentImages.size(); ++idx)
         {
-            if (!impl->currentImages[idx].hasValidData())
+            if (!impl->currentImages[idx].data)
                 continue;
             
             if (!impl->currentImages[idx].data->cpuData->hasData())
