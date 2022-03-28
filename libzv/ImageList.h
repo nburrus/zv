@@ -107,6 +107,8 @@ public:
     ImageId addImage (std::unique_ptr<ImageItem> image, int position, bool replaceExisting);
     void removeImage (int index);
 
+    void refreshPrettyFileNames ();
+
     // Important to call this with a GL context set as it may release some GL textures.
     ImageItemDataPtr getData (const ImageItem* entry);
     

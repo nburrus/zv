@@ -62,6 +62,8 @@ public:
 
     void setLayout (int nrows, int ncols);
     void runAction (ImageWindowAction action);
+
+    void refreshPrettyFileNames ();
         
 protected:
     // Controller-like global methods that member windows can call.

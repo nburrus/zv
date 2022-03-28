@@ -9,6 +9,7 @@
 #include <cstdio>
 #include <string>
 #include <cmath>
+#include <vector>
 
 #define ZV_MULTI_STATEMENT_MACRO(X) do { X } while(0)
 
@@ -83,5 +84,7 @@ namespace zv
     };
 
     std::string currentThreadId ();
+
+    std::vector<std::string> uniquePrettyNames(const std::vector<std::string>& fullPaths);
 
 } // zv

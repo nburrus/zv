@@ -44,8 +44,9 @@
                     "text": "-enable-pretty-printing",
                     "ignoreFailures": true
                 }
-            ]
+            ],
             // "args": [ "/home/nb/Perso/zv/tests/rgbgrid.png" ],
+            // "args": [ "/common/folderA/foo.png", "/common/folderB/foo.png" ]
         },
 
         {

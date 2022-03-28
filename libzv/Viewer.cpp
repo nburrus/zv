@@ -258,6 +258,11 @@ ImageId Viewer::addImageItem (ImageItemUniquePtr imageItem, int insertPos, bool 
     return impl->imageList.addImage (std::move(imageItem), insertPos, replaceExisting);
 }
 
+void Viewer::refreshPrettyFileNames ()
+{
+    impl->imageList.refreshPrettyFileNames();    
+}
+
 ImageId Viewer::addPastedImage ()
 {
     // Keep that old code around for now.

@@ -219,6 +219,37 @@ void ImageList::selectImage (int index)
     impl->selectedIndex = index;
 }
 
+void ImageList::refreshPrettyFileNames ()
+{
+    std::unordered_map<std::string, std::vector<int>> groupedNames;
+    for (int idx = 0; idx < impl->entries.size(); ++idx)
+    {
+        const auto& entry = impl->entries[idx];
+        groupedNames[entry->prettyName].push_back(idx);
+    }
+    
+    for (const auto& it : groupedNames)
+    {
+        const auto& pathIndices = it.second;
+
+        if (pathIndices.size() < 2)
+            continue;
+    
+        std::vector<std::string> uniqueNames;
+        std::vector<std::string> pathNames (pathIndices.size());
+        for (int i = 0; i < pathIndices.size(); ++i)
+        {
+            pathNames[i] = impl->entries[pathIndices[i]]->sourceImagePath;
+        }
+
+        uniqueNames = uniquePrettyNames (pathNames);
+        for (int i = 0; i < pathIndices.size(); ++i)
+        {
+            impl->entries[pathIndices[i]]->prettyName = uniqueNames[i];
+        }
+    }
+}
+
 // Takes ownership.
 ImageId ImageList::addImage (std::unique_ptr<ImageItem> image, int insertPosition, bool replaceExisting)
 {
@@ -235,6 +266,8 @@ ImageId ImageList::addImage (std::unique_ptr<ImageItem> image, int insertPositio
     if (replaceExisting)
     {
         auto existing_element = std::find_if(impl->entries.begin(), impl->entries.end(), [&](const ImageItemPtr& e) {
+            if (image->source == ImageItem::Source::FilePath && e->source == ImageItem::Source::FilePath)
+                return e->sourceImagePath == image->sourceImagePath;
             return e->prettyName == image->prettyName;
         });
     
