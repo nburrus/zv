@@ -32,7 +32,7 @@ public:
     ~Server();
     
 public:
-    void start (const std::string& hostname = "127.0.0.1", int port = 4207);
+    bool start (const std::string& hostname = "127.0.0.1", int port = 4207);
 
     void stop ();
     

@@ -218,7 +218,7 @@ private:
             return;
         }
 
-        zv_dbg("Received message kind=%d", (int)msg.header.kind);
+        // zv_dbg("Received message kind=%d", (int)msg.header.kind);
         switch (msg.header.kind)
         {
         case MessageKind::Image:
@@ -229,6 +229,7 @@ private:
             ServerPayloadReader reader(msg.payload);
             const uint64_t clientImageId = reader.readUInt64();
             reader.readStringUTF8(imageItem->prettyName);
+            reader.readStringUTF8(imageItem->viewerName);
             const uint32_t flags = reader.readUInt32();
 
             ImageSRGBA imageContent;
@@ -473,9 +474,9 @@ Server::Server()
 
 Server::~Server() = default;
 
-void Server::start (const std::string& hostname, int port)
+bool Server::start (const std::string& hostname, int port)
 {
-    impl->_serverThread.start (hostname, port);    
+    return impl->_serverThread.start (hostname, port);    
 }
 
 void Server::stop ()

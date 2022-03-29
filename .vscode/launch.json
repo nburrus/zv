@@ -29,6 +29,18 @@
         },
 
         {
+            "name": "zv-log",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/python/zv/log.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "env": {
+                "PYTHONPATH": "${command:cmake.buildDirectory}/python:${workspaceFolder}/python"
+            }
+        },
+
+        {
             "name": "zv",
             "type": "cppdbg",
             "request": "launch",

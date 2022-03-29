@@ -41,9 +41,12 @@ struct App::Impl
     {
         server.updateOnce([this](ImageItemUniquePtr imageItem, int flags) {
             bool replace = flags;
-            auto viewerIt = this->viewers.begin();
-            zv_assert (viewerIt != this->viewers.end(), "No viewer!");
-            viewerIt->second->addImageItem (std::move(imageItem), -1, replace); 
+            auto* viewer = that.getViewer (imageItem->viewerName);
+            if (viewer == nullptr)
+            {
+                viewer = that.createViewer (imageItem->viewerName);
+            }
+            viewer->addImageItem (std::move(imageItem), -1, replace); 
         });
 
         std::vector<std::string> viewersToRemove;
@@ -106,6 +109,12 @@ bool App::initialize (const std::vector<std::string>& args)
        .required()
        .default_value(std::string("127.0.0.1"));
 
+    argsParser.add_argument("--require-server")
+       .help("Fail if the server cannot listen.")
+       .required()
+       .default_value(false)
+       .implicit_value(true);
+
    try
    {
        argsParser.parse_args(args);
@@ -134,7 +143,11 @@ bool App::initialize (const std::vector<std::string>& args)
        zv_dbg("No images provided, using default.");
    }
 
-   impl->server.start(argsParser.get<std::string>("--interface"), argsParser.get<int>("--port"));
+   bool couldStart = impl->server.start(argsParser.get<std::string>("--interface"), argsParser.get<int>("--port"));
+   if (argsParser["--require-server"] == true && !couldStart)
+   {
+       return false;
+   }
 
    return true;
 }

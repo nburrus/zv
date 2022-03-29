@@ -81,11 +81,12 @@ public:
     bool isConnected () const;
     bool connect (const std::string& hostname = "127.0.0.1", int port = 4207);
     void waitUntilDisconnected ();
+    void disconnect ();
 
     using GetDataCallback = std::function<bool(ClientImageWriter&)>;
     
-    void addImage (uint64_t imageId, const std::string& imageName, const ClientImageBuffer& imageBuffer, bool replaceExisting = true);
-    void addImage (uint64_t imageId, const std::string& prettyName, const std::string& fileName, const GetDataCallback& getDataCallback, bool replaceExisting = true);
+    void addImage (uint64_t imageId, const std::string& imageName, const ClientImageBuffer& imageBuffer, bool replaceExisting = true, const std::string& viewerName = "default");
+    void addImage (uint64_t imageId, const std::string& prettyName, const std::string& fileName, const GetDataCallback& getDataCallback, bool replaceExisting = true, const std::string& viewerName = "default");
 
     void addImageFromFile (uint64_t imageId, const std::string& imagePath);
 

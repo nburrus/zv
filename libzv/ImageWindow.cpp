@@ -556,7 +556,7 @@ void renderImageItem (const ImageItemAndData& item,
                       const ImVec2& imageWidgetTopLeft,
                       const ImVec2& imageWidgetSize,
                       ZoomInfo& zoom,
-                      bool imageHasNonMultipleSize,
+                      bool imageSmallerThanNormal,
                       CursorOverlayInfo* overlayInfo)
 {
     auto& io = ImGui::GetIO();
@@ -581,7 +581,7 @@ void renderImageItem (const ImageItemAndData& item,
     GLTexture* imageTexture = item.data->textureData.get();
     
     const bool hasZoom = zoom.zoomFactor != 1;
-    const bool useLinearFiltering = imageHasNonMultipleSize && !hasZoom;
+    const bool useLinearFiltering = imageSmallerThanNormal && !hasZoom;
     // Enable it just for that rendering otherwise the pointer overlay will get filtered too.
     if (useLinearFiltering)
     {
@@ -801,7 +801,7 @@ void ImageWindow::renderFrame ()
         const ImVec2 globalImageWidgetTopLeft = ImGui::GetCursorScreenPos();
         const auto globalImageWidgetSize = imSize(impl->imageWidgetRect.current);
         const auto globalImageWidgetContentSize = globalImageWidgetSize - ImVec2(impl->currentLayout.config.numCols-1, impl->currentLayout.config.numRows-1)*impl->gridPadding;
-        const bool imageHasNonMultipleSize = int(impl->imageWidgetRect.current.size.x) % int(impl->imageWidgetRect.normal.size.x) != 0;
+        const bool imageSmallerThanNormal = int(impl->imageWidgetRect.current.size.x) < int(impl->imageWidgetRect.normal.size.x);
         
         struct ImageItemGeometry
         {
@@ -862,7 +862,7 @@ void ImageWindow::renderFrame ()
                                 widgetGeometries[idx].topLeft,
                                 widgetGeometries[idx].size,
                                 impl->zoom,
-                                imageHasNonMultipleSize,
+                                imageSmallerThanNormal,
                                 &impl->cursorOverlayInfo);
             }
         }

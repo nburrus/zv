@@ -66,6 +66,7 @@ struct ImageItem
     std::string errorString;
     std::string sourceImagePath; // also used for the pretty name of other sources.
     std::string prettyName;
+    std::string viewerName = "default";
     std::shared_ptr<ImageSRGBA> sourceData;
     std::function<ImageItemDataUniquePtr()> loadDataCallback;
 

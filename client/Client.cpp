@@ -105,12 +105,18 @@ public:
         _status = Status::Connecting;
         _thread = std::thread([this, hostname, port]() { runMainLoop(hostname, port); });
         
-        std::unique_lock<std::mutex> lk (_statusMutex);
-        _statusChanged.wait (lk, [this]() {
-            return _status != Status::Connecting;
-        });
-        
-        return _status == Status::Connected;
+        Status connectionStatus;
+        {
+            std::unique_lock<std::mutex> lk(_statusMutex);
+            _statusChanged.wait(lk, [this]()
+                                { return _status != Status::Connecting; });
+            connectionStatus = _status;
+        }
+
+        if (connectionStatus != Status::Connected && _thread.joinable())
+            _thread.join();
+
+        return connectionStatus == Status::Connected;
     }
 
     void stop ()
@@ -126,7 +132,7 @@ public:
         }
     }
 
-    void addImage (uint64_t imageId, const std::string& imageName, const std::string& imagePath, const Client::GetDataCallback& getDataCallback, bool replaceExisting)
+    void addImage (uint64_t imageId, const std::string& imageName, const std::string& imagePath, const Client::GetDataCallback& getDataCallback, bool replaceExisting, const std::string& viewerName)
     {
         if (!isConnected())
             return;
@@ -141,10 +147,10 @@ public:
         ClientImageBuffer imageBuffer;
         imageBuffer.filePath = imagePath;
 
-        addImage(imageId, imageName, imageBuffer, replaceExisting);
+        addImage(imageId, imageName, imageBuffer, replaceExisting, viewerName);
     }
 
-    void addImage (uint64_t imageId, const std::string& imageName, const ClientImageBuffer& imageBuffer, bool replaceExisting)
+    void addImage (uint64_t imageId, const std::string& imageName, const ClientImageBuffer& imageBuffer, bool replaceExisting, const std::string& viewerName)
     {
         if (!isConnected())
             return;
@@ -161,6 +167,7 @@ public:
         msg.header.payloadSizeInBytes = (
             sizeof(uint64_t) // imageId
             + imageName.size() + sizeof(uint64_t) // name
+            + viewerName.size() + sizeof(uint64_t) // viewerName
             + sizeof(uint32_t) // flags
             + messagePayloadSize(imageBuffer)
         );
@@ -169,7 +176,8 @@ public:
         uint32_t flags = replaceExisting;
         ClientPayloadWriter w (msg.payload);
         w.appendUInt64 (imageId);
-        w.appendStringUTF8 (imageName);    
+        w.appendStringUTF8 (imageName);
+        w.appendStringUTF8 (viewerName);
         w.appendUInt32 (flags);
         w.appendImageBuffer (imageBuffer);
         assert (msg.payload.size() == msg.header.payloadSizeInBytes);
@@ -213,18 +221,11 @@ private:
             break;
         }
 
-        case MessageKind::Close:
-        {
-            std::clog << "[DEBUG][READER] got close message" << std::endl;
-            disconnect ();
-            break;
-        }
-
         case MessageKind::Version:
         {
             PayloadReader r(msg.payload);
             int32_t serverVersion = r.readInt32();
-            std::clog << "[DEBUG][READER] Server version = " << serverVersion << std::endl;
+            // std::clog << "[DEBUG][READER] Server version = " << serverVersion << std::endl;
             assert(serverVersion == 1);
             break;
         }
@@ -393,14 +394,19 @@ void Client::waitUntilDisconnected ()
     impl->_clientThread.waitUntilDisconnected ();
 }
 
-void Client::addImage (uint64_t imageId, const std::string& imageName, const ClientImageBuffer& imageBuffer, bool replaceExisting)
+void Client::disconnect ()
 {
-    impl->_clientThread.addImage (imageId, imageName, imageBuffer, replaceExisting);
+    impl->_clientThread.stop ();
 }
 
-void Client::addImage (uint64_t imageId, const std::string& imageName, const std::string& fileName, const GetDataCallback& getDataCallback, bool replaceExisting)
+void Client::addImage (uint64_t imageId, const std::string& imageName, const ClientImageBuffer& imageBuffer, bool replaceExisting, const std::string& viewerName)
 {
-    impl->_clientThread.addImage (imageId, imageName, fileName, getDataCallback, replaceExisting);
+    impl->_clientThread.addImage (imageId, imageName, imageBuffer, replaceExisting, viewerName);
+}
+
+void Client::addImage (uint64_t imageId, const std::string& imageName, const std::string& fileName, const GetDataCallback& getDataCallback, bool replaceExisting, const std::string& viewerName)
+{
+    impl->_clientThread.addImage (imageId, imageName, fileName, getDataCallback, replaceExisting, viewerName);
 }
 
 inline size_t fileLength (std::ifstream& is)

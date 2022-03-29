@@ -60,9 +60,6 @@ enum class MessageKind : int32_t
 {
     Invalid = -1,
 
-    // No payload. Just request a close message.
-    Close = 0, // now unused with the znet backend.
-
     // version:uint32_t
     Version = 1,
 
@@ -71,7 +68,7 @@ enum class MessageKind : int32_t
     // it'll need it. This is useful when telling the server about many
     // available images (e.g listing a folder). 
     //
-    // uniqueId:uint64_t name:StringUTF8 path:StringUTF8 flags:uint32_t imageBuffer:ImageBuffer
+    // uniqueId:uint64_t name:StringUTF8 viewerName:StringUTF8 flags:uint32_t imageBuffer:ImageBuffer
     Image = 2,
 
     // Request image data.
@@ -208,14 +205,6 @@ private:
     const std::vector<uint8_t>& payload;
     size_t offset = 0;
 };
-
-static Message closeMessage()
-{
-    Message msg;
-    msg.header.kind = MessageKind::Close;
-    msg.header.payloadSizeInBytes = 0;
-    return msg;
-}
 
 static Message versionMessage(int32_t version)
 {

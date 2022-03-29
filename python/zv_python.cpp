@@ -242,15 +242,17 @@ void register_ImGui (py::module& zv_module)
 void register_Client (py::module& m)
 {
     py::class_<Client>(m, "Client")
+        .def(py::init<>())
         .def ("connect", &Client::connect)
         .def_property_readonly("connected", &Client::isConnected)
         .def("waitUntilDisconnected", &Client::waitUntilDisconnected)
-        .def("addImage", [](Client& client, const std::string& name, py::array buffer) {
+        .def("disconnect", &Client::disconnect)
+        .def("addImage", [](Client& client, const std::string& name, py::array buffer, const std::string& viewerName) {
             ImageSRGBA im = imageFromPythonArray (buffer);
             ClientImageBuffer clientBuffer (im.rawBytes(), im.width(), im.height(), im.bytesPerRow());
             if (!im.hasData())
                 return;
-            client.addImage (client.nextUniqueId(), name, clientBuffer, true);
+            client.addImage (client.nextUniqueId(), name, clientBuffer, true /* replace */, viewerName);
         });
 }
 
