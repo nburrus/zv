@@ -7,6 +7,10 @@
 #pragma once
 
 #include <vector>
+#include <cstdint>
+#include <string>
+#include <stdexcept>
+#include <cassert>
 
 namespace zv
 {
@@ -45,6 +49,7 @@ namespace zv
 
     ImageBuffer:
         format: uint32_t
+        filename: StringUTF8 // can be empty
         width:uint32_t
         height:uint32_t
         bytesPerRow:uint32_t
@@ -56,7 +61,7 @@ enum class MessageKind : int32_t
     Invalid = -1,
 
     // No payload. Just request a close message.
-    Close = 0, // now unsused with the znet backend.
+    Close = 0, // now unused with the znet backend.
 
     // version:uint32_t
     Version = 1,
@@ -66,7 +71,7 @@ enum class MessageKind : int32_t
     // it'll need it. This is useful when telling the server about many
     // available images (e.g listing a folder). 
     //
-    // uniqueId:uint64_t name:StringUTF8 flags:uint32_t imageBuffer:ImageBuffer
+    // uniqueId:uint64_t name:StringUTF8 path:StringUTF8 flags:uint32_t imageBuffer:ImageBuffer
     Image = 2,
 
     // Request image data.
@@ -76,6 +81,14 @@ enum class MessageKind : int32_t
     // Output image data.
     // uniqueIdInClient:uint64_t imageBuffer:ImageBuffer
     ImageBuffer = 4,
+};
+
+enum class ImageBufferFormat : uint32_t
+{
+    Unknown = 0,
+    Empty = 1, // will be sent later
+    Raw_File = 2, // determine the encoding from the filePath extension.
+    Data_RGBA32 = 3,
 };
 
 #pragma pack(push,1)

@@ -24,7 +24,8 @@ namespace zv
         {
             return false;
         }
-
+        // channels can be anything (corresponding to the input image), but we requested 4
+        // so the output data will always have 4.
         outputImage.ensureAllocatedBufferForSize (width, height);
         outputImage.copyDataFrom (data, width*4, width, height);
         return true;

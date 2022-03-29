@@ -146,8 +146,6 @@ bool App::initialize (const std::vector<std::string>& args)
 
            for (const auto &im : images)
                defaultViewer->addImageFromFile(im);
-
-            defaultViewer->refreshPrettyFileNames ();
        }
        catch (const std::exception &err)
        {

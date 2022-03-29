@@ -225,7 +225,10 @@ void ImageList::refreshPrettyFileNames ()
     for (int idx = 0; idx < impl->entries.size(); ++idx)
     {
         const auto& entry = impl->entries[idx];
-        groupedNames[entry->prettyName].push_back(idx);
+        if (!entry->sourceImagePath.empty())
+        {
+            groupedNames[fs::path(entry->sourceImagePath).filename()].push_back(idx);
+        }
     }
     
     for (const auto& it : groupedNames)
@@ -281,6 +284,9 @@ ImageId ImageList::addImage (std::unique_ptr<ImageItem> image, int insertPositio
 
     // FIXME: using a vector with front insertion is not great. Could use a list for once, I guess.
     impl->entries.insert (impl->entries.begin() + insertPosition, std::move(image));
+    // FIXME: overkill to run it everytime when we're adding a bunch of images from the
+    // command line. Seems pretty fast though.
+    refreshPrettyFileNames ();
     return imageId;
 }
 

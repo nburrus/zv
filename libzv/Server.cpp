@@ -14,6 +14,8 @@
 #include <libzv/Utils.h>
 #include <libzv/ImageList.h>
 
+#include <stb_image.h>
+
 #include <set>
 #include <deque>
 #include <thread>
@@ -68,17 +70,48 @@ struct ServerPayloadReader : PayloadReader
 {
     ServerPayloadReader(const std::vector<uint8_t>& payload) : PayloadReader (payload) {}
 
-    void readImageBuffer (ImageSRGBA& image)
+    void readImageBuffer (ImageSRGBA& image, std::string& filePath)
     {
+        ImageBufferFormat format = (ImageBufferFormat)readUInt32 ();
+        readStringUTF8 (filePath);
         int w = readUInt32 ();
         int h = readUInt32 ();
         int sourceBytesPerRow = readUInt32 ();
-        image.ensureAllocatedBufferForSize (w, h);
-        for (int r = 0; r < h; ++r)
+
+        switch (format)
         {
-            const size_t rowContentSizeInBytes = w*sizeof(PixelSRGBA);
-            readBytes(reinterpret_cast<uint8_t*>(image.atRowPtr(r)), rowContentSizeInBytes);
-            skipBytes (sourceBytesPerRow - rowContentSizeInBytes);
+            case ImageBufferFormat::Raw_File:
+            {
+                zv_assert (h == 1 && w == 0, "Expected raw file content (w=%d h=%d)", w, h);
+                std::vector<uint8_t> rawContent (sourceBytesPerRow);
+                readBytes (rawContent.data(), sourceBytesPerRow);                
+                int channels; // can return anything, but we requested 4, so the output data will have 4.
+                uint8_t* imageContent = stbi_load_from_memory(rawContent.data(), rawContent.size(), &w, &h, &channels, 4);
+                image.ensureAllocatedBufferForSize (w, h);
+                image.copyDataFrom (imageContent, 4*w, w, h);
+                break;
+            }
+
+            case ImageBufferFormat::Data_RGBA32:
+            {
+                image.ensureAllocatedBufferForSize (w, h);
+                for (int r = 0; r < h; ++r)
+                {
+                    const size_t rowContentSizeInBytes = w * sizeof(PixelSRGBA);
+                    readBytes(reinterpret_cast<uint8_t *>(image.atRowPtr(r)), rowContentSizeInBytes);
+                    skipBytes(sourceBytesPerRow - rowContentSizeInBytes);
+                }
+                break;
+            }
+
+            case ImageBufferFormat::Empty:
+            {
+                break;
+            }
+
+            default:
+                zv_assert (false, "Invalid format %d", (uint32_t)format);
+                break;
         }
     }
 };
@@ -194,10 +227,12 @@ private:
             const uint32_t flags = reader.readUInt32();
 
             ImageSRGBA imageContent;
-            reader.readImageBuffer(imageContent);
+            std::string imagePath;
+            reader.readImageBuffer(imageContent, imagePath);
+            imageItem->sourceImagePath = imagePath;
             if (imageContent.hasData())
             {
-                imageItem->source = ImageItem::Source::Data;
+                imageItem->source = ImageItem::Source::Data;                
                 imageItem->sourceData = std::make_shared<ImageSRGBA>(std::move(imageContent));
             }
             else
@@ -236,7 +271,9 @@ private:
             {
                 std::lock_guard<std::mutex> _(ctx->lock);
                 ctx->maybeLoadedImage = std::make_shared<ImageSRGBA>();
-                reader.readImageBuffer(*ctx->maybeLoadedImage);
+                // Assume it was already set and ignore it now.
+                std::string filePath;
+                reader.readImageBuffer(*ctx->maybeLoadedImage, filePath);
                 zv_assert(ctx->clientSocket == _socket.get(), "Client socket changed!");
             }
             break;

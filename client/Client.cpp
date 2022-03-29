@@ -19,8 +19,11 @@
 #include <deque>
 #include <cassert>
 #include <iostream>
+#include <fstream>
 #include <atomic>
+#include <filesystem>
 
+namespace fs = std::filesystem;
 namespace zn = zsummer::network;
 
 namespace zv
@@ -30,17 +33,19 @@ struct ClientPayloadWriter : PayloadWriter
 {
     ClientPayloadWriter(std::vector<uint8_t>& payload) : PayloadWriter (payload) {}
 
-    void appendImageBuffer (const ImageView& imageBuffer)
+    void appendImageBuffer (const ClientImageBuffer& imageBuffer)
     {
+        appendUInt32 ((uint32_t)imageBuffer.format);
+        appendStringUTF8 (imageBuffer.filePath);
         appendUInt32 (imageBuffer.width);
         appendUInt32 (imageBuffer.height);
         appendUInt32 (imageBuffer.bytesPerRow);
         if (imageBuffer.bytesPerRow > 0)
-            appendBytes ((uint8_t*)imageBuffer.pixels_RGBA32, imageBuffer.numBytes());
+            appendBytes ((uint8_t*)imageBuffer.data, imageBuffer.contentSizeInBytes());
     }
 };
 
-class MessageImageViewWriter : public ImageViewWriter
+class MessageImageViewWriter : public ClientImageWriter
 {
 public:
     MessageImageViewWriter (Message& msg, uint64_t imageId) : msg (msg), writer (msg.payload)
@@ -54,7 +59,7 @@ public:
         msg.header.payloadSizeInBytes = msg.payload.size();
     }
 
-    virtual void write (const ImageView& imageView) override
+    virtual void write (const ClientImageBuffer& imageView) override
     {
         writer.appendImageBuffer (imageView);
     }
@@ -120,7 +125,7 @@ public:
         }
     }
 
-    void addImage (uint64_t imageId, const std::string& imageName, const Client::GetDataCallback& getDataCallback, bool replaceExisting)
+    void addImage (uint64_t imageId, const std::string& imageName, const std::string& imagePath, const Client::GetDataCallback& getDataCallback, bool replaceExisting)
     {
         if (!isConnected())
             return;
@@ -130,10 +135,15 @@ public:
             assert(_getDataCallbacks.find(imageId) == _getDataCallbacks.end());
             _getDataCallbacks[imageId] = getDataCallback;
         }
-        addImage(imageId, imageName, ImageView(), replaceExisting);
+        
+        // Only write the path.
+        ClientImageBuffer imageBuffer;
+        imageBuffer.filePath = imagePath;
+
+        addImage(imageId, imageName, imageBuffer, replaceExisting);
     }
 
-    void addImage (uint64_t imageId, const std::string& imageName, const ImageView& imageBuffer, bool replaceExisting)
+    void addImage (uint64_t imageId, const std::string& imageName, const ClientImageBuffer& imageBuffer, bool replaceExisting)
     {
         if (!isConnected())
             return;
@@ -151,7 +161,7 @@ public:
             sizeof(uint64_t) // imageId
             + imageName.size() + sizeof(uint64_t) // name
             + sizeof(uint32_t) // flags
-            + sizeof(uint32_t)*3 + imageBuffer.numBytes() // image buffer
+            + messagePayloadSize(imageBuffer)
         );
         msg.payload.reserve (msg.header.payloadSizeInBytes);
 
@@ -370,14 +380,44 @@ void Client::waitUntilDisconnected ()
     impl->_clientThread.waitUntilDisconnected ();
 }
 
-void Client::addImage (uint64_t imageId, const std::string& imageName, const ImageView& imageBuffer, bool replaceExisting)
+void Client::addImage (uint64_t imageId, const std::string& imageName, const ClientImageBuffer& imageBuffer, bool replaceExisting)
 {
     impl->_clientThread.addImage (imageId, imageName, imageBuffer, replaceExisting);
 }
 
-void Client::addImage (uint64_t imageId, const std::string& imageName, const GetDataCallback& getDataCallback, bool replaceExisting)
+void Client::addImage (uint64_t imageId, const std::string& imageName, const std::string& fileName, const GetDataCallback& getDataCallback, bool replaceExisting)
 {
-    impl->_clientThread.addImage (imageId, imageName, getDataCallback, replaceExisting);
+    impl->_clientThread.addImage (imageId, imageName, fileName, getDataCallback, replaceExisting);
+}
+
+inline size_t fileLength (std::ifstream& is)
+{
+    is.seekg (0, is.end);
+    size_t length = is.tellg();
+    is.seekg (0, is.beg);
+    return length;
+}
+
+void Client::addImageFromFile (uint64_t imageId, const std::string& imPath)
+{
+    auto cb = [imPath](ClientImageWriter& writer) {
+        fprintf (stderr, "%s requested", imPath.c_str());
+        std::ifstream f(imPath, std::ios::in | std::ios::binary);
+        if (!f.good())
+            return false;
+        // Only accurate on all platforms in binary mode.
+        // https://stackoverflow.com/questions/2409504/using-c-filestreams-fstream-how-can-you-determine-the-size-of-a-file
+        // https://stackoverflow.com/questions/22984956/tellg-function-give-wrong-size-of-file/22986486#22986486
+        size_t sizeInBytes = fileLength (f);
+        std::vector<uint8_t> contents (sizeInBytes);
+        f.read((char*)contents.data(), sizeInBytes);
+
+        ClientImageBuffer buffer (imPath, contents.data(), sizeInBytes);        
+        writer.write (buffer);
+        return true;
+    };
+
+    addImage (imageId, fs::path(imPath).filename(), imPath, std::move(cb), true);
 }
 
 Client& Client::instance()
@@ -401,7 +441,7 @@ bool connect (const std::string& hostname, int port)
 void logImageRGBA (const std::string& name, void* pixels_RGBA32, int width, int height, int bytesPerRow)
 {
     Client& client = Client::instance();
-    client.addImage (client.nextUniqueId(), name, ImageView((uint8_t*)pixels_RGBA32, width, height, bytesPerRow));
+    client.addImage (client.nextUniqueId(), name, ClientImageBuffer((uint8_t*)pixels_RGBA32, width, height, bytesPerRow));
 }
 
 void waitUntilDisconnected ()

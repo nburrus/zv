@@ -358,7 +358,7 @@ void ControlsWindow::renderFrame ()
                     imageList.selectImage (idx);
                 }
 
-                if ((itemPtr->source == ImageItem::Source::FilePath) 
+                if (!itemPtr->sourceImagePath.empty()
                     && zv::IsItemHovered(ImGuiHoveredFlags_RectOnly, 0.5))
                 {
                     ImGui::BeginTooltip();

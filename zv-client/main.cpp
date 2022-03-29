@@ -1,5 +1,9 @@
 #include "Client.h"
 
+#include "GeneratedConfig.h"
+
+#include <argparse.hpp>
+
 #include <thread>
 #include <chrono>
 #include <iostream>
@@ -9,40 +13,43 @@ using namespace std::chrono_literals;
 
 int main (int argc, char** argv)
 {
+    argparse::ArgumentParser argsParser("zv-client", PROJECT_VERSION);
+    argsParser.add_argument("images")
+        .help("Images to visualize")
+        .remaining();
+
+    try
+    {
+        argsParser.parse_args(argc, argv);
+    }
+    catch (const std::runtime_error &err)
+    {
+        std::cerr << "Wrong usage" << std::endl;
+        std::cerr << err.what() << std::endl;
+        std::cerr << argsParser;
+        return false;
+    }
+
     zv::Client client;
     if (!client.connect ("127.0.0.1", 4207))
     {
         return 1;
     }
 
-    int w = 1024;
-    int h = 768;
-    std::vector<uint8_t> imData (w*h*4);
-    zv::ImageView view (imData.data(), w, h);
-
-    for (int i = 0; i < 5; ++i)
+    try
     {
-        std::fill (imData.begin(), imData.end(), i*16);
-        std::string name = "TestImage-" + std::to_string(argc) + "-" + std::to_string(i);
-        client.addImage (i, name, view);
-        std::this_thread::sleep_for(100ms);
+        auto images = argsParser.get<std::vector<std::string>>("images");
+        fprintf(stderr, "%d images provided", (int)images.size());
+
+        for (const auto &im : images)
+            client.addImageFromFile(client.nextUniqueId(), im);
+    }
+    catch (const std::exception &err)
+    {
+        fprintf(stderr, "No images provided, the client has nothing to do.");
+        return false;
     }
 
-    // uint64_t imageId, const std::string& imageName, const GetDataCallback& getDataCallback, bool replaceExisting = true
-    std::string filename = "/home/nb/Perso/zv/tests/rgbgrid.png";
-    client.addImage (5, "withCallback", [filename](zv::ImageViewWriter& writer) {
-        std::clog << "Image " << filename << " requested" << std::endl;
-        std::vector<uint8_t> imData (2048*1024*4);
-        std::fill (imData.begin(), imData.end(), 127);
-        zv::ImageView view (imData.data(), 2048, 1024);
-        writer.write (view);
-        return true;
-    });
-
-    while (client.isConnected())
-    {
-        std::this_thread::sleep_for(1000ms);
-    }
-
+    client.waitUntilDisconnected ();
     return 0;
 }
