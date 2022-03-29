@@ -62,17 +62,25 @@ struct ImageItem
         Callback,
     } source;
    
+    struct Metadata
+    {
+        int width = -1;
+        int height = -1;
+    };
+
     ImageId uniqueId = -1;
     std::string errorString;
     std::string sourceImagePath; // also used for the pretty name of other sources.
     std::string prettyName;
     std::string viewerName = "default";
     std::shared_ptr<ImageSRGBA> sourceData;
-    std::function<ImageItemDataUniquePtr()> loadDataCallback;
+    std::function<ImageItemDataUniquePtr()> loadDataCallback;    
 
     using EventCallbackType = std::function<void(ImageId, float, float, void* userData)>;
     EventCallbackType eventCallback = nullptr;
     void* eventCallbackData = nullptr;
+
+    Metadata metadata;
 
     // Could add thumbnail, etc.
     // Everything should be lazy though.
@@ -111,7 +119,7 @@ public:
     void refreshPrettyFileNames ();
 
     // Important to call this with a GL context set as it may release some GL textures.
-    ImageItemDataPtr getData (const ImageItem* entry);
+    ImageItemDataPtr getData (ImageItem* entry);
     
     // Important to call this with a GL context set as it may release some textures.
     void releaseGL ();

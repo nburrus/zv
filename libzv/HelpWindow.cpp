@@ -156,6 +156,8 @@ void HelpWindow::renderFrame ()
                               | ImGuiWindowFlags_NoNav);
     
 
+    // ImGui::ShowDemoWindow();
+
     ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_Always);
     ImGui::SetNextWindowSize(ImVec2(frameInfo.windowContentWidth, frameInfo.windowContentHeight), ImGuiCond_Always);
     if (ImGui::Begin("zv Help Context", nullptr, flags))

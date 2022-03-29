@@ -336,24 +336,29 @@ void ControlsWindow::renderFrame ()
         }
                 
         ImageList& imageList = impl->viewer->imageList();
-        if (ImGui::BeginListBox("##filelist", ImVec2(-FLT_MIN, 4 * ImGui::GetTextLineHeightWithSpacing())))
+        
+        const float overlayHeight = monoFontSize*15.5;
+
+        ImGuiTableFlags flags = ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY;
+        if (ImGui::BeginTable("Images", 2, flags, ImVec2(0,contentSize.y - overlayHeight)))
         {
             const float availableWidth = ImGui::GetContentRegionAvail().x;
             const int minSelectedIndex = imageList.selectedIndex();
             const int maxSelectedIndex = minSelectedIndex + imageWindowState.layoutConfig.numImages();
+
+            ImGui::TableSetupColumn("Name");
+            ImGui::TableSetupColumn("Size", ImGuiTableColumnFlags_WidthFixed);
+            ImGui::TableHeadersRow();
+
             for (int idx = 0; idx < imageList.numImages(); ++idx)
             {
                 const ImageItemPtr& itemPtr = imageList.imageItemFromIndex(idx);
                 bool selected = (idx >= minSelectedIndex && idx < maxSelectedIndex);
                 const std::string& name = itemPtr->prettyName;
-                
-                // Make sure that the last part of the filename will be visible.
-                ImVec2 textSize = ImGui::CalcTextSize(name.c_str());
-                if (textSize.x > availableWidth)
-                {
-                    ImGui::SetCursorPosX(availableWidth - textSize.x);
-                }
-                if (ImGui::Selectable(name.c_str(), selected) && idx != minSelectedIndex)
+
+                ImGui::TableNextRow();
+                ImGui::TableNextColumn();
+                if (ImGui::Selectable(name.c_str(), selected, ImGuiSelectableFlags_SpanAllColumns) && idx != minSelectedIndex)
                 {
                     imageList.selectImage (idx);
                 }
@@ -367,15 +372,60 @@ void ControlsWindow::renderFrame ()
                     ImGui::PopTextWrapPos();
                     ImGui::EndTooltip();
                 }
+
+                ImGui::TableNextColumn();
+                if (itemPtr->metadata.width >= 0)
+                {
+                    ImGui::Text("%dx%d", itemPtr->metadata.width, itemPtr->metadata.height);
+                }
+                else
+                {
+                    ImGui::Text("(?x?)");
+                }
             }
-            ImGui::EndListBox();
+            ImGui::EndTable();
         }
+
+        // if (ImGui::BeginListBox("##filelist", ImVec2(-FLT_MIN, 4 * ImGui::GetTextLineHeightWithSpacing())))
+        // {
+        //     const float availableWidth = ImGui::GetContentRegionAvail().x;
+        //     const int minSelectedIndex = imageList.selectedIndex();
+        //     const int maxSelectedIndex = minSelectedIndex + imageWindowState.layoutConfig.numImages();
+        //     for (int idx = 0; idx < imageList.numImages(); ++idx)
+        //     {
+        //         const ImageItemPtr& itemPtr = imageList.imageItemFromIndex(idx);
+        //         bool selected = (idx >= minSelectedIndex && idx < maxSelectedIndex);
+        //         const std::string& name = itemPtr->prettyName;
+                
+        //         // Make sure that the last part of the filename will be visible.
+        //         ImVec2 textSize = ImGui::CalcTextSize(name.c_str());
+        //         if (textSize.x > availableWidth)
+        //         {
+        //             ImGui::SetCursorPosX(availableWidth - textSize.x);
+        //         }
+        //         if (ImGui::Selectable(name.c_str(), selected) && idx != minSelectedIndex)
+        //         {
+        //             imageList.selectImage (idx);
+        //         }
+
+        //         if (!itemPtr->sourceImagePath.empty()
+        //             && zv::IsItemHovered(ImGuiHoveredFlags_RectOnly, 0.5))
+        //         {
+        //             ImGui::BeginTooltip();
+        //             ImGui::PushTextWrapPos(availableWidth);
+        //             ImGui::TextUnformatted(itemPtr->sourceImagePath.c_str());
+        //             ImGui::PopTextWrapPos();
+        //             ImGui::EndTooltip();
+        //         }
+        //     }
+        //     ImGui::EndListBox();
+        // }
         
         const auto* cursorOverlayInfo = &imageWindow->cursorOverlayInfo();
         if (cursorOverlayInfo->valid())
         {
-            ImGui::SetCursorPosY (ImGui::GetWindowHeight() - monoFontSize*15.5);
-            ImGui::Spacing(); ImGui::Separator(); ImGui::Spacing();
+            ImGui::SetCursorPosY (ImGui::GetWindowHeight() - overlayHeight);
+            // ImGui::Spacing(); ImGui::Separator(); ImGui::Spacing();
             // ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(1,0,0,1));
             ImGui::BeginChild("CursorOverlay", ImVec2(monoFontSize*21, monoFontSize*14), false /* no border */, windowFlagsWithoutAnything());
             impl->cursorOverlay.showTooltip(*cursorOverlayInfo, false /* not as tooltip */);

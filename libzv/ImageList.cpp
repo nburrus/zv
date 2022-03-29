@@ -78,7 +78,7 @@ std::unique_ptr<ImageItem> defaultImageItem ()
     return entry;
 }
 
-std::unique_ptr<ImageItemData> loadImageData(const ImageItem& input)
+std::unique_ptr<ImageItemData> loadImageData(ImageItem& input)
 {
     std::unique_ptr<ImageItemData> output;
     
@@ -121,6 +121,12 @@ std::unique_ptr<ImageItemData> loadImageData(const ImageItem& input)
             break;
     }
 
+    if (output && output->cpuData)
+    {
+        input.metadata.width = output->cpuData->width();
+        input.metadata.height = output->cpuData->height();
+    }
+
     return output;
 }
 
@@ -142,7 +148,7 @@ public:
         _lruCache.remove (entry->uniqueId);
     }
 
-    ImageItemDataPtr getData (const ImageItem* entry)
+    ImageItemDataPtr getData (ImageItem* entry)
     {
         const ImageItemDataPtr* cacheEntry = _lruCache.get (entry->uniqueId);
         if (cacheEntry)
@@ -284,9 +290,6 @@ ImageId ImageList::addImage (std::unique_ptr<ImageItem> image, int insertPositio
 
     // FIXME: using a vector with front insertion is not great. Could use a list for once, I guess.
     impl->entries.insert (impl->entries.begin() + insertPosition, std::move(image));
-    // FIXME: overkill to run it everytime when we're adding a bunch of images from the
-    // command line. Seems pretty fast though.
-    refreshPrettyFileNames ();
     return imageId;
 }
 
@@ -298,7 +301,7 @@ void ImageList::removeImage (int index)
     impl->entries.erase (impl->entries.begin() + index);
 }
 
-ImageItemDataPtr ImageList::getData (const ImageItem* entry)
+ImageItemDataPtr ImageList::getData (ImageItem* entry)
 {
     return impl->cache.getData (entry);
 }

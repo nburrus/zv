@@ -57,8 +57,8 @@
                     "ignoreFailures": true
                 }
             ],
-            "args": [ "--port", "4208" ],
-            // "args": [ "/home/nb/Perso/zv/tests/rgbgrid.png" ],
+            // "args": [ "--port", "4208" ],
+            "args": [ "/home/nb/Perso/zv/tests/rgbgrid.png", "/home/nb/Perso/zv/tests/rgbgrid_small.png" ],
             // "args": [ "/common/folderA/foo.png", "/common/folderB/foo.png" ]
         },
 
