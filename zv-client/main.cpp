@@ -38,7 +38,7 @@ int main (int argc, char** argv)
         std::cerr << "Wrong usage" << std::endl;
         std::cerr << err.what() << std::endl;
         std::cerr << argsParser;
-        return false;
+        return 1;
     }
 
     zv::Client client;
@@ -58,7 +58,7 @@ int main (int argc, char** argv)
     catch (const std::exception &err)
     {
         fprintf(stderr, "No images provided, the client has nothing to do.");
-        return false;
+        return 1;
     }
 
     client.waitUntilDisconnected ();

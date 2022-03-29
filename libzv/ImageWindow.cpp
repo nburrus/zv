@@ -853,6 +853,9 @@ void ImageWindow::renderFrame ()
                         ImGui::TextColored(ImVec4(1, 0, 0, 1), "Loading the image...");
                         break;
                     }
+                    
+                    default:
+                        break;
                 }
                 
             }

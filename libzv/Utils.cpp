@@ -14,6 +14,7 @@
 #include <thread>
 #include <iostream>
 #include <algorithm>
+#include <unordered_map>
 
 #if PLATFORM_UNIX
 // getpid
