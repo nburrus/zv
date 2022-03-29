@@ -49,8 +49,6 @@ endif()
 add_library(zv
     App.cpp
     App.h
-    AppClient.cpp
-    AppClient.h
     ColorConversion.cpp
     ColorConversion.h
     ControlsWindow.cpp

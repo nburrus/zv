@@ -9,7 +9,6 @@
 #include <libzv/Viewer.h>
 #include <libzv/Utils.h>
 #include <libzv/Server.h>
-#include <libzv/AppClient.h>
 
 #include "GeneratedConfig.h"
 
@@ -31,7 +30,6 @@ struct App::Impl
     bool clientMode = false;
 
     Server server;
-    std::unique_ptr<AppClient> client;
 
     RateLimit rateLimit;
 
@@ -96,10 +94,6 @@ bool App::initialize (const std::vector<std::string>& args)
    argsParser.add_argument("images")
        .help("Images to visualize")
        .remaining();
-   argsParser.add_argument("-c", "--client")
-       .help("Run as a client")
-       .default_value(false)
-       .implicit_value(true);
 
    try
    {
@@ -113,83 +107,45 @@ bool App::initialize (const std::vector<std::string>& args)
        return false;
    }
 
-   if (argsParser["--client"] == true)
+   Viewer *defaultViewer = createViewer("default");
+   defaultViewer->initialize();
+
+   try
    {
-       impl->client = std::make_unique<AppClient>();
-       if (!impl->client->connect ("127.0.0.1", 4207))
-           return false;
+       auto images = argsParser.get<std::vector<std::string>>("images");
+       zv_dbg("%d images provided", (int)images.size());
 
-       try
-       {
-           auto images = argsParser.get<std::vector<std::string>>("images");
-           zv_dbg("%d images provided", (int)images.size());
-
-           for (const auto &im : images)
-               impl->client->addImageFromFile(im);
-       }
-       catch (const std::exception &err)
-       {
-           zv_dbg("No images provided, the client has nothing to do.");
-           return false;
-       }
-       return true;
+       for (const auto &im : images)
+           defaultViewer->addImageFromFile(im);
    }
-   else
+   catch (const std::exception &err)
    {
-       Viewer *defaultViewer = createViewer("default");
-       defaultViewer->initialize();
-
-       try
-       {
-           auto images = argsParser.get<std::vector<std::string>>("images");
-           zv_dbg("%d images provided", (int)images.size());
-
-           for (const auto &im : images)
-               defaultViewer->addImageFromFile(im);
-       }
-       catch (const std::exception &err)
-       {
-           zv_dbg("No images provided, using default.");
-       }
-
-       impl->server.start();
-
-       return true;
+       zv_dbg("No images provided, using default.");
    }
+
+   impl->server.start();
+
+   return true;
 }
 
 void App::run ()
 {
-    if (impl->client)
+    zv::RateLimit rateLimit;
+    while (numViewers() > 0)
     {
-        impl->client->waitUntilDisconnected ();
-    }
-    else
-    {
-        zv::RateLimit rateLimit;
-        while (numViewers() > 0)
-        {
-            updateOnce();
-            rateLimit.sleepIfNecessary(1 / 30.);
-        }
+        updateOnce();
+        rateLimit.sleepIfNecessary(1 / 30.);
     }
 }
 
 void App::shutdown()
 {
-    if (impl->client)
-    {
-        impl->client.reset ();
-    }
-    else
-    {
-         impl->server.stop ();
+    impl->server.stop();
 
-         for (auto &nameAndViewer : impl->viewers)
-             nameAndViewer.second->shutdown();
-         impl->viewers.clear();
-         glfwTerminate();
-    }
+    for (auto &nameAndViewer : impl->viewers)
+        nameAndViewer.second->shutdown();
+    impl->viewers.clear();
+    glfwTerminate();
 }
 
 Viewer* App::getViewer (const std::string& name)
