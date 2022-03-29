@@ -4,8 +4,6 @@
 // of the BSD license.  See the LICENSE file for details.
 //
 
-#define ZN_IMPLEMENTATION
-#define ZNPP_DEFINE_ENV
 #include <client/znet_zv.h>
 #include <client/Message.h>
 

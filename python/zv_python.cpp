@@ -2,6 +2,8 @@
 #include <libzv/Viewer.h>
 #include <libzv/ColorConversion.h>
 
+#include <client/Client.h>
+
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <pybind11/functional.h>
@@ -47,6 +49,96 @@ void register_App (py::module& m)
         }, py::arg("minDuration") = 0.0);
 }
 
+ImageSRGBA imageFromPythonArray (py::array buffer)
+{
+    /* Request a buffer descriptor from Python */
+    py::buffer_info info = buffer.request();
+
+    ImageSRGBA image;
+
+    if (info.ndim != 2 && info.ndim != 3)
+        throw std::runtime_error("Image dimension must be 2 (grayscale) or 3 (color)");
+
+    if (!(buffer.flags() & py::array::c_style))
+    {
+        throw std::runtime_error("Input image must be contiguous and c_style. You might want to use np.ascontiguousarray().");
+    }
+
+    // (H,W,1) is the same as (H,W), treat it as grayscale.
+    int actual_dims = info.ndim;
+    if (info.ndim == 3 && info.shape[2] == 1)
+        actual_dims = 2;
+
+    const int numRows = info.shape[0];
+    const int numCols = info.shape[1];
+
+    switch (actual_dims)
+    {
+    case 2:
+    {
+        if (info.format == py::format_descriptor<uint8_t>::format())
+        {
+            image = srgbaFromGray((uint8_t *)info.ptr, numCols, numRows, info.strides[0]);
+        }
+        else if (info.format == py::format_descriptor<float>::format())
+        {
+            image = srgbaFromFloatGray((uint8_t *)info.ptr, numCols, numRows, info.strides[0]);
+        }
+        else
+        {
+            throw std::runtime_error("Grayscale images must have np.uint8 or np.float32 dtype.");
+        }
+        break;
+    }
+
+    case 3:
+    {
+        const int numChannels = info.shape[2];
+        if (numChannels != 3 && numChannels != 4)
+            throw std::runtime_error("Channel size must be 3 (RGB) or 4 (RGBA)");
+
+        switch (numChannels)
+        {
+        case 3:
+        {
+            if (info.format == py::format_descriptor<uint8_t>::format())
+            {
+                image = srgbaFromSrgb((uint8_t *)info.ptr, numCols, numRows, info.strides[0]);
+            }
+            else if (info.format == py::format_descriptor<float>::format())
+            {
+                image = srgbaFromFloatSrgb((uint8_t *)info.ptr, numCols, numRows, info.strides[0]);
+            }
+            else
+            {
+                throw std::runtime_error("Color images must have np.uint8 or np.float32 dtype.");
+            }
+            break;
+        }
+
+        case 4:
+        {
+            if (info.format == py::format_descriptor<uint8_t>::format())
+            {
+                image = ImageSRGBA((uint8_t *)info.ptr, numCols, numRows, info.strides[0], ImageSRGBA::noopReleaseFunc());
+            }
+            else if (info.format == py::format_descriptor<float>::format())
+            {
+                image = srgbaFromFloatSrgba((uint8_t *)info.ptr, numCols, numRows, info.strides[0]);
+            }
+            else
+            {
+                throw std::runtime_error("Color images must have np.uint8 or np.float32 dtype.");
+            }
+            break;
+        }
+        }
+        break;
+    }
+    }
+    return image;
+}
+
 void register_Viewer (py::module& m)
 {
     py::class_<Viewer>(m, "Viewer")
@@ -55,90 +147,10 @@ void register_Viewer (py::module& m)
         .def("addImageFromFile", &Viewer::addImageFromFile)
 
         .def("addImage", [](Viewer& viewer, const std::string& name, py::array buffer, int position, bool replace) {
-            /* Request a buffer descriptor from Python */
-            py::buffer_info info = buffer.request();
-
-            ImageSRGBA image;
-
-            if (info.ndim != 2 && info.ndim != 3)
-                throw std::runtime_error("Image dimension must be 2 (grayscale) or 3 (color)");
-
-            if (!(buffer.flags() & py::array::c_style))
-            {
-                throw std::runtime_error("Input image must be contiguous and c_style. You might want to use np.ascontiguousarray().");
-            }
-
-            // (H,W,1) is the same as (H,W), treat it as grayscale.
-            int actual_dims = info.ndim;
-            if (info.ndim == 3 && info.shape[2] == 1)
-                actual_dims = 2;
-
-            const int numRows = info.shape[0];
-            const int numCols = info.shape[1];
-
-            switch (actual_dims)
-            {
-                case 2: 
-                {
-                    if (info.format == py::format_descriptor<uint8_t>::format())
-                    {
-                        image = srgbaFromGray ((uint8_t*)info.ptr, numCols, numRows, info.strides[0]);
-                    }
-                    else if (info.format == py::format_descriptor<float>::format())
-                    {
-                        image = srgbaFromFloatGray ((uint8_t*)info.ptr, numCols, numRows, info.strides[0]);
-                    }
-                    else
-                    {
-                        throw std::runtime_error("Grayscale images must have np.uint8 or np.float32 dtype.");
-                    }
-                    break;
-                }
-
-                case 3: {
-                    const int numChannels = info.shape[2];
-                    if (numChannels != 3 && numChannels != 4)
-                        throw std::runtime_error("Channel size must be 3 (RGB) or 4 (RGBA)");
-
-                    switch (numChannels)
-                    {
-                        case 3: {
-                            if (info.format == py::format_descriptor<uint8_t>::format())
-                            {
-                                image = srgbaFromSrgb ((uint8_t*)info.ptr, numCols, numRows, info.strides[0]);
-                            }
-                            else if (info.format == py::format_descriptor<float>::format())
-                            {
-                                image = srgbaFromFloatSrgb ((uint8_t*)info.ptr, numCols, numRows, info.strides[0]);
-                            }
-                            else
-                            {
-                                throw std::runtime_error("Color images must have np.uint8 or np.float32 dtype.");
-                            }
-                            break;
-                        }
-
-                        case 4: {
-                            if (info.format == py::format_descriptor<uint8_t>::format())
-                            {
-                                image = ImageSRGBA((uint8_t*)info.ptr, numCols, numRows, info.strides[0], ImageSRGBA::noopReleaseFunc());
-                            }
-                            else if (info.format == py::format_descriptor<float>::format())
-                            {
-                                image = srgbaFromFloatSrgba ((uint8_t*)info.ptr, numCols, numRows, info.strides[0]);
-                            }
-                            else
-                            {
-                                throw std::runtime_error("Color images must have np.uint8 or np.float32 dtype.");
-                            }
-                            break;
-                        }
-                    }
-                    break;
-                }
-            }
-
-            return viewer.addImageData (image, name, position, replace);
+            ImageSRGBA im = imageFromPythonArray (buffer);
+            if (im.hasData())
+                return viewer.addImageData (im, name, position, replace);
+            return int64_t(-1);
         }, py::arg("name"), py::arg("buffer"), py::arg("position") = -1, py::arg("replace") = true)
 
         // using EventCallbackType = std::function<void(ImageId, float, float, void* userData)>;
@@ -227,6 +239,21 @@ void register_ImGui (py::module& zv_module)
         .value("KeypadEqual", ImGuiKey_KeypadEqual);
 }
 
+void register_Client (py::module& m)
+{
+    py::class_<Client>(m, "Client")
+        .def ("connect", &Client::connect)
+        .def_property_readonly("connected", &Client::isConnected)
+        .def("waitUntilDisconnected", &Client::waitUntilDisconnected)
+        .def("addImage", [](Client& client, const std::string& name, py::array buffer) {
+            ImageSRGBA im = imageFromPythonArray (buffer);
+            ClientImageBuffer clientBuffer (im.rawBytes(), im.width(), im.height(), im.bytesPerRow());
+            if (!im.hasData())
+                return;
+            client.addImage (client.nextUniqueId(), name, clientBuffer, true);
+        });
+}
+
 PYBIND11_MODULE(_zv, m) {
     m.doc() = R"pbdoc(
         zv python module
@@ -240,6 +267,7 @@ PYBIND11_MODULE(_zv, m) {
     register_App (m);
     register_Viewer (m);
     register_ImGui (m);
+    register_Client (m);
 
 // PYTHON_VERSION_INFO comes from setup.py
 #ifdef PYTHON_VERSION_INFO

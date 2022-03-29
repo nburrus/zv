@@ -4,8 +4,6 @@
 // of the BSD license.  See the LICENSE file for details.
 //
 
-#define ZNPP_STATIC_API
-#define ZNPP_DEFINE_ENV
 #include "znet_zv.h"
 
 #include "Client.h"

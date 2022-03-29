@@ -1,5 +1,5 @@
 # Create an extension module
-add_library(zvpy MODULE zv_python.cpp)
+add_library(zvpy MODULE zv_python.cpp ../client/Client.cpp)
 set_target_properties(zvpy PROPERTIES OUTPUT_NAME _zv)
 set_target_properties(zvpy PROPERTIES PREFIX "")
 target_link_libraries(zvpy PUBLIC pybind11::module zv)

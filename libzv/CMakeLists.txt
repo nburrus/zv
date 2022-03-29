@@ -22,6 +22,8 @@ set (zv_deps_sources
     ${DEPS_DIR}/stb/stb_impl.cpp
 
     ${DEPS_DIR}/ImGuiFileDialog/ImGuiFileDialog.cpp
+
+    ../client/znet.cpp
 )
 
 if (APPLE)
