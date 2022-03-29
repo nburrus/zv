@@ -56,7 +56,13 @@ bool NetworkImageItemData::update ()
     if (impl->ctx->maybeLoadedImage)
     {        
         cpuData.swap (impl->ctx->maybeLoadedImage);
-        status = Status::Ready;
+        // Make sure that if we need to request the image again
+        // we won't think that it exists.
+        impl->ctx->maybeLoadedImage.reset ();
+        if (cpuData->hasData())
+        {
+            status = cpuData->hasData() ? Status::Ready : Status::FailedToLoad;
+        }
         return true;
     }
     else
@@ -87,6 +93,7 @@ struct ServerPayloadReader : PayloadReader
                 readBytes (rawContent.data(), sourceBytesPerRow);                
                 int channels; // can return anything, but we requested 4, so the output data will have 4.
                 uint8_t* imageContent = stbi_load_from_memory(rawContent.data(), rawContent.size(), &w, &h, &channels, 4);
+                zv_assert (imageContent, "Failed to decode the image");
                 image.ensureAllocatedBufferForSize (w, h);
                 image.copyDataFrom (imageContent, 4*w, w, h);
                 break;

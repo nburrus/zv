@@ -127,7 +127,7 @@ std::unique_ptr<ImageItemData> loadImageData(const ImageItem& input)
 class ImageItemCache
 {
 public:
-    ImageItemCache (int maxCacheSize = 5) : _lruCache (maxCacheSize)
+    ImageItemCache (int maxCacheSize = 8) : _lruCache (maxCacheSize)
     {
 
     }
