@@ -8,8 +8,8 @@
 
 #include <libzv/Utils.h>
 
-#include <client-znet/znet_zv.h>
-#include <client-znet/Message.h>
+#include <client/znet_zv.h>
+#include <client/Message.h>
 
 #include <thread>
 #include <mutex>

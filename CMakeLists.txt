@@ -127,12 +127,12 @@ endif()
 
 add_subdirectory(libzv)
 add_subdirectory(zv)
+add_subdirectory(zv-client)
+add_subdirectory(client)
 
 add_subdirectory(deps/pybind11)
 add_subdirectory(python)
 
-add_subdirectory(client-kissnet)
-add_subdirectory(client-znet)
 
 # enable_testing()
 # add_subdirectory(tests)

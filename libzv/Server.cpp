@@ -6,14 +6,13 @@
 
 #define ZN_IMPLEMENTATION
 #define ZNPP_DEFINE_ENV
-#include <client-znet/znet_zv.h>
+#include <client/znet_zv.h>
+#include <client/Message.h>
 
 #include "Server.h"
 
 #include <libzv/Utils.h>
 #include <libzv/ImageList.h>
-
-#include <client-znet/Message.h>
 
 #include <set>
 #include <deque>

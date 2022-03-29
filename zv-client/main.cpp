@@ -15,10 +15,10 @@ int main (int argc, char** argv)
         return 1;
     }
 
-    int w = 128;
-    int h = 64;
-    std::vector<uint8_t> imData (128*64*4);
-    zv::ImageView view (imData.data(), 128, 64);
+    int w = 1024;
+    int h = 768;
+    std::vector<uint8_t> imData (w*h*4);
+    zv::ImageView view (imData.data(), w, h);
 
     for (int i = 0; i < 5; ++i)
     {
@@ -32,9 +32,9 @@ int main (int argc, char** argv)
     std::string filename = "/home/nb/Perso/zv/tests/rgbgrid.png";
     client.addImage (5, "withCallback", [filename](zv::ImageViewWriter& writer) {
         std::clog << "Image " << filename << " requested" << std::endl;
-        std::vector<uint8_t> imData (256*256*4);
+        std::vector<uint8_t> imData (2048*1024*4);
         std::fill (imData.begin(), imData.end(), 127);
-        zv::ImageView view (imData.data(), 256, 256);
+        zv::ImageView view (imData.data(), 2048, 1024);
         writer.write (view);
         return true;
     });
