@@ -23,6 +23,9 @@
 #include <atomic>
 #include <filesystem>
 
+#include <netdb.h>
+#include <arpa/inet.h>
+
 namespace fs = std::filesystem;
 namespace zn = zsummer::network;
 
@@ -260,7 +263,17 @@ private:
 
         // Keep reading.
         recvMessage();
-    }    
+    }
+
+    // https://stackoverflow.com/questions/9400756/ip-address-from-host-name-in-windows-socket-programming
+    std::string hostnameToIP(const std::string& host_or_ip)
+    {
+        hostent *hostname = gethostbyname(host_or_ip.c_str());
+        if (hostname)
+            return std::string(inet_ntoa(**(in_addr **)hostname->h_addr_list));
+        else
+            return host_or_ip;
+    }
 
     // The main loop will keep reading.
     // The write loop will keep writing.
@@ -277,10 +290,12 @@ private:
             return;
         }
 
-        ok = _socket->doConnect (hostname, port, [this](zn::NetErrorCode error) {
+        const std::string ip = hostnameToIP (hostname);
+
+        ok = _socket->doConnect (ip, port, [this, hostname, ip, port](zn::NetErrorCode error) {
             if (error != zn::NEC_SUCCESS)
             {
-                std::clog << "Could not connect to the ZV client." << std::endl;
+                fprintf (stderr, "Could not connect to the ZV server %s(%s):%d .\n", hostname.c_str(), ip.c_str(), port);
                 setStatus (Status::FailedToConnect);
                 return disconnect ();
             }

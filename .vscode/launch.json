@@ -45,6 +45,7 @@
                     "ignoreFailures": true
                 }
             ],
+            "args": [ "--port", "4208" ],
             // "args": [ "/home/nb/Perso/zv/tests/rgbgrid.png" ],
             // "args": [ "/common/folderA/foo.png", "/common/folderB/foo.png" ]
         },
@@ -56,6 +57,8 @@
             // Resolved by CMake Tools:
             "program": "${workspaceFolder}/build/zv-client/zv-client",
             "args": [
+                "--host", "localhost",
+                "--port", "4208",
                 "tests/brettel1997_deutan_wn_1.0.png",
                 "tests/brettel1997_protan_wn_1.0.png",
                 "tests/brettel1997_tritan_wn_1.0.png",

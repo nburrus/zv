@@ -18,6 +18,17 @@ int main (int argc, char** argv)
         .help("Images to visualize")
         .remaining();
 
+    argsParser.add_argument("-p", "--port")
+        .help("Port number")
+        .required()
+        .scan<'i', int>()
+        .default_value(4207);
+
+    argsParser.add_argument("--host")
+        .help("Server host or ip")
+        .required()
+        .default_value(std::string("127.0.0.1"));
+
     try
     {
         argsParser.parse_args(argc, argv);
@@ -31,7 +42,7 @@ int main (int argc, char** argv)
     }
 
     zv::Client client;
-    if (!client.connect ("127.0.0.1", 4207))
+    if (!client.connect (argsParser.get<std::string>("--host"), argsParser.get<int>("--port")))
     {
         return 1;
     }

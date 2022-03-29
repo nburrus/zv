@@ -95,6 +95,17 @@ bool App::initialize (const std::vector<std::string>& args)
        .help("Images to visualize")
        .remaining();
 
+   argsParser.add_argument("--port", "-p")
+       .help("Server port number")
+       .required()
+       .scan<'i', int>()
+       .default_value(4207);
+
+   argsParser.add_argument("--interface")
+       .help("Interface IP to listen on")
+       .required()
+       .default_value(std::string("127.0.0.1"));
+
    try
    {
        argsParser.parse_args(args);
@@ -123,7 +134,7 @@ bool App::initialize (const std::vector<std::string>& args)
        zv_dbg("No images provided, using default.");
    }
 
-   impl->server.start();
+   impl->server.start(argsParser.get<std::string>("--interface"), argsParser.get<int>("--port"));
 
    return true;
 }
