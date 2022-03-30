@@ -60,6 +60,10 @@ public:
     void setWindowPos (int x, int y);
     void setWindowSize (int width, int height);    
     
+    void onWindowSizeChanged (int width, int height);
+    using WindowSizeChangedCb = std::function<void(int,int,bool /* from user interaction */)>;
+    void setWindowSizeChangedCallback (WindowSizeChangedCb&& callback);
+
 public:
     bool closeRequested () const;
     void cancelCloseRequest ();

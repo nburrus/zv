@@ -356,12 +356,17 @@ void ControlsWindow::renderFrame ()
                 bool selected = (idx >= minSelectedIndex && idx < maxSelectedIndex);
                 const std::string& name = itemPtr->prettyName;
 
+                if (selected)
+                {
+                    ImGui::SetScrollHereY();
+                }
+                
                 ImGui::TableNextRow();
                 ImGui::TableNextColumn();
                 if (ImGui::Selectable(name.c_str(), selected, ImGuiSelectableFlags_SpanAllColumns) && idx != minSelectedIndex)
                 {
                     imageList.selectImage (idx);
-                }
+                }                
 
                 if (!itemPtr->sourceImagePath.empty()
                     && zv::IsItemHovered(ImGuiHoveredFlags_RectOnly, 0.5))

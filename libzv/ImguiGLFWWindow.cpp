@@ -51,6 +51,9 @@ struct ImguiGLFWWindow::Impl
     std::string title;
 
     float contentDpiScale = 1.f;
+
+    ImguiGLFWWindow::WindowSizeChangedCb windowSizeChangedCb;
+    int lastSizeRequest;
 };
 
 class ImGuiScopedContext
@@ -59,8 +62,8 @@ public:
     ImGuiScopedContext (GLFWwindow* w)
     {
         void* ptr = glfwGetWindowUserPointer(w);
-        ImguiGLFWWindow* window = reinterpret_cast<ImguiGLFWWindow*>(ptr);
-        initialize (window->impl->imGuiContext);
+        _imguiGLFWWindow = reinterpret_cast<ImguiGLFWWindow*>(ptr);
+        initialize (_imguiGLFWWindow->impl->imGuiContext);
     }
     
     ImGuiScopedContext (ImGuiContext* context)
@@ -78,9 +81,12 @@ public:
     {
         ImGui::SetCurrentContext(prevContext);
     }
+
+    ImguiGLFWWindow* imguiGLFWWindow() const { return _imguiGLFWWindow; }
     
 private:
     ImGuiContext* prevContext;
+    ImguiGLFWWindow* _imguiGLFWWindow;
 };
 
 // Singleton class to keep track of all the contexts.
@@ -123,6 +129,12 @@ void zv_glfw_MonitorCallback(GLFWmonitor* m, int event)
         ImGui_ImplGlfw_MonitorCallback (m, event);
     }
     ImGui::SetCurrentContext(prevContext);
+}
+
+void zv_glfw_WindowSizeCallback(GLFWwindow* w, int width, int height) 
+{ 
+    ImGuiScopedContext ctx (w);
+    ctx.imguiGLFWWindow()->onWindowSizeChanged (width, height);
 }
 
 } // anonymous
@@ -194,6 +206,23 @@ void ImguiGLFWWindow::triggerCloseRequest ()
     glfwSetWindowShouldClose (impl->window, true);
 }
 
+void ImguiGLFWWindow::onWindowSizeChanged (int width, int height)
+{
+    if (!impl->windowSizeChangedCb)
+        return;
+
+    // Leave two frames of delay before concluding that the size changed
+    // indeed came from the user and not from our own call to setWindowSize.
+    const int fc = ImGui::GetFrameCount();    
+    bool fromUser = ((fc - impl->lastSizeRequest) > 2);
+    impl->windowSizeChangedCb (width, height, fromUser);
+}
+
+void ImguiGLFWWindow::setWindowSizeChangedCallback (WindowSizeChangedCb&& callback)
+{
+    impl->windowSizeChangedCb = callback;
+}
+
 void ImguiGLFWWindow::setWindowPos (int x, int y)
 {
     glfwSetWindowPos (impl->window, x, y);
@@ -201,6 +230,7 @@ void ImguiGLFWWindow::setWindowPos (int x, int y)
 
 void ImguiGLFWWindow::setWindowSize (int width, int height)
 {
+    impl->lastSizeRequest = ImGui::GetFrameCount();
     glfwSetWindowSize (impl->window, width, height);
 }
 
@@ -333,6 +363,8 @@ bool ImguiGLFWWindow::initialize (GLFWwindow* parentWindow,
         glfwSetKeyCallback(impl->window,         zv_glfw_KeyCallback);
         glfwSetCharCallback(impl->window,        zv_glfw_CharCallback);
         glfwSetMonitorCallback(zv_glfw_MonitorCallback);
+
+        glfwSetWindowSizeCallback(impl->window, zv_glfw_WindowSizeCallback);
     }
 
     glfwMakeContextCurrent(impl->window);

@@ -130,6 +130,11 @@ struct ZoomInfo
 
 struct ImageWindow::Impl
 {
+    Impl (ImageWindow& that) : that (that)
+    {}
+
+    ImageWindow& that;
+
     ImguiGLFWWindow imguiGlfwWindow;
     Viewer* viewer = nullptr;
 
@@ -170,9 +175,20 @@ struct ImageWindow::Impl
     struct {
         zv::Rect normal;
         zv::Rect current;
+        // Keep track of that guy to avoid shrinking on every call.
+        zv::Rect sourceForAspectRatio;
     } imageWidgetRect;
     
     ZoomInfo zoom;
+
+    enum class WindowGeometryMode
+    {
+        UserDefined,
+        Normal,
+        AspectRatio,
+        ScaleSpect, // scaling while preserving the aspect ratio
+        Maxspect,
+    } lastGeometryMode = WindowGeometryMode::Normal;
     
     void enterMode (ViewerMode newMode)
     {
@@ -194,9 +210,18 @@ struct ImageWindow::Impl
 
     void adjustAspectRatio ()
     {
+        if (lastGeometryMode == WindowGeometryMode::AspectRatio)
+        {
+            this->imageWidgetRect.current.size = this->imageWidgetRect.sourceForAspectRatio.size;
+        }
+        else
+        {
+            this->imageWidgetRect.sourceForAspectRatio.size = this->imageWidgetRect.current.size;
+        }
+
         float ratioX = this->imageWidgetRect.current.size.x / this->imageWidgetRect.normal.size.x;
         float ratioY = this->imageWidgetRect.current.size.y / this->imageWidgetRect.normal.size.y;
-        if (ratioX < ratioY)
+        if (ratioX <= ratioY)
         {
             this->imageWidgetRect.current.size.y = ratioX * this->imageWidgetRect.normal.size.y;
         }
@@ -273,25 +298,61 @@ void ImageWindow::Impl::adjustForNewSelection ()
         this->imageWidgetRect.current.size = this->currentLayout.widgetRectForImageSize(firstImSizeInRectBefore, gridPadding);
         this->shouldUpdateWindowSize = true;
     }
-
-        // Keep the current geometry if it was already set before.
-        if (!this->imageWidgetRect.current.origin.isValid())
+    else
+    {
+        switch (this->lastGeometryMode)
         {
-            this->imageWidgetRect.current = this->imageWidgetRect.normal;
-            // Don't show it now, but tell it to show the window after
-            // updating the content, otherwise we can get annoying flicker.
-            this->updateAfterContentSwitch.inProgress = true;
-            this->updateAfterContentSwitch.needToResize = true;
-            this->updateAfterContentSwitch.numAlreadyRenderedFrames = 0;
-            this->updateAfterContentSwitch.targetWindowGeometry.origin.x = this->imageWidgetRect.normal.origin.x - this->windowBorderSize;
-            this->updateAfterContentSwitch.targetWindowGeometry.origin.y = this->imageWidgetRect.normal.origin.y - this->windowBorderSize;
-            this->updateAfterContentSwitch.targetWindowGeometry.size.x = this->imageWidgetRect.normal.size.x + 2 * this->windowBorderSize;
-            this->updateAfterContentSwitch.targetWindowGeometry.size.y = this->imageWidgetRect.normal.size.y + 2 * this->windowBorderSize;
-            this->updateAfterContentSwitch.screenToImageScale = 1.0;
-            this->viewer->onImageWindowGeometryUpdated(this->updateAfterContentSwitch.targetWindowGeometry);
+            case WindowGeometryMode::Normal:
+            {
+                that.addCommand (actionCommand(ImageWindowAction::Zoom_Normal));
+                break;
+            }
+
+            case WindowGeometryMode::AspectRatio:
+            {
+                that.addCommand (actionCommand(ImageWindowAction::Zoom_RestoreAspectRatio));
+                break;
+            }
+
+            case WindowGeometryMode::Maxspect:
+            {
+                that.addCommand (actionCommand(ImageWindowAction::Zoom_Maxspect));
+                break;
+            }
+
+            case WindowGeometryMode::ScaleSpect:
+            {
+                // If the user adjusts the size, leave it as is. It's less disturbing.
+                // that.addCommand (actionCommand(ImageWindowAction::Zoom_RestoreAspectRatio));
+                break;
+            }
+
+            case WindowGeometryMode::UserDefined:
+            {
+                // do nothing, leave it with the same size.
+                break;
+            }
+        }
     }
 
-    this->mutableState.activeMode = ViewerMode::Original;    
+    // Keep the current geometry if it was already set before.
+    if (!this->imageWidgetRect.current.origin.isValid())
+    {
+        this->imageWidgetRect.current = this->imageWidgetRect.normal;
+        // Don't show it now, but tell it to show the window after
+        // updating the content, otherwise we can get annoying flicker.
+        this->updateAfterContentSwitch.inProgress = true;
+        this->updateAfterContentSwitch.needToResize = true;
+        this->updateAfterContentSwitch.numAlreadyRenderedFrames = 0;
+        this->updateAfterContentSwitch.targetWindowGeometry.origin.x = this->imageWidgetRect.normal.origin.x - this->windowBorderSize;
+        this->updateAfterContentSwitch.targetWindowGeometry.origin.y = this->imageWidgetRect.normal.origin.y - this->windowBorderSize;
+        this->updateAfterContentSwitch.targetWindowGeometry.size.x = this->imageWidgetRect.normal.size.x + 2 * this->windowBorderSize;
+        this->updateAfterContentSwitch.targetWindowGeometry.size.y = this->imageWidgetRect.normal.size.y + 2 * this->windowBorderSize;
+        this->updateAfterContentSwitch.screenToImageScale = 1.0;
+        this->viewer->onImageWindowGeometryUpdated(this->updateAfterContentSwitch.targetWindowGeometry);
+    }
+
+    this->mutableState.activeMode = ViewerMode::Original;
 }
 
 // void Viewer::addImageData (const ImageSRGBA& image, const std::string& imageName)
@@ -302,7 +363,7 @@ void ImageWindow::Impl::adjustForNewSelection ()
 // }
 
 ImageWindow::ImageWindow()
-: impl (new Impl())
+: impl (new Impl(*this))
 {
 }
 
@@ -370,6 +431,14 @@ bool ImageWindow::initialize (GLFWwindow* parentWindow, Viewer* viewer)
     
     if (!impl->imguiGlfwWindow.initialize (parentWindow, "Dalton Lens Image Viewer", windowGeometry, false /* viewports */))
         return false;
+
+    impl->imguiGlfwWindow.setWindowSizeChangedCallback([this](int width, int height, bool fromUser) {
+        if (fromUser)
+        {
+            zv_dbg ("Window size was adjusted by the user.");
+            impl->lastGeometryMode = Impl::WindowGeometryMode::UserDefined;
+        }
+    });
 
     glfwWindowHint(GLFW_RESIZABLE, true); // restore the default.
 
@@ -995,14 +1064,15 @@ void ImageWindow::runAction (ImageWindowAction action)
     switch (action)
     {
         case ImageWindowAction::Zoom_Normal: {
-            fprintf (stderr, "Running action Zoom_Normal\n");
+            impl->lastGeometryMode = Impl::WindowGeometryMode::Normal;
             impl->imageWidgetRect.current = impl->imageWidgetRect.normal;
             impl->shouldUpdateWindowSize = true;
             break;
         }
 
-        case ImageWindowAction::Zoom_RestoreAspectRatio: {
+        case ImageWindowAction::Zoom_RestoreAspectRatio: {            
             impl->adjustAspectRatio (); 
+            impl->lastGeometryMode = Impl::WindowGeometryMode::AspectRatio;
             break;
         }
 
@@ -1010,6 +1080,8 @@ void ImageWindow::runAction (ImageWindowAction action)
             impl->imageWidgetRect.current.size.x *= 2.f;
             impl->imageWidgetRect.current.size.y *= 2.f;
             impl->shouldUpdateWindowSize = true;
+            if (impl->lastGeometryMode != Impl::WindowGeometryMode::UserDefined)
+                impl->lastGeometryMode = Impl::WindowGeometryMode::ScaleSpect;
             break;
         }
 
@@ -1019,6 +1091,8 @@ void ImageWindow::runAction (ImageWindowAction action)
                 impl->imageWidgetRect.current.size.x *= 0.5f;
                 impl->imageWidgetRect.current.size.y *= 0.5f;
                 impl->shouldUpdateWindowSize = true;
+                if (impl->lastGeometryMode != Impl::WindowGeometryMode::UserDefined)
+                    impl->lastGeometryMode = Impl::WindowGeometryMode::ScaleSpect;
             }
             break;
         }
@@ -1027,6 +1101,8 @@ void ImageWindow::runAction (ImageWindowAction action)
             impl->imageWidgetRect.current.size.x *= 1.1f;
             impl->imageWidgetRect.current.size.y *= 1.1f;
             impl->shouldUpdateWindowSize = true;
+            if (impl->lastGeometryMode != Impl::WindowGeometryMode::UserDefined)
+                impl->lastGeometryMode = Impl::WindowGeometryMode::ScaleSpect;
             break;
         }
 
@@ -1036,6 +1112,8 @@ void ImageWindow::runAction (ImageWindowAction action)
                 impl->imageWidgetRect.current.size.x *= 0.9f;
                 impl->imageWidgetRect.current.size.y *= 0.9f;
                 impl->shouldUpdateWindowSize = true;
+                if (impl->lastGeometryMode != Impl::WindowGeometryMode::UserDefined)
+                    impl->lastGeometryMode = Impl::WindowGeometryMode::ScaleSpect;
             }
             break;
         }
@@ -1043,7 +1121,8 @@ void ImageWindow::runAction (ImageWindowAction action)
         case ImageWindowAction::Zoom_Maxspect: {
             impl->imageWidgetRect.current.size.x = impl->monitorSize.x;
             impl->imageWidgetRect.current.size.y = impl->monitorSize.y;
-            impl->adjustAspectRatio ();            
+            impl->adjustAspectRatio ();
+            impl->lastGeometryMode = Impl::WindowGeometryMode::Maxspect;
             break;
         }
 
