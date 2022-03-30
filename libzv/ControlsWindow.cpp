@@ -182,7 +182,7 @@ void ControlsWindow::openImage ()
 {
     ImGuiFileDialog::Instance()->OpenModal("ChooseImageDlgKey",
                                            "Open Image",
-                                           ".png,.jpg,.jpeg,.bmp,.tiff",
+                                           "Image files (*.png *.bmp *.gif *.jpg *.jpeg *.pnm){.png,.bmp,.gif,.jpg,.jpeg,.pnm,.pgm}",
                                            ".",
                                            10000 /* vCountSelectionMax */);
 }
@@ -262,11 +262,11 @@ void ControlsWindow::renderFrame ()
                 ImGui::EndMenu();
             }
 
-            if (ImGui::BeginMenu("Geometry"))
+            if (ImGui::BeginMenu("Window"))
             {
                 if (ImGui::MenuItem("Original", "n", false))
                     imageWindow->processKeyEvent(GLFW_KEY_N);
-                if (ImGui::MenuItem("Maxspect", "n", false))
+                if (ImGui::MenuItem("Maxspect", "m", false))
                     imageWindow->processKeyEvent(GLFW_KEY_M);
                 if (ImGui::MenuItem("Double size", ">", false))
                     imageWindow->processKeyEvent('>');

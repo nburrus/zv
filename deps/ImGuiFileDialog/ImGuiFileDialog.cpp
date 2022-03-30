@@ -1583,10 +1583,14 @@ namespace IGFD
 			for (const auto& file : dir_iter)
 			{
 				char fileType = 0;
-				if (file.is_symlink())
-					fileType = 'l';
-				else if (file.is_directory())
+				// MODIFIED by zv:
+				// Swapped directory and symlink checking to make sure we
+				// can browse symlinks to folders.
+				// See https://github.com/aiekick/ImGuiFileDialog/issues/88
+				if (file.is_directory())
 					fileType = 'd';
+				else if (file.is_symlink())
+					fileType = 'l';
 				else
 					fileType = 'f';
 				auto fileNameExt = file.path().filename().string();
