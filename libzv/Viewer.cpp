@@ -240,7 +240,8 @@ ImageList& Viewer::imageList()
 
 ImageId Viewer::selectedImage () const
 {
-    return impl->imageList.imageItemFromIndex(impl->imageList.selectedIndex())->uniqueId;
+    int firstValidSelection = std::min(impl->imageList.selectedRange().startIndex, 0);
+    return impl->imageList.imageItemFromIndex(firstValidSelection)->uniqueId;
 }
 
 ImageId Viewer::addImageFromFile (const std::string& imagePath)

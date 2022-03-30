@@ -180,7 +180,7 @@ struct ImageList::Impl
     // Sorted set of images.
     std::vector<ImageItemPtr> entries;
 
-    int selectedIndex = 0;
+    SelectionRange selection;
 
     ImageItemCache cache;
 };
@@ -204,25 +204,32 @@ int ImageList::numImages () const
     return impl->entries.size();
 }
 
-int ImageList::selectedIndex () const
+SelectionRange ImageList::selectedRange() const
 {
-    return impl->selectedIndex;
+    return impl->selection;
 }
 
-void ImageList::selectImage (int index)
+void ImageList::setSelectionCount(int count)
 {
-    if (index >= impl->entries.size())
+    zv_assert (impl->selection.count > 0, "Invalid selection range.");
+    impl->selection.count = count;
+    while (impl->selection.startIndex + count <= 0)
+        ++impl->selection.startIndex;
+}
+
+void ImageList::setSelectionStart (int index)
+{
+    if (index >= (int)impl->entries.size())
     {
         return;
     }
 
-    if (index < 0)
+    while ((index + impl->selection.count) <= 0)
     {
-        impl->selectedIndex = 0;
-        return;
+        index += impl->selection.count;
     }
 
-    impl->selectedIndex = index;
+    impl->selection.startIndex = index;
 }
 
 void ImageList::refreshPrettyFileNames ()

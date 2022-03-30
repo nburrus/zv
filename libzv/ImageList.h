@@ -99,6 +99,17 @@ struct ImageItemAndData
     ImageItemDataPtr data;
 };
 
+struct SelectionRange
+{
+    // Can be negative if count is > 1
+    // The only invariant is that [startIndex, startIndex + count]
+    // _overlaps_ with [0, numImages]. But it does not have to be
+    // fully included. This allows to handle layouts with more than
+    // one images by jumping by count everytime.
+    int startIndex = 0;    
+    int count = 1;
+};
+
 class ImageList
 {
 public:
@@ -107,8 +118,11 @@ public:
 
 public:
     int numImages () const;
-    int selectedIndex () const;
-    void selectImage (int index);
+    
+    SelectionRange selectedRange() const;
+    void setSelectionCount (int count);
+    void setSelectionStart (int index);
+
     const ImageItemPtr& imageItemFromIndex (int index);
     ImageItemPtr imageItemFromId (ImageId imageId);
 

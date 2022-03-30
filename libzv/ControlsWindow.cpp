@@ -247,8 +247,8 @@ void ControlsWindow::renderFrame ()
             if (ImGui::MenuItem("Maxspect", "n", false)) imageWindow->processKeyEvent (GLFW_KEY_M);
             if (ImGui::MenuItem("Double size", ">", false)) imageWindow->processKeyEvent ('>');
             if (ImGui::MenuItem("Half size", "<", false)) imageWindow->processKeyEvent ('<');
-            if (ImGui::MenuItem("10%% larger", ".", false)) imageWindow->processKeyEvent (GLFW_KEY_PERIOD);
-            if (ImGui::MenuItem("10%% smaller", ",", false)) imageWindow->processKeyEvent (GLFW_KEY_COMMA);
+            if (ImGui::MenuItem("10% larger", ".", false)) imageWindow->processKeyEvent (GLFW_KEY_PERIOD);
+            if (ImGui::MenuItem("10% smaller", ",", false)) imageWindow->processKeyEvent (GLFW_KEY_COMMA);
             if (ImGui::MenuItem("Restore aspect ratio", "a", false)) imageWindow->processKeyEvent (GLFW_KEY_A);
             if (ImGui::BeginMenu("Layout"))
             {
@@ -331,7 +331,7 @@ void ControlsWindow::renderFrame ()
                 {
                     impl->viewer->imageList().addImage(imageItemFromPath (it.second), -1 /* end */, false /* replace */);
                 }
-                impl->viewer->imageList().selectImage (impl->viewer->imageList().numImages() - 1);
+                impl->viewer->imageList().setSelectionStart (impl->viewer->imageList().numImages() - 1);
             }
             // close
             ImGuiFileDialog::Instance()->Close();
@@ -345,8 +345,9 @@ void ControlsWindow::renderFrame ()
         if (ImGui::BeginTable("Images", 2, flags, ImVec2(0,contentSize.y - overlayHeight)))
         {
             const float availableWidth = ImGui::GetContentRegionAvail().x;
-            const int minSelectedIndex = imageList.selectedIndex();
-            const int maxSelectedIndex = minSelectedIndex + imageWindowState.layoutConfig.numImages();
+            const SelectionRange selectionRange =  imageList.selectedRange();
+            const int minSelectedIndex = selectionRange.startIndex;
+            const int maxSelectedIndex = selectionRange.startIndex + selectionRange.count;
 
             ImGui::TableSetupColumn("Name");
             ImGui::TableSetupColumn("Size", ImGuiTableColumnFlags_WidthFixed);
@@ -368,7 +369,7 @@ void ControlsWindow::renderFrame ()
                 ImGui::TableNextColumn();
                 if (ImGui::Selectable(name.c_str(), selected, ImGuiSelectableFlags_SpanAllColumns) && idx != minSelectedIndex)
                 {
-                    imageList.selectImage (idx);
+                    imageList.setSelectionStart (idx);
                     impl->lastSelectedIdx = idx;
                 }                
 

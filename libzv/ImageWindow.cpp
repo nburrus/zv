@@ -240,7 +240,10 @@ void ImageWindow::Impl::adjustForNewSelection ()
     this->monitorSize = ImVec2(mode->width, mode->height);
 
     ImageList& imageList = this->viewer->imageList();
-    const int firstIndex = imageList.selectedIndex();
+    const auto selectedRange = imageList.selectedRange();
+    const int firstSelectionIndex = imageList.selectedRange().startIndex;
+    const int firstValidSelectionIndex = std::max(firstSelectionIndex, 0);
+    const int firstValidImageIndex = firstValidSelectionIndex - firstSelectionIndex;
     
     this->imguiGlfwWindow.enableContexts ();
     
@@ -248,12 +251,13 @@ void ImageWindow::Impl::adjustForNewSelection ()
     // as it may release some GLTexture in the cache. Would be nice to make this
     // code more robust.
     this->currentImages.resize (this->mutableState.layoutConfig.numImages());
+    zv_assert (selectedRange.count <= this->currentImages.size(), "Inconsistent sizes");
     for (int i = 0; i < this->currentImages.size(); ++i)
     {
-        const int imgIndex = firstIndex + i;
-        if (imgIndex < imageList.numImages())
+        const int selectionIndex = firstSelectionIndex + i;
+        if (selectionIndex >= 0 && selectionIndex < imageList.numImages())
         {
-            this->currentImages[i].item = imageList.imageItemFromIndex(firstIndex + i);
+            this->currentImages[i].item = imageList.imageItemFromIndex(selectionIndex);
             this->currentImages[i].data = imageList.getData(this->currentImages[i].item.get());
             if (this->currentImages[i].hasValidData())
             {
@@ -270,6 +274,7 @@ void ImageWindow::Impl::adjustForNewSelection ()
         else
         {
             // Make sure that we clear it.
+            zv_assert (i != firstValidImageIndex, "We expected data for this one!");
             this->currentImages[i] = {};
         }
     }
@@ -278,7 +283,7 @@ void ImageWindow::Impl::adjustForNewSelection ()
     bool layoutChanged = this->currentLayout.adjustForConfig(this->mutableState.layoutConfig);
         
     // The first image will decide for all the other sizes.
-    const auto& firstIm = *this->currentImages[0].data->cpuData;
+    const auto& firstIm = *this->currentImages[firstValidImageIndex].data->cpuData;
 
     if (!this->imageWidgetRect.normal.origin.isValid())
     {
@@ -286,7 +291,6 @@ void ImageWindow::Impl::adjustForNewSelection ()
         this->imageWidgetRect.normal.origin.y = this->monitorSize.y * 0.10;
     }
 
-    const auto& firstRect = this->currentLayout.imageRects[0];
     // Handle the case there the cpuImage is empty (e.g. failed to load the file).
     int firstImWidth = firstIm.width() > 0 ? firstIm.width() : 256;
     int firstImHeight = firstIm.height() > 0 ? firstIm.height() : 256;
@@ -744,9 +748,12 @@ void ImageWindow::renderFrame ()
     contentChanged |= impl->currentImages.empty();
     if (!contentChanged)
     {
+        const auto selectionRange = imageList.selectedRange();
         for (int idx = 0; idx < impl->currentImages.size(); ++idx)
         {
-            const int imageListIdx = imageList.selectedIndex() + idx;
+            const int imageListIdx = selectionRange.startIndex + idx;
+            if (imageListIdx < 0)
+                continue;
             
             if (!impl->currentImages[idx].data)
             {
@@ -857,7 +864,12 @@ void ImageWindow::renderFrame ()
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0,0));
     bool isOpen = true;
     
-    std::string mainWindowName = "zv - " + impl->currentImages[0].item->prettyName;
+    int firstValidImageIndex = 0;
+    for (firstValidImageIndex = 0; firstValidImageIndex < impl->currentImages.size(); ++firstValidImageIndex)
+        if (impl->currentImages[firstValidImageIndex].item)
+            break;
+
+    std::string mainWindowName = "zv - " + impl->currentImages[firstValidImageIndex].item->prettyName;
     glfwSetWindowTitle(impl->imguiGlfwWindow.glfwWindow(), mainWindowName.c_str());
 
     if (ImGui::Begin((mainWindowName + "###Image").c_str(), &isOpen, flags))
@@ -1137,12 +1149,14 @@ void ImageWindow::runAction (ImageWindowAction action)
         }
 
         case ImageWindowAction::View_NextImage: {
-            impl->viewer->imageList().selectImage (impl->viewer->imageList().selectedIndex() + impl->currentLayout.config.numImages());
+            const auto range = impl->viewer->imageList().selectedRange();
+            impl->viewer->imageList().setSelectionStart (range.startIndex + range.count);
             break;
         }
 
         case ImageWindowAction::View_PrevImage: {
-            impl->viewer->imageList().selectImage (impl->viewer->imageList().selectedIndex() - impl->currentLayout.config.numImages());
+            const auto range = impl->viewer->imageList().selectedRange();
+            impl->viewer->imageList().setSelectionStart (range.startIndex - range.count);
             break;
         }
     }
@@ -1162,6 +1176,7 @@ ImageWindow::Command ImageWindow::layoutCommand(int numRows, int numCols)
         config.numCols = numCols;
         config.numRows = numRows;
         window.impl->mutableState.layoutConfig = config; 
+        window.impl->viewer->imageList().setSelectionCount(config.numImages());
     });
 }
 
