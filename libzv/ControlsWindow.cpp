@@ -30,6 +30,8 @@ namespace zv
 struct ControlsWindow::Impl
 {
     Viewer* viewer = nullptr;
+
+    int lastSelectedIdx = 0;
     
     ControlsWindowInputState inputState;
 
@@ -356,16 +358,18 @@ void ControlsWindow::renderFrame ()
                 bool selected = (idx >= minSelectedIndex && idx < maxSelectedIndex);
                 const std::string& name = itemPtr->prettyName;
 
-                if (selected)
+                if (idx == minSelectedIndex && impl->lastSelectedIdx != minSelectedIndex)
                 {
                     ImGui::SetScrollHereY();
+                    impl->lastSelectedIdx = idx;
                 }
-                
+
                 ImGui::TableNextRow();
                 ImGui::TableNextColumn();
                 if (ImGui::Selectable(name.c_str(), selected, ImGuiSelectableFlags_SpanAllColumns) && idx != minSelectedIndex)
                 {
                     imageList.selectImage (idx);
+                    impl->lastSelectedIdx = idx;
                 }                
 
                 if (!itemPtr->sourceImagePath.empty()
