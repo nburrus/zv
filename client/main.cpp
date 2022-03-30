@@ -29,7 +29,7 @@ int main (int argc, char** argv)
     }
 
     // uint64_t imageId, const std::string& imageName, const GetDataCallback& getDataCallback, bool replaceExisting = true
-    std::string filename = "/home/nb/Perso/zv/tests/rgbgrid.png";
+    std::string filename = "tests/rgbgrid.png";
     client.addImage (5, "withCallback", filename, [filename](zv::ClientImageWriter& writer) {
         std::clog << "Image " << filename << " requested" << std::endl;
         std::vector<uint8_t> imData (2048*1024*4);
