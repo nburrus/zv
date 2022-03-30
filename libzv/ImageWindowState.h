@@ -50,6 +50,8 @@ struct ImageWindowState
     LayoutConfig layoutConfig;
 
     bool infoOverlayEnabled = true;
+
+    double timeOfLastCopyToClipboard = NAN;
 };
 
 } // zv

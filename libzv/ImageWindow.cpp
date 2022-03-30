@@ -223,11 +223,11 @@ struct ImageWindow::Impl
         float ratioY = this->imageWidgetRect.current.size.y / this->imageWidgetRect.normal.size.y;
         if (ratioX <= ratioY)
         {
-            this->imageWidgetRect.current.size.y = ratioX * this->imageWidgetRect.normal.size.y;
+            this->imageWidgetRect.current.size.y = int(ratioX * this->imageWidgetRect.normal.size.y + 0.5f);
         }
         else
         {
-            this->imageWidgetRect.current.size.x = ratioY * this->imageWidgetRect.normal.size.x;
+            this->imageWidgetRect.current.size.x = int(ratioY * this->imageWidgetRect.normal.size.x + 0.5f);
         }
         this->shouldUpdateWindowSize = true;
     }
@@ -405,7 +405,7 @@ void ImageWindow::shutdown()
     
     // Make sure that we release any GL stuff here with the context set.
     impl->currentImages.clear();
-    impl->cursorOverlayInfo = {};
+    impl->cursorOverlayInfo.clear ();
 
     impl->imguiGlfwWindow.shutdown ();
 }
@@ -486,6 +486,7 @@ void ImageWindow::checkImguiGlobalImageKeyEvents ()
             GLFW_KEY_UP, GLFW_KEY_DOWN, GLFW_KEY_LEFT, GLFW_KEY_RIGHT,
             GLFW_KEY_O, GLFW_KEY_S, GLFW_KEY_W, 
             GLFW_KEY_N, GLFW_KEY_A, GLFW_KEY_V, GLFW_KEY_PERIOD, GLFW_KEY_COMMA, GLFW_KEY_M,
+            GLFW_KEY_C,
             GLFW_KEY_SPACE, GLFW_KEY_BACKSPACE
         })
     {
@@ -512,6 +513,8 @@ void ImageWindow::processKeyEvent (int keycode)
 
         case GLFW_KEY_DOWN:
         case GLFW_KEY_SPACE: runAction(ImageWindowAction::View_NextImage); break;
+
+        case GLFW_KEY_C: runAction(ImageWindowAction::Edit_CopyCursorInfoToClipboard); break;
 
         case GLFW_KEY_S:
         {
@@ -806,9 +809,6 @@ void ImageWindow::renderFrame ()
 
     const auto frameInfo = impl->imguiGlfwWindow.beginFrame ();
     const auto& controlsWindowState = impl->viewer->controlsWindow()->inputState();
-
-    // Might get filled later on.
-    impl->cursorOverlayInfo = {};
     
     // If we do not have a pending resize request, then adjust the content size to the
     // actual window size. The framebuffer might be bigger depending on the retina scale
@@ -835,6 +835,9 @@ void ImageWindow::renderFrame ()
         checkImguiGlobalImageKeyEvents ();
     }
     checkImguiGlobalImageMouseEvents ();
+
+    // Might get filled later on.
+    impl->cursorOverlayInfo.clear ();
     
     impl->mutableState.modeForCurrentFrame = impl->mutableState.activeMode;
 
@@ -1157,6 +1160,40 @@ void ImageWindow::runAction (ImageWindowAction action)
         case ImageWindowAction::View_PrevImage: {
             const auto range = impl->viewer->imageList().selectedRange();
             impl->viewer->imageList().setSelectionStart (range.startIndex - range.count);
+            break;
+        }
+
+        case ImageWindowAction::Edit_CopyCursorInfoToClipboard: { 
+            if (!impl->cursorOverlayInfo.valid())
+                break;
+            
+            const auto& image = *impl->cursorOverlayInfo.itemAndData.data->cpuData;
+            ImVec2 mousePosInImage = impl->cursorOverlayInfo.mousePosInImage();
+
+            if (!image.contains(mousePosInImage.x, mousePosInImage.y))
+                break;
+
+            const auto sRgb = image((int)mousePosInImage.x, (int)mousePosInImage.y);
+
+            std::string clipboardText;
+            clipboardText += formatted("[%d, %d]\n", (int)mousePosInImage.x, (int)mousePosInImage.y);
+            clipboardText += formatted("sRGB %d %d %d\n", sRgb.r, sRgb.g, sRgb.b);
+
+            const PixelLinearRGB lrgb = zv::convertToLinearRGB(sRgb);
+            clipboardText += formatted("linearRGB %.1f %.1f %.1f\n", lrgb.r, lrgb.g, lrgb.b);
+
+            const auto hsv = zv::convertToHSV(sRgb);
+            clipboardText += formatted("HSV %.1fº %.1f%% %.1f%%\n", hsv.x * 360.f, hsv.y * 100.f, hsv.z * 100.f / 255.f);
+
+            PixelLab lab = zv::convertToLab(sRgb);
+            clipboardText += formatted("L*a*b %.1f %.1f %.1f\n", lab.l, lab.a, lab.b);
+
+            PixelXYZ xyz = convertToXYZ(sRgb);
+            clipboardText += formatted("XYZ %.1f %.1f %.1f\n", xyz.x, xyz.y, xyz.z);
+
+            // glfwSetClipboardString(nullptr, clipboardText.c_str());
+            clip::set_text(clipboardText.c_str());
+            impl->cursorOverlayInfo.timeOfLastCopyToClipboard = currentDateInSeconds();
             break;
         }
     }

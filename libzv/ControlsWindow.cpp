@@ -209,94 +209,7 @@ void ControlsWindow::renderFrame ()
     {
         impl->viewer->onToggleControls();
     }
-
-    int menuBarHeight = 0;
-    if (ImGui::BeginMainMenuBar())
-    {
-        menuBarHeight = ImGui::GetWindowSize().y;
-
-        if (ImGui::BeginMenu("File"))
-        {
-            // if (ImGui::MenuItem("Save Image", "Ctrl + s", false))
-            // {
-            //     imageWindow->saveCurrentImage ();
-            // }
-
-            if (ImGui::MenuItem("Open Image", "Ctrl + o", false))
-            {
-                impl->viewer->onOpenImage();
-            }
-
-            if (ImGui::MenuItem("Close", "q", false))
-            {
-                impl->viewer->onDismissRequested();
-            }
-
-            ImGui::EndMenu();
-        }
-
-        if (ImGui::BeginMenu("View"))
-        {
-            ImGui::MenuItem("Info overlay", "v", &imageWindowState.infoOverlayEnabled);
-            ImGui::EndMenu();
-        }
-
-        if (ImGui::BeginMenu("Geometry"))
-        {
-            if (ImGui::MenuItem("Original", "n", false)) imageWindow->processKeyEvent (GLFW_KEY_N);
-            if (ImGui::MenuItem("Maxspect", "n", false)) imageWindow->processKeyEvent (GLFW_KEY_M);
-            if (ImGui::MenuItem("Double size", ">", false)) imageWindow->processKeyEvent ('>');
-            if (ImGui::MenuItem("Half size", "<", false)) imageWindow->processKeyEvent ('<');
-            if (ImGui::MenuItem("10% larger", ".", false)) imageWindow->processKeyEvent (GLFW_KEY_PERIOD);
-            if (ImGui::MenuItem("10% smaller", ",", false)) imageWindow->processKeyEvent (GLFW_KEY_COMMA);
-            if (ImGui::MenuItem("Restore aspect ratio", "a", false)) imageWindow->processKeyEvent (GLFW_KEY_A);
-            if (ImGui::BeginMenu("Layout"))
-            {
-                if (ImGui::MenuItem("Single image", "1"))
-                {
-                    imageWindow->addCommand(ImageWindow::layoutCommand(1,1));
-                }
-                if (ImGui::MenuItem("2 columns", "2"))
-                {
-                    imageWindow->addCommand(ImageWindow::layoutCommand(1,2));
-                }
-                if (ImGui::MenuItem("3 columns", "3"))
-                {
-                    imageWindow->addCommand(ImageWindow::layoutCommand(1,3));
-                }
-                if (ImGui::MenuItem("2 rows"))
-                {
-                    imageWindow->addCommand(ImageWindow::layoutCommand(2,1));
-                }
-                if (ImGui::MenuItem("3 rows"))
-                {
-                    imageWindow->addCommand(ImageWindow::layoutCommand(3,1));
-                }
-                if (ImGui::MenuItem("2x2"))
-                {
-                    imageWindow->addCommand(ImageWindow::layoutCommand(2,2));
-                }
-                if (ImGui::MenuItem("2x3"))
-                {
-                    imageWindow->addCommand(ImageWindow::layoutCommand(2,3));
-                }
-                if (ImGui::MenuItem("3x4"))
-                {
-                    imageWindow->addCommand(ImageWindow::layoutCommand(3,4));
-                }
-                ImGui::EndMenu();
-            }
-            ImGui::EndMenu();
-        }
-
-        if (ImGui::BeginMenu("Help"))
-        {
-            if (ImGui::MenuItem("Help", NULL, false))
-                impl->viewer->onHelpRequested();
-            ImGui::EndMenu();
-        }
-        ImGui::EndMainMenuBar();
-    }
+    
 
     // ImGui::ShowDemoWindow();
     
@@ -309,16 +222,110 @@ void ControlsWindow::renderFrame ()
                               | ImGuiWindowFlags_NoBackground
                               | ImGuiWindowFlags_NoSavedSettings
                               | ImGuiWindowFlags_HorizontalScrollbar
+                              | ImGuiWindowFlags_MenuBar
                               // | ImGuiWindowFlags_NoDocking
                               | ImGuiWindowFlags_NoNav);
     
     // flags = 0;
 
     // Always show the ImGui window filling the GLFW window.
-    ImGui::SetNextWindowPos(ImVec2(0, menuBarHeight), ImGuiCond_Always);
+    ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_Always);
     ImGui::SetNextWindowSize(ImVec2(frameInfo.windowContentWidth, frameInfo.windowContentHeight), ImGuiCond_Always);
+    // ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(1,1));
     if (ImGui::Begin("zv controls", nullptr, flags))
     {
+        if (ImGui::BeginMenuBar())
+        {
+            if (ImGui::BeginMenu("File"))
+            {
+                // if (ImGui::MenuItem("Save Image", "Ctrl + s", false))
+                // {
+                //     imageWindow->saveCurrentImage ();
+                // }
+
+                if (ImGui::MenuItem("Open Image", "Ctrl + o", false))
+                {
+                    impl->viewer->onOpenImage();
+                }
+
+                if (ImGui::MenuItem("Close", "q", false))
+                {
+                    impl->viewer->onDismissRequested();
+                }
+
+                ImGui::EndMenu();
+            }
+
+            if (ImGui::BeginMenu("View"))
+            {
+                ImGui::MenuItem("Info overlay", "v", &imageWindowState.infoOverlayEnabled);
+                ImGui::EndMenu();
+            }
+
+            if (ImGui::BeginMenu("Geometry"))
+            {
+                if (ImGui::MenuItem("Original", "n", false))
+                    imageWindow->processKeyEvent(GLFW_KEY_N);
+                if (ImGui::MenuItem("Maxspect", "n", false))
+                    imageWindow->processKeyEvent(GLFW_KEY_M);
+                if (ImGui::MenuItem("Double size", ">", false))
+                    imageWindow->processKeyEvent('>');
+                if (ImGui::MenuItem("Half size", "<", false))
+                    imageWindow->processKeyEvent('<');
+                if (ImGui::MenuItem("10% larger", ".", false))
+                    imageWindow->processKeyEvent(GLFW_KEY_PERIOD);
+                if (ImGui::MenuItem("10% smaller", ",", false))
+                    imageWindow->processKeyEvent(GLFW_KEY_COMMA);
+                if (ImGui::MenuItem("Restore aspect ratio", "a", false))
+                    imageWindow->processKeyEvent(GLFW_KEY_A);
+                if (ImGui::BeginMenu("Layout"))
+                {
+                    if (ImGui::MenuItem("Single image", "1"))
+                    {
+                        imageWindow->addCommand(ImageWindow::layoutCommand(1, 1));
+                    }
+                    if (ImGui::MenuItem("2 columns", "2"))
+                    {
+                        imageWindow->addCommand(ImageWindow::layoutCommand(1, 2));
+                    }
+                    if (ImGui::MenuItem("3 columns", "3"))
+                    {
+                        imageWindow->addCommand(ImageWindow::layoutCommand(1, 3));
+                    }
+                    if (ImGui::MenuItem("2 rows"))
+                    {
+                        imageWindow->addCommand(ImageWindow::layoutCommand(2, 1));
+                    }
+                    if (ImGui::MenuItem("3 rows"))
+                    {
+                        imageWindow->addCommand(ImageWindow::layoutCommand(3, 1));
+                    }
+                    if (ImGui::MenuItem("2x2"))
+                    {
+                        imageWindow->addCommand(ImageWindow::layoutCommand(2, 2));
+                    }
+                    if (ImGui::MenuItem("2x3"))
+                    {
+                        imageWindow->addCommand(ImageWindow::layoutCommand(2, 3));
+                    }
+                    if (ImGui::MenuItem("3x4"))
+                    {
+                        imageWindow->addCommand(ImageWindow::layoutCommand(3, 4));
+                    }
+                    ImGui::EndMenu();
+                }
+                ImGui::EndMenu();
+            }
+
+            if (ImGui::BeginMenu("Help"))
+            {
+                if (ImGui::MenuItem("Help", NULL, false))
+                    impl->viewer->onHelpRequested();
+                ImGui::EndMenu();
+            }
+            ImGui::EndMenuBar();
+        }
+
         ImVec2 contentSize = ImGui::GetContentRegionAvail();
         if (ImGuiFileDialog::Instance()->Display("ChooseImageDlgKey", ImGuiWindowFlags_NoCollapse, contentSize, contentSize))
         {
@@ -336,15 +343,20 @@ void ControlsWindow::renderFrame ()
             // close
             ImGuiFileDialog::Instance()->Close();
         }
-                
+
+        float overlayHeight = 0.f;
+        const auto* cursorOverlayInfo = &imageWindow->cursorOverlayInfo();
+        if (cursorOverlayInfo->valid())
+        {
+            overlayHeight = monoFontSize*13.5;
+        }
+
         ImageList& imageList = impl->viewer->imageList();
         
-        const float overlayHeight = monoFontSize*15.5;
-
         ImGuiTableFlags flags = ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY;
         if (ImGui::BeginTable("Images", 2, flags, ImVec2(0,contentSize.y - overlayHeight)))
         {
-            const float availableWidth = ImGui::GetContentRegionAvail().x;
+            const float availableWidth = contentSize.x;
             const SelectionRange selectionRange =  imageList.selectedRange();
             const int minSelectedIndex = selectionRange.startIndex;
             const int maxSelectedIndex = selectionRange.startIndex + selectionRange.count;
@@ -430,17 +442,20 @@ void ControlsWindow::renderFrame ()
         //     }
         //     ImGui::EndListBox();
         // }
-        
-        const auto* cursorOverlayInfo = &imageWindow->cursorOverlayInfo();
+                
         if (cursorOverlayInfo->valid())
         {
-            ImGui::SetCursorPosY (ImGui::GetWindowHeight() - overlayHeight);
+            const float padding = monoFontSize*0.25;
+            const float overlayWidth = monoFontSize*21;
+            ImGui::SetCursorPosY (ImGui::GetWindowHeight() - overlayHeight - padding);
+            ImGui::SetCursorPosX ((contentSize.x - overlayWidth)/2.f);
             // ImGui::Spacing(); ImGui::Separator(); ImGui::Spacing();
-            // ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(1,0,0,1));
-            ImGui::BeginChild("CursorOverlay", ImVec2(monoFontSize*21, monoFontSize*14), false /* no border */, windowFlagsWithoutAnything());
+            ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0, 0, 0, 0.85));
+            ImGui::BeginChild("CursorOverlay", ImVec2(overlayWidth, overlayHeight), false /* border */, windowFlagsWithoutAnything());
+            ImGui::SetCursorPos (ImVec2(monoFontSize*0.25, monoFontSize*0.25));
             impl->cursorOverlay.showTooltip(*cursorOverlayInfo, false /* not as tooltip */);
             ImGui::EndChild();
-            // ImGui::PopStyleColor();
+            ImGui::PopStyleColor();
         }
 
         imageWindow->checkImguiGlobalImageKeyEvents ();
@@ -454,6 +469,7 @@ void ControlsWindow::renderFrame ()
 
         impl->inputState.shiftIsPressed = ImGui::IsKeyDown(ImGuiKey_LeftShift) || ImGui::IsKeyDown(ImGuiKey_RightShift);
     }
+    // ImGui::PopStyleVar();
 
     ImGui::End();
 

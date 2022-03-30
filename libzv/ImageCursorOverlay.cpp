@@ -39,19 +39,10 @@ void ImageCursorOverlay::showTooltip(const CursorOverlayInfo& d, bool showAsTool
     const float monoFontSize = ImguiGLFWWindow::monoFontSize(io);
     const float padding = monoFontSize / 2.f;
 
-    ImVec2 imageSize (image.width(), image.height());
-    
-    ImVec2 mousePosInImage (0,0);
-    ImVec2 mousePosInTexture (0,0);
-    {
-        // This 0.5 offset is important since the mouse coordinate is an integer.
-        // So when we are in the center of a pixel we'll return 0,0 instead of
-        // 0.5,0.5.
-        ImVec2 widgetPos = (d.mousePos + ImVec2(0.5f,0.5f)) - d.imageWidgetTopLeft;
-        ImVec2 uv_window = widgetPos / d.imageWidgetSize;
-        mousePosInTexture = (d.uvBottomRight-d.uvTopLeft)*uv_window + d.uvTopLeft;
-        mousePosInImage = mousePosInTexture * imageSize;
-    }
+    ImVec2 globalTopLeft = ImGui::GetCursorPos();
+
+    ImVec2 mousePosInImage = d.mousePosInImage();
+    ImVec2 mousePosInOriginalTexture = d.mousePosInOriginalTexture();
     
     if (!image.contains(mousePosInImage.x, mousePosInImage.y))
         return;
@@ -79,8 +70,8 @@ void ImageCursorOverlay::showTooltip(const CursorOverlayInfo& d, bool showAsTool
             ImVec2 pixelSizeInZoom = zoomItemSize / ImVec2(zoomLenInPixels,zoomLenInPixels);
             
             const ImVec2 zoomLen_uv (float(zoomLenInPixels) / image.width(), float(zoomLenInPixels) / image.height());
-            ImVec2 zoom_uv0 = mousePosInTexture - zoomLen_uv*0.5f;
-            ImVec2 zoom_uv1 = mousePosInTexture + zoomLen_uv*0.5f;
+            ImVec2 zoom_uv0 = mousePosInOriginalTexture - zoomLen_uv*0.5f;
+            ImVec2 zoom_uv1 = mousePosInOriginalTexture + zoomLen_uv*0.5f;
             
             ImVec2 zoomImageTopLeft = ImGui::GetCursorScreenPos();
             ImGui::Image(reinterpret_cast<ImTextureID>(imageTexture.textureId()), zoomItemSize, zoom_uv0, zoom_uv1);
@@ -124,9 +115,8 @@ void ImageCursorOverlay::showTooltip(const CursorOverlayInfo& d, bool showAsTool
                 color = ImVec4(0.0, 0.0, 0.0, 1.0);
             }
 
-            // ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(1,0,0,1));
             ImGui::PushStyleColor(ImGuiCol_Text, color);
-
+            ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0,0,0,0));
             ImGui::BeginChild("ColorInfo", ImVec2(squareSize - padding - monoFontSize*0.5f, zoomItemSize.y));
             
             ImGui::Text ("HTML #%02x%02x%02x", sRgb.r, sRgb.g, sRgb.b);
@@ -146,128 +136,105 @@ void ImageCursorOverlay::showTooltip(const CursorOverlayInfo& d, bool showAsTool
                         
             ImGui::EndChild();
             ImGui::PopStyleColor();
-            // ImGui::PopStyleColor();
+             ImGui::PopStyleColor();
 
             ImGui::PopFont();
         }
-        
-        auto closestColors = zv::closestColorEntries(sRgb, zv::ColorDistance::CIE2000);
-        
-        ImGui::SetCursorPosY (bottomOfSquares + padding);
 
+        // Show the clipboard text?
+        if (!isnan(d.timeOfLastCopyToClipboard) && (currentDateInSeconds() - d.timeOfLastCopyToClipboard < 0.7))
         {
-            ImVec2 topLeft = ImGui::GetCursorPos();
-            ImVec2 screenFromWindow = ImGui::GetCursorScreenPos() - topLeft;
-            ImVec2 bottomRight = topLeft + ImVec2(padding*2,padding*2);
-            
-            // Raw draw is in screen space.
-            auto* drawList = ImGui::GetWindowDrawList();
-            drawList->AddRectFilled(topLeft + screenFromWindow,
-                                    bottomRight + screenFromWindow,
-                                    IM_COL32(closestColors[0].entry->r, closestColors[0].entry->g, closestColors[0].entry->b, 255));
-            
-            ImGui::SetCursorPosX(bottomRight.x + padding);
+            ImGui::SetCursorPosX(globalTopLeft.x);
+            ImGui::Text("Copied to clipboard.");
         }
-
-        auto addColorNameAndRGB = [&](const ColorEntry& entry, const int targetNameSize, float distance, bool disabled)
+        else
         {
-            auto colorName = formatted("%s (%s", entry.className, entry.colorName);
-            // auto colorName = formatted("%s / %s", entry.className, entry.colorName);
-            if (colorName.size() >= targetNameSize)
-            {
-                colorName = colorName.substr(0, targetNameSize - 4) + "...)";
-            }
-            else if (colorName.size() < targetNameSize)
-            {
-                colorName += ')' + std::string(targetNameSize - colorName.size(), ' ');
-            }
-            
-            if (disabled)
-            {
-                ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
-            }
-            ImGui::Text("%s", colorName.c_str());
-            
-            ImguiGLFWWindow::PushMonoSpaceFont(io, true /* small */);
-            ImGui::SameLine(monoFontSize*11.2f - paddingIfNotTooltip);
-            ImGui::Text("ΔE=%d", int(distance+0.5f));
-            
-            ImGui::SameLine(monoFontSize*14.f - paddingIfNotTooltip);
-            
-            const auto hsv = zv::convertToHSV(PixelSRGBA(entry.r, entry.g, entry.b, 255));
-            
-            ImGui::Text("HSV %3d %3d %3d",
-                        intRnd(hsv.x*360.f),
-                        intRnd(hsv.y*100.f),
-                        intRnd(hsv.z*100.f/255.f));
-            ImGui::PopFont();
-            
-            if (disabled)
-            {
-                ImGui::PopStyleColor();
-            }
-        };
+            auto closestColors = zv::closestColorEntries(sRgb, zv::ColorDistance::CIE2000);
 
-        addColorNameAndRGB (*closestColors[0].entry, 21, closestColors[0].distance, false /* not disabled */);
-        
-        {
-            ImVec2 topLeft = ImGui::GetCursorPos();
-            ImVec2 screenFromWindow = ImGui::GetCursorScreenPos() - topLeft;
-            ImVec2 bottomRight = topLeft + ImVec2(padding*2, padding*2);
-            
-            auto* drawList = ImGui::GetWindowDrawList();
-            drawList->AddRectFilled(topLeft + screenFromWindow,
-                                    bottomRight + screenFromWindow,
-                                    IM_COL32(closestColors[1].entry->r, closestColors[1].entry->g, closestColors[1].entry->b, 255));
-            ImGui::SetCursorPosX(bottomRight.x + padding);
+            ImGui::SetCursorPosY(bottomOfSquares + padding);
+
+            {
+                ImGui::SetCursorPosX(globalTopLeft.x);
+                ImVec2 topLeft = ImGui::GetCursorPos();
+                ImVec2 screenFromWindow = ImGui::GetCursorScreenPos() - topLeft;
+                ImVec2 bottomRight = topLeft + ImVec2(padding * 2, padding * 2);
+
+                // Raw draw is in screen space.
+                auto *drawList = ImGui::GetWindowDrawList();
+                drawList->AddRectFilled(topLeft + screenFromWindow,
+                                        bottomRight + screenFromWindow,
+                                        IM_COL32(closestColors[0].entry->r, closestColors[0].entry->g, closestColors[0].entry->b, 255));
+
+                ImGui::SetCursorPosX(bottomRight.x + padding);
+            }
+
+            auto addColorNameAndRGB = [&](const ColorEntry &entry, const int targetNameSize, float distance, bool disabled)
+            {
+                auto colorName = formatted("%s (%s", entry.className, entry.colorName);
+                // auto colorName = formatted("%s / %s", entry.className, entry.colorName);
+                if (colorName.size() >= targetNameSize)
+                {
+                    colorName = colorName.substr(0, targetNameSize - 4) + "...)";
+                }
+                else if (colorName.size() < targetNameSize)
+                {
+                    colorName += ')' + std::string(targetNameSize - colorName.size(), ' ');
+                }
+
+                if (disabled)
+                {
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
+                }
+                ImGui::Text("%s", colorName.c_str());
+
+                ImguiGLFWWindow::PushMonoSpaceFont(io, true /* small */);
+                ImGui::SameLine(monoFontSize * 11.2f - paddingIfNotTooltip);
+                ImGui::Text("ΔE=%d", int(distance + 0.5f));
+
+                ImGui::SameLine(monoFontSize * 14.f - paddingIfNotTooltip);
+
+                const auto hsv = zv::convertToHSV(PixelSRGBA(entry.r, entry.g, entry.b, 255));
+
+                ImGui::Text("HSV %3d %3d %3d",
+                            intRnd(hsv.x * 360.f),
+                            intRnd(hsv.y * 100.f),
+                            intRnd(hsv.z * 100.f / 255.f));
+                ImGui::PopFont();
+
+                if (disabled)
+                {
+                    ImGui::PopStyleColor();
+                }
+            };
+
+            addColorNameAndRGB(*closestColors[0].entry, 20, closestColors[0].distance, false /* not disabled */);
+
+            {
+                ImGui::SetCursorPosX(globalTopLeft.x);
+                ImVec2 topLeft = ImGui::GetCursorPos();
+                ImVec2 screenFromWindow = ImGui::GetCursorScreenPos() - topLeft;
+                ImVec2 bottomRight = topLeft + ImVec2(padding * 2, padding * 2);
+
+                auto *drawList = ImGui::GetWindowDrawList();
+                drawList->AddRectFilled(topLeft + screenFromWindow,
+                                        bottomRight + screenFromWindow,
+                                        IM_COL32(closestColors[1].entry->r, closestColors[1].entry->g, closestColors[1].entry->b, 255));
+                ImGui::SetCursorPosX(bottomRight.x + padding);
+            }
+
+            const bool secondColorNotAsClose = (closestColors[1].distance - closestColors[0].distance) > 1.f;
+            addColorNameAndRGB(*closestColors[1].entry, 20, closestColors[1].distance, secondColorNotAsClose);
         }
-
-        const bool secondColorNotAsClose = (closestColors[1].distance - closestColors[0].distance) > 1.f;
-        addColorNameAndRGB (*closestColors[1].entry, 21, closestColors[1].distance, secondColorNotAsClose);
 
         if (d.showHelp)
         {
-            ImGui::Text ("drag to select a region | 'q': exit | 'c': copy");
+            ImGui::Text("drag to select a region | 'q': exit | 'c': copy");
         }
-        
-        if (!isnan(_timeOfLastCopyToClipboard))
-        {
-            if (currentDateInSeconds() - _timeOfLastCopyToClipboard < 1.0)
-            {
-                ImGui::Text ("Copied to clipboard.");
-            }
-            else
-            {
-                _timeOfLastCopyToClipboard = NAN;
-            }
-        }        
 
         if (showAsTooltip)
         {
             ImGui::EndTooltip();
             ImGui::PopStyleVar();
-        }
-
-        if (ImGui::IsKeyPressed(GLFW_KEY_C))
-        {
-            std::string clipboardText;
-            clipboardText += formatted("sRGB %d %d %d\n", sRgb.r, sRgb.g, sRgb.b);
-            
-            const PixelLinearRGB lrgb = zv::convertToLinearRGB(sRgb);
-            clipboardText += formatted("linearRGB %.1f %.1f %.1f\n", lrgb.r, lrgb.g, lrgb.b);
-
-            const auto hsv = zv::convertToHSV(sRgb);
-            clipboardText += formatted("HSV %.1fº %.1f%% %.1f%%\n", hsv.x*360.f, hsv.y*100.f, hsv.z*100.f/255.f);
-
-            PixelLab lab = zv::convertToLab(sRgb);
-            clipboardText += formatted("L*a*b %.1f %.1f %.1f\n", lab.l, lab.a, lab.b);
-            
-            PixelXYZ xyz = convertToXYZ(sRgb);
-            clipboardText += formatted("XYZ %.1f %.1f %.1f\n", xyz.x, xyz.y, xyz.z);
-
-            // glfwSetClipboardString(nullptr, clipboardText.c_str());
-            clip::set_text (clipboardText.c_str());
-            _timeOfLastCopyToClipboard = currentDateInSeconds();
         }
     }
 }

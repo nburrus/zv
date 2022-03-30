@@ -20,6 +20,9 @@ enum class ImageWindowAction
     Zoom_Maxspect,
 
     File_OpenImage,
+
+    Edit_CopyCursorInfoToClipboard,
+
     View_ToggleOverlay,
     View_NextImage,
     View_PrevImage,
