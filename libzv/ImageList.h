@@ -95,6 +95,24 @@ struct ImageItemAndData
 {
     bool hasValidData() const { return data && data->status == ImageItemData::Status::Ready; }
 
+    bool update ()
+    {
+        if (!data)
+            return false;
+        
+        if (data->update())
+        {
+            if (data->cpuData->hasData())
+            {
+                item->metadata.width = data->cpuData->width();
+                item->metadata.height = data->cpuData->height();
+            }
+            return true;
+        }
+
+        return false;
+    }
+
     ImageItemPtr item;
     ImageItemDataPtr data;
 };

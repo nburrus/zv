@@ -121,7 +121,7 @@ std::unique_ptr<ImageItemData> loadImageData(ImageItem& input)
             break;
     }
 
-    if (output && output->cpuData)
+    if (output && output->cpuData && output->cpuData->hasData())
     {
         input.metadata.width = output->cpuData->width();
         input.metadata.height = output->cpuData->height();

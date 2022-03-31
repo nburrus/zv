@@ -785,7 +785,7 @@ void ImageWindow::renderFrame ()
     // finished, file changed..).
     for (int idx = 0; idx < impl->currentImages.size(); ++idx)
     {
-        if (impl->currentImages[idx].data && impl->currentImages[idx].data->update ())
+        if (impl->currentImages[idx].data && impl->currentImages[idx].update ())
         {
             impl->currentImages[idx].data->textureData.reset ();
             contentChanged = true;

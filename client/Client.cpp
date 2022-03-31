@@ -423,7 +423,12 @@ void Client::addImageFromFile (uint64_t imageId, const std::string& imPath)
         fprintf (stderr, "%s requested", imPath.c_str());
         std::ifstream f(imPath, std::ios::in | std::ios::binary);
         if (!f.good())
+        {
+            ClientImageBuffer buffer;
+            writer.write (buffer);
             return false;
+        }
+        
         // Only accurate on all platforms in binary mode.
         // https://stackoverflow.com/questions/2409504/using-c-filestreams-fstream-how-can-you-determine-the-size-of-a-file
         // https://stackoverflow.com/questions/22984956/tellg-function-give-wrong-size-of-file/22986486#22986486

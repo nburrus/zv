@@ -47,7 +47,7 @@ NetworkImageItemData::~NetworkImageItemData () = default;
 
 bool NetworkImageItemData::update ()
 {
-    if (cpuData->hasData())
+    if (cpuData->hasData() || status != Status::StillLoading)
         return false;
 
     std::lock_guard<std::mutex> _ (impl->ctx->lock);
@@ -57,10 +57,7 @@ bool NetworkImageItemData::update ()
         // Make sure that if we need to request the image again
         // we won't think that it exists.
         impl->ctx->maybeLoadedImage.reset ();
-        if (cpuData->hasData())
-        {
-            status = cpuData->hasData() ? Status::Ready : Status::FailedToLoad;
-        }
+        status = cpuData->hasData() ? Status::Ready : Status::FailedToLoad;
         return true;
     }
     else
@@ -240,6 +237,8 @@ private:
             {
                 imageItem->source = ImageItem::Source::Data;                
                 imageItem->sourceData = std::make_shared<ImageSRGBA>(std::move(imageContent));
+                imageItem->metadata.width = imageContent.width();
+                imageItem->metadata.height = imageContent.height();
             }
             else
             {
@@ -296,9 +295,17 @@ private:
     ImageItemDataUniquePtr onLoadData (const ImageContextPtr& ctx)
     {
         auto dataPtr = std::make_unique<NetworkImageItemData>();
+        dataPtr->cpuData = std::make_shared<ImageSRGBA>();
+
+        // Did we get disconnected?
+        if (!_socket)
+        {
+            dataPtr->status = ImageItemData::Status::FailedToLoad;
+            return dataPtr;
+        }
+        
         dataPtr->impl->ctx = ctx;
         dataPtr->status = ImageItemData::Status::StillLoading;
-        dataPtr->cpuData = std::make_shared<ImageSRGBA>();
         Message msg = requestImageBufferMessage (ctx->clientImageId);
         _senderQueue->enqueueMessage (std::move(msg));
         return dataPtr;
