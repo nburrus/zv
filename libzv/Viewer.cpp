@@ -316,20 +316,20 @@ ImageId Viewer::addPastedImage ()
     {
         ImageSRGBA im;
         im.ensureAllocatedBufferForSize((int)spec.width, (int)spec.height);
-        im.copyDataFrom((uint8_t *)clipImg.data(), (int)spec.bytes_per_row, (int)spec.width, (int)spec.height);
-        
-        // Fill alpha to be sure.
-        // Need to be careful about alpha! Need to replace it in some cases.
-        // Need to check the alpha mask and shift.
-        if (spec.alpha_mask == 0)
+
+        const bool hasAlpha = spec.alpha_mask;
+        for (int r = 0; r < im.height(); ++r)
         {
-            for (int r = 0; r < im.height(); ++r)
+            const uint8_t* inRowPtr_bytes = reinterpret_cast<const uint8_t*>(clipImg.data()) + r*spec.bytes_per_row;
+            const uint32_t* inRowPtr = reinterpret_cast<const uint32_t*>(inRowPtr_bytes);
+            PixelSRGBA* outRowPtr = im.atRowPtr(r);
+            for (int c = 0; c < im.width(); ++c)
             {
-                PixelSRGBA *rowPtr = im.atRowPtr(r);
-                for (int c = 0; c < im.width(); ++c)
-                {
-                    rowPtr[c].a = 255;
-                }
+                uint32_t v = inRowPtr[c];
+                outRowPtr[c].v[0] = (v&spec.red_mask) >> spec.red_shift;
+                outRowPtr[c].v[1] = (v&spec.green_mask) >> spec.green_shift;
+                outRowPtr[c].v[2] = (v&spec.blue_mask) >> spec.blue_shift;
+                outRowPtr[c].v[3] = hasAlpha ? ((v&spec.alpha_mask) >> spec.alpha_shift) : 255;
             }
         }
 
@@ -338,8 +338,31 @@ ImageId Viewer::addPastedImage ()
         break;
     }
 
-    case 16:
     case 24:
+    {
+        ImageSRGBA im;
+        im.ensureAllocatedBufferForSize((int)spec.width, (int)spec.height);
+
+        for (int r = 0; r < im.height(); ++r)
+        {
+            const uint8_t *inRowPtr_bytes = reinterpret_cast<const uint8_t *>(clipImg.data()) + r * spec.bytes_per_row;
+            PixelSRGBA *outRowPtr = im.atRowPtr(r);
+            for (int c = 0; c < im.width(); ++c)
+            {
+                uint32_t v = inRowPtr_bytes[c*3] << 0 | inRowPtr_bytes[c*3+1] << 8 | inRowPtr_bytes[c*3+2] << 16;
+                outRowPtr[c].v[0] = (v & spec.red_mask) >> spec.red_shift;
+                outRowPtr[c].v[1] = (v & spec.green_mask) >> spec.green_shift;
+                outRowPtr[c].v[2] = (v & spec.blue_mask) >> spec.blue_shift;
+                outRowPtr[c].v[3] = 255;
+            }
+        }
+
+        addImageData(im, "(pasted)", 0, false /* don't replace */);
+        selectImageIndex(0);
+        break;
+    }
+
+    case 16:
     case 64:
     default:
     {
@@ -348,7 +371,7 @@ ImageId Viewer::addPastedImage ()
     }
     }
 
-    return -1;
+        return -1;
 }
 
 void Viewer::setEventCallback (ImageId imageId, EventCallbackType callback, void* userData)
