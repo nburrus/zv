@@ -54,6 +54,7 @@ public:
     ImageId addImageData (const ImageSRGBA& image, const std::string& imageName, int insertPos = -1, bool replaceExisting = true);
     ImageId addPastedImage ();
     ImageId selectedImage () const;
+    void selectImageIndex (int index);
 
     ImageId addImageItem (ImageItemUniquePtr imageItem, int insertPos, bool replaceExisting = true);
 

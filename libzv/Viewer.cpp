@@ -17,6 +17,8 @@
 
 #include "GeneratedConfig.h"
 
+#include <clip/clip.h>
+
 #define IMGUI_DEFINE_MATH_OPERATORS 1
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
@@ -25,6 +27,8 @@
 
 #include <GL/gl3w.h>
 #include <GLFW/glfw3.h>
+
+#include <iostream>
 
 namespace zv
 {
@@ -244,6 +248,11 @@ ImageId Viewer::selectedImage () const
     return impl->imageList.imageItemFromIndex(firstValidSelection)->uniqueId;
 }
 
+void Viewer::selectImageIndex (int index)
+{    
+    impl->imageList.setSelectionStart (index);
+}
+
 ImageId Viewer::addImageFromFile (const std::string& imagePath, bool replaceExisting)
 {
     return impl->imageList.addImage (imageItemFromPath(imagePath), -1, replaceExisting);
@@ -267,61 +276,78 @@ void Viewer::refreshPrettyFileNames ()
 ImageId Viewer::addPastedImage ()
 {
     // Keep that old code around for now.
-#if 0
-    if (parser.get<bool>("--paste"))
+    if (!clip::has(clip::image_format()))
     {
-        impl->imagePath = "Pasted from clipboard";
-
-        if (!clip::has(clip::image_format()))
-        {
-            std::cerr << "Clipboard doesn't contain an image" << std::endl;
-            return false;
-        }
-
-        clip::image clipImg;
-        if (!clip::get_image(clipImg))
-        {
-            std::cout << "Error getting image from clipboard\n";
-            return false;
-        }
-
-        clip::image_spec spec = clipImg.spec();
-
-        std::cerr << "Image in clipboard "
-            << spec.width << "x" << spec.height
-            << " (" << spec.bits_per_pixel << "bpp)\n"
-            << "Format:" << "\n"
-            << std::hex
-            << "  Red   mask: " << spec.red_mask << "\n"
-            << "  Green mask: " << spec.green_mask << "\n"
-            << "  Blue  mask: " << spec.blue_mask << "\n"
-            << "  Alpha mask: " << spec.alpha_mask << "\n"
-            << std::dec
-            << "  Red   shift: " << spec.red_shift << "\n"
-            << "  Green shift: " << spec.green_shift << "\n"
-            << "  Blue  shift: " << spec.blue_shift << "\n"
-            << "  Alpha shift: " << spec.alpha_shift << "\n";
-
-        switch (spec.bits_per_pixel)
-        {
-        case 32:
-        {
-            impl->im.ensureAllocatedBufferForSize((int)spec.width, (int)spec.height);
-            impl->im.copyDataFrom((uint8_t*)clipImg.data(), (int)spec.bytes_per_row, (int)spec.width, (int)spec.height);
-            break;
-        }
-
-        case 16:
-        case 24:
-        case 64:
-        default:
-        {
-            std::cerr << "Only 32bpp clipboard supported right now." << std::endl;
-            return false;
-        }
-        }
+        zv_dbg ("Clipboard doesn't contain an image");
+        return -1;
     }
-#endif
+
+    clip::image clipImg;
+    if (!clip::get_image(clipImg))
+    {
+        std::cerr << "Error getting image from clipboard\n";
+        return false;
+    }
+
+    clip::image_spec spec = clipImg.spec();
+
+    zv_dbg("Image in clipboard (%d %d) bpp=%d",
+           spec.width,
+           spec.height,
+           spec.bits_per_pixel);
+        
+        std::cerr 
+        << "Format:"
+        << "\n"
+        << std::hex
+        << "  Red   mask: " << spec.red_mask << "\n"
+        << "  Green mask: " << spec.green_mask << "\n"
+        << "  Blue  mask: " << spec.blue_mask << "\n"
+        << "  Alpha mask: " << spec.alpha_mask << "\n"
+        << std::dec
+        << "  Red   shift: " << spec.red_shift << "\n"
+        << "  Green shift: " << spec.green_shift << "\n"
+        << "  Blue  shift: " << spec.blue_shift << "\n"
+        << "  Alpha shift: " << spec.alpha_shift << "\n";
+
+    switch (spec.bits_per_pixel)
+    {
+    case 32:
+    {
+        ImageSRGBA im;
+        im.ensureAllocatedBufferForSize((int)spec.width, (int)spec.height);
+        im.copyDataFrom((uint8_t *)clipImg.data(), (int)spec.bytes_per_row, (int)spec.width, (int)spec.height);
+        
+        // Fill alpha to be sure.
+        // Need to be careful about alpha! Need to replace it in some cases.
+        // Need to check the alpha mask and shift.
+        if (spec.alpha_mask == 0)
+        {
+            for (int r = 0; r < im.height(); ++r)
+            {
+                PixelSRGBA *rowPtr = im.atRowPtr(r);
+                for (int c = 0; c < im.width(); ++c)
+                {
+                    rowPtr[c].a = 255;
+                }
+            }
+        }
+
+        addImageData (im, "(pasted)", 0, false /* don't replace */);
+        selectImageIndex (0);
+        break;
+    }
+
+    case 16:
+    case 24:
+    case 64:
+    default:
+    {
+        std::cerr << "Only 32bpp clipboard supported right now." << std::endl;
+        return false;
+    }
+    }
+
     return -1;
 }
 

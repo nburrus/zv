@@ -59,6 +59,9 @@ if (UNIX)
   set(PYTHON_EXTRA_CMAKE_CXX_FLAGS "-fPIC")
 endif()
 
+if (UNIX AND NOT APPLE)
+  set(CLIP_X11_WITH_PNG 1)
+endif()
 set(CLIP_LIBRARY_FILENAME "${CMAKE_STATIC_LIBRARY_PREFIX}clip${CMAKE_STATIC_LIBRARY_SUFFIX}")
 ExternalProject_Add(clip-deps
   LIST_SEPARATOR "${semicolon_smuggle}"
@@ -71,7 +74,7 @@ ExternalProject_Add(clip-deps
         -DCMAKE_CXX_FLAGS=${PYTHON_EXTRA_CMAKE_CXX_FLAGS}
         -DCLIP_EXAMPLES=OFF
         -DCLIP_TESTS=OFF
-        -DCLIP_X11_WITH_PNG=OFF
+        -DCLIP_X11_WITH_PNG=${CLIP_X11_WITH_PNG}
   # Now handled in deps/clip/CMakeLists.txt, otherwise this leads
   # to issues with Visual Studio 2019 as it cannot find an INSTALL
   # target in the external project.

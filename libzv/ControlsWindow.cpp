@@ -188,6 +188,12 @@ void ControlsWindow::openImage ()
                                            10000 /* vCountSelectionMax */);
 }
 
+#if PLATFORM_MACOS
+# define CtrlOrCmd_Str "Cmd"
+#else
+# define CtrlOrCmd_Str "Ctrl"
+#endif
+
 void ControlsWindow::renderFrame ()
 {
     const auto frameInfo = impl->imguiGlfwWindow.beginFrame ();
@@ -246,7 +252,7 @@ void ControlsWindow::renderFrame ()
                 //     imageWindow->saveCurrentImage ();
                 // }
 
-                if (ImGui::MenuItem("Open Image", "Ctrl + o", false))
+                if (ImGui::MenuItem("Open Image", CtrlOrCmd_Str "+o", false))
                 {
                     impl->viewer->onOpenImage();
                 }
@@ -258,6 +264,15 @@ void ControlsWindow::renderFrame ()
 
                 ImGui::EndMenu();
             }
+
+            if (ImGui::BeginMenu("Edit"))
+            {
+                if (ImGui::MenuItem("Paste from clipboard", CtrlOrCmd_Str "+v", false))
+                {
+                    imageWindow->processKeyEvent(GLFW_KEY_C);
+                }
+                ImGui::EndMenu();
+            }            
 
             if (ImGui::BeginMenu("View"))
             {

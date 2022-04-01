@@ -51,8 +51,7 @@ elseif(UNIX)
       if(HAVE_PNG_H AND PNG_LIBRARY)
         add_definitions(-DHAVE_PNG_H)
       endif()
-    endif()
-
+    endif()    
     list(APPEND CLIP_SOURCES clip_x11.cpp)
   else()
     list(APPEND CLIP_SOURCES clip_none.cpp)
@@ -60,6 +59,8 @@ elseif(UNIX)
 else()
   list(APPEND CLIP_SOURCES clip_none.cpp)
 endif()
+
+message("HAVE_PNG_H ${HAVE_PNG_H}")
 
 add_library(clip ${CLIP_SOURCES})
 

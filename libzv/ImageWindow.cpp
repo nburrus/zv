@@ -507,6 +507,15 @@ void ImageWindow::checkImguiGlobalImageKeyEvents ()
     }
 }
 
+inline bool CtrlOrCmd(ImGuiIO& io)
+{
+#if PLATFORM_MACOS
+    return io.KeySuper;
+#else
+    return io.KeyCtrl;
+#endif
+}
+
 void ImageWindow::processKeyEvent (int keycode)
 {
     auto& io = ImGui::GetIO();
@@ -522,7 +531,17 @@ void ImageWindow::processKeyEvent (int keycode)
         case GLFW_KEY_DOWN:
         case GLFW_KEY_SPACE: runAction(ImageWindowAction::View_NextImage); break;
 
-        case GLFW_KEY_C: runAction(ImageWindowAction::Edit_CopyCursorInfoToClipboard); break;
+        case GLFW_KEY_C: {
+            if (CtrlOrCmd(io))
+            {
+                runAction(ImageWindowAction::Edit_CopyImageToClipboard); 
+            }
+            else
+            {
+                runAction(ImageWindowAction::Edit_CopyCursorInfoToClipboard); 
+            }            
+            break;
+        }
 
         case GLFW_KEY_S:
         {
@@ -537,7 +556,7 @@ void ImageWindow::processKeyEvent (int keycode)
         case GLFW_KEY_O:
         {
             // No image saving for now.
-            if (io.KeyCtrl)
+            if (CtrlOrCmd(io))
             {
                 runAction (ImageWindowAction::File_OpenImage);
             }
@@ -545,7 +564,17 @@ void ImageWindow::processKeyEvent (int keycode)
         }
 
         // View
-        case GLFW_KEY_V: runAction (ImageWindowAction::View_ToggleOverlay); break;
+        case GLFW_KEY_V: {
+            if (CtrlOrCmd(io))
+            {
+                runAction(ImageWindowAction::Edit_PasteImageFromClipboard); 
+            }
+            else
+            {
+                runAction (ImageWindowAction::View_ToggleOverlay);
+            }      
+            break;
+        }
         
         // Zoom
         case GLFW_KEY_N: runAction(ImageWindowAction::Zoom_Normal); break;
@@ -1188,6 +1217,16 @@ void ImageWindow::runAction (ImageWindowAction action)
         case ImageWindowAction::View_PrevImage: {
             const auto& range = impl->viewer->imageList().selectedRange();
             impl->viewer->imageList().advanceCurrentSelection (-range.indices.size());
+            break;
+        }
+
+        case ImageWindowAction::Edit_PasteImageFromClipboard: {
+            impl->viewer->addPastedImage ();
+            break;
+        }
+
+        case ImageWindowAction::Edit_CopyImageToClipboard: {
+            zv_dbg ("Not yet implemented.");
             break;
         }
 

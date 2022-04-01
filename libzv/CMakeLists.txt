@@ -130,6 +130,7 @@ if (APPLE)
     )
 elseif (UNIX)
     target_link_libraries(zv
+        png
         GL
         dl # for gl3w
         pthread
