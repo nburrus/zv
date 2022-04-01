@@ -177,13 +177,106 @@ namespace zv
 
 struct ImageList::Impl
 {
+    Impl ()
+    {
+        fillSelectedIndices();
+    }
+
     // Sorted set of images.
-    std::vector<ImageItemPtr> entries;
+    std::vector<ImageItemPtr> entries;        
+    std::vector<int> enabledEntries;
+
+    std::function<bool(const std::string& name)> filter;
 
     SelectionRange selection;
+    
+    // These refer to the enabledEntries array.
+    int selectionStart = 0;
+    int selectionCount = 1;
+    
+    // This one refer to the global entries array.
+    // It might be selected or not.
+    int globalSelectionStart = 0;
 
     ImageItemCache cache;
+
+    void fillSelectedIndices ();
+    void selectClosestEnabledEntry (int globalIndex);
+    void applyFilter ();
+    void updateFilterAfterAddImage ();
+    void dumpSelectionState(const char* label);
 };
+
+void ImageList::Impl::dumpSelectionState(const char* label)
+{
+    // zv_dbg ("(%s) NSEL=%d START=%d COUNT=%d GLOBAL_START=%d", label, (int)enabledEntries.size(), selectionStart, selectionCount, globalSelectionStart);
+}
+
+// Much faster version that only checks if something changed after the addition.
+// Critical to have this when launching zv with tons of input images.
+void ImageList::Impl::updateFilterAfterAddImage ()
+{
+    entries.back()->disabled = filter && !filter(entries.back()->prettyName);
+
+    if (!entries.back()->disabled)
+    {
+        enabledEntries.push_back (entries.size() - 1);
+        if (selection.indices.back() < 0)
+            fillSelectedIndices ();
+    }
+}
+
+void ImageList::Impl::applyFilter ()
+{
+    enabledEntries.clear ();
+    enabledEntries.reserve (entries.size());
+    for (int i = 0; i < entries.size(); ++i)
+    {
+        auto& e = entries[i];
+        e->disabled = filter ? !filter(e->prettyName) : false;
+        if (!e->disabled)
+            enabledEntries.push_back (i);
+    }
+
+    selectClosestEnabledEntry (globalSelectionStart);
+    fillSelectedIndices ();
+}
+
+void ImageList::Impl::selectClosestEnabledEntry (int globalIndex)
+{
+    auto it = std::lower_bound (enabledEntries.begin(), enabledEntries.end(), globalIndex);
+    // Can't find something past it? Try before.
+    if (it == enabledEntries.end())
+    {
+        it = std::upper_bound (enabledEntries.begin(), enabledEntries.end(), globalIndex);
+    }
+
+    if (it != enabledEntries.end())
+    {
+        selectionStart = it - enabledEntries.begin();
+    }
+    else
+    {
+        selectionStart = 0; // reset it entirely.
+    }
+}
+
+void ImageList::Impl::fillSelectedIndices ()
+{
+    selection.indices.resize (selectionCount);
+    for (int i = 0; i < selectionCount; ++i)
+    {
+        int idxInSelectedEntries = selectionStart + i;
+        if (idxInSelectedEntries >= 0 && idxInSelectedEntries < enabledEntries.size())
+        {
+            selection.indices[i] = enabledEntries[idxInSelectedEntries];
+        }
+        else
+        {
+            selection.indices[i] = -1;
+        }
+    }
+}
 
 ImageList::ImageList()
 : impl (new Impl())
@@ -204,32 +297,58 @@ int ImageList::numImages () const
     return impl->entries.size();
 }
 
-SelectionRange ImageList::selectedRange() const
+int ImageList::numEnabledImages () const
+{
+    return impl->enabledEntries.size();
+}
+
+const SelectionRange& ImageList::selectedRange() const
 {
     return impl->selection;
 }
 
-void ImageList::setSelectionCount(int count)
+void ImageList::setFilter (std::function<bool(const std::string& name)>&& filter)
 {
-    zv_assert (impl->selection.count > 0, "Invalid selection range.");
-    impl->selection.count = count;
-    while (impl->selection.startIndex + count <= 0)
-        ++impl->selection.startIndex;
+    impl->filter = std::move(filter);
+    impl->applyFilter ();
+    impl->dumpSelectionState ("setFilter");
 }
 
-void ImageList::setSelectionStart (int index)
+void ImageList::advanceCurrentSelection (int count)
 {
-    if (index >= (int)impl->entries.size())
+    int index = impl->selectionStart + count;
+
+    while (index >= (int)impl->enabledEntries.size())
     {
-        return;
+        index -= impl->selectionCount;
+        impl->dumpSelectionState ("advanceCurrentSelection - early return");
     }
 
-    while ((index + impl->selection.count) <= 0)
+    while ((index + impl->selectionCount) <= 0)
     {
-        index += impl->selection.count;
+        index += impl->selectionCount;
     }
 
-    impl->selection.startIndex = index;
+    impl->selectionStart = index;
+    impl->fillSelectedIndices ();
+    if (impl->selection.firstValidIndex() >= 0)
+        impl->globalSelectionStart = impl->selection.indices[impl->selection.firstValidIndex()];
+    impl->dumpSelectionState ("advanceCurrentSelection");
+}
+
+void ImageList::setSelectionStart (int globalIndex)
+{
+    impl->globalSelectionStart = globalIndex;
+    impl->selectClosestEnabledEntry (globalIndex);
+    impl->fillSelectedIndices();
+    impl->dumpSelectionState ("setSelectionStart");
+}
+
+void ImageList::setSelectionCount (int count)
+{
+    impl->selectionCount = count;
+    impl->fillSelectedIndices ();
+    impl->dumpSelectionState ("setSelectionCount");
 }
 
 void ImageList::refreshPrettyFileNames ()
@@ -275,7 +394,7 @@ ImageId ImageList::addImage (std::unique_ptr<ImageItem> image, int insertPositio
     {
         removeImage (0);
     }
-
+ 
     if (insertPosition < 0)
         insertPosition = numImages();
 
@@ -297,6 +416,9 @@ ImageId ImageList::addImage (std::unique_ptr<ImageItem> image, int insertPositio
 
     // FIXME: using a vector with front insertion is not great. Could use a list for once, I guess.
     impl->entries.insert (impl->entries.begin() + insertPosition, std::move(image));
+
+    impl->updateFilterAfterAddImage ();
+    impl->dumpSelectionState ("addImage");
     return imageId;
 }
 
@@ -306,6 +428,8 @@ void ImageList::removeImage (int index)
     const ImageItem* item = impl->entries[index].get();
     impl->cache.removeItem (item);
     impl->entries.erase (impl->entries.begin() + index);
+    impl->applyFilter ();
+    impl->dumpSelectionState ("removeImage");
 }
 
 ImageItemDataPtr ImageList::getData (ImageItem* entry)

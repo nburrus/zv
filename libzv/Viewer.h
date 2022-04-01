@@ -50,7 +50,7 @@ public:
     void renderFrame ();
 
 public:
-    ImageId addImageFromFile (const std::string& imagePath);
+    ImageId addImageFromFile (const std::string& imagePath, bool replaceExisting = true);
     ImageId addImageData (const ImageSRGBA& image, const std::string& imageName, int insertPos = -1, bool replaceExisting = true);
     ImageId addPastedImage ();
     ImageId selectedImage () const;

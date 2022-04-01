@@ -82,6 +82,9 @@ struct ImageItem
 
     Metadata metadata;
 
+    // Disabled by the name filter?
+    bool disabled = false;
+
     // Could add thumbnail, etc.
     // Everything should be lazy though.
 };
@@ -119,13 +122,23 @@ struct ImageItemAndData
 
 struct SelectionRange
 {
-    // Can be negative if count is > 1
-    // The only invariant is that [startIndex, startIndex + count]
-    // _overlaps_ with [0, numImages]. But it does not have to be
-    // fully included. This allows to handle layouts with more than
-    // one images by jumping by count everytime.
-    int startIndex = 0;    
-    int count = 1;
+    bool isSelected (int idx) const
+    {
+        for (const auto& k : indices)
+            if (k == idx)
+                return true;
+        return false;
+    }
+
+    int firstValidIndex () const
+    {
+        for (int i = 0; i < indices.size(); ++i)
+            if (indices[i] >= 0)
+                return i;
+        return -1;
+    }
+
+    std::vector<int> indices;
 };
 
 class ImageList
@@ -136,10 +149,14 @@ public:
 
 public:
     int numImages () const;
+    int numEnabledImages () const;
     
-    SelectionRange selectedRange() const;
+    void setFilter (std::function<bool(const std::string& name)>&& filter);
+
+    const SelectionRange& selectedRange() const;
+    void advanceCurrentSelection (int count);
+    void setSelectionStart (int startIndex);
     void setSelectionCount (int count);
-    void setSelectionStart (int index);
 
     const ImageItemPtr& imageItemFromIndex (int index);
     ImageItemPtr imageItemFromId (ImageId imageId);

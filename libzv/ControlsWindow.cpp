@@ -180,6 +180,7 @@ void ControlsWindow::repositionAfterNextRendering (const zv::Rect& viewerWindowG
 
 void ControlsWindow::openImage ()
 {
+    ImGuiFileDialog::Instance()->SetFileStyle(IGFD_FileStyleByTypeLink, "", ImVec4(1.0f, 1.0f, 0.0f, 1.0f));
     ImGuiFileDialog::Instance()->OpenModal("ChooseImageDlgKey",
                                            "Open Image",
                                            "Image files (*.png *.bmp *.gif *.jpg *.jpeg *.pnm){.png,.bmp,.gif,.jpg,.jpeg,.pnm,.pgm}",
@@ -200,16 +201,18 @@ void ControlsWindow::renderFrame ()
         setEnabled (false);
     }
 
-    if (ImGui::IsKeyPressed(GLFW_KEY_Q))
+    if (!io.WantCaptureKeyboard)
     {
-        impl->viewer->onDismissRequested();
-    }
+        if (ImGui::IsKeyPressed(GLFW_KEY_Q))
+        {
+            impl->viewer->onDismissRequested();
+        }
 
-    if (ImGui::IsKeyPressed(GLFW_KEY_ESCAPE))
-    {
-        impl->viewer->onToggleControls();
-    }
-    
+        if (ImGui::IsKeyPressed(GLFW_KEY_ESCAPE))
+        {
+            impl->viewer->onToggleControls();
+        }
+    }    
 
     // ImGui::ShowDemoWindow();
     
@@ -353,13 +356,23 @@ void ControlsWindow::renderFrame ()
 
         ImageList& imageList = impl->viewer->imageList();
         
+        static ImGuiTextFilter filter;
+        const std::string filterTitle = "Filter files";
+        const float filterWidth = ImGui::GetFontSize() * 16;
+        // const float filterWidth = contentSize.x - ImGui::CalcTextSize(filterTitle.c_str()).x;        
+        if (filter.Draw(filterTitle.c_str(), filterWidth))
+        {
+            imageList.setFilter ([](const std::string& s) {
+                return filter.PassFilter (s.c_str());
+            });
+        }
+
+        contentSize = ImGui::GetContentRegionAvail();
         ImGuiTableFlags flags = ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY;
         if (ImGui::BeginTable("Images", 2, flags, ImVec2(0,contentSize.y - overlayHeight)))
         {
             const float availableWidth = contentSize.x;
-            const SelectionRange selectionRange =  imageList.selectedRange();
-            const int minSelectedIndex = selectionRange.startIndex;
-            const int maxSelectedIndex = selectionRange.startIndex + selectionRange.count;
+            const SelectionRange& selectionRange =  imageList.selectedRange();
 
             ImGui::TableSetupColumn("Name");
             ImGui::TableSetupColumn("Size", ImGuiTableColumnFlags_WidthFixed);
@@ -368,10 +381,14 @@ void ControlsWindow::renderFrame ()
             for (int idx = 0; idx < imageList.numImages(); ++idx)
             {
                 const ImageItemPtr& itemPtr = imageList.imageItemFromIndex(idx);
-                bool selected = (idx >= minSelectedIndex && idx < maxSelectedIndex);
-                const std::string& name = itemPtr->prettyName;
+                if (itemPtr->disabled) // from the filter.
+                    continue;
 
-                if (idx == minSelectedIndex && impl->lastSelectedIdx != minSelectedIndex)
+                const int minSelectedIndex = selectionRange.indices[0];
+                bool selected = selectionRange.isSelected(idx);
+                const std::string& name = itemPtr->prettyName;                
+
+                if (selected && impl->lastSelectedIdx != idx && idx == minSelectedIndex)
                 {
                     ImGui::SetScrollHereY();
                     impl->lastSelectedIdx = idx;
@@ -379,11 +396,13 @@ void ControlsWindow::renderFrame ()
 
                 ImGui::TableNextRow();
                 ImGui::TableNextColumn();
-                if (ImGui::Selectable(name.c_str(), selected, ImGuiSelectableFlags_SpanAllColumns) && idx != minSelectedIndex)
+                if (ImGui::Selectable(name.c_str(), selected, ImGuiSelectableFlags_SpanAllColumns))
                 {
+                    // Always trigger this since the global index might change if the current filter
+                    // limited the options.
                     imageList.setSelectionStart (idx);
                     impl->lastSelectedIdx = idx;
-                }                
+                }
 
                 if (!itemPtr->sourceImagePath.empty()
                     && zv::IsItemHovered(ImGuiHoveredFlags_RectOnly, 0.5))

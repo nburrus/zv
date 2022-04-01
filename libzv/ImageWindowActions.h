@@ -26,6 +26,8 @@ enum class ImageWindowAction
     View_ToggleOverlay,
     View_NextImage,
     View_PrevImage,
+    View_NextPageOfImage,
+    View_PrevPageOfImage,
 };
 
 } // zv

@@ -240,21 +240,23 @@ void ImageWindow::Impl::adjustForNewSelection ()
     this->monitorSize = ImVec2(mode->width, mode->height);
 
     ImageList& imageList = this->viewer->imageList();
-    const auto selectedRange = imageList.selectedRange();
-    const int firstSelectionIndex = imageList.selectedRange().startIndex;
-    const int firstValidSelectionIndex = std::max(firstSelectionIndex, 0);
-    const int firstValidImageIndex = firstValidSelectionIndex - firstSelectionIndex;
+    const auto& selectedRange = imageList.selectedRange();
+    const int firstValidSelectionIndex = selectedRange.firstValidIndex();    
     
+    // Can't adjust anything if the selection has no valid images.
+    if (firstValidSelectionIndex < 0)
+        return;
+
     this->imguiGlfwWindow.enableContexts ();
     
     // It's very important that this gets called while the GL context is bound
     // as it may release some GLTexture in the cache. Would be nice to make this
     // code more robust.
     this->currentImages.resize (this->mutableState.layoutConfig.numImages());
-    zv_assert (selectedRange.count <= this->currentImages.size(), "Inconsistent sizes");
+    zv_assert (selectedRange.indices.size() == this->currentImages.size(), "Inconsistent state");
     for (int i = 0; i < this->currentImages.size(); ++i)
     {
-        const int selectionIndex = firstSelectionIndex + i;
+        const int selectionIndex = selectedRange.indices[i];
         if (selectionIndex >= 0 && selectionIndex < imageList.numImages())
         {
             this->currentImages[i].item = imageList.imageItemFromIndex(selectionIndex);
@@ -274,7 +276,7 @@ void ImageWindow::Impl::adjustForNewSelection ()
         else
         {
             // Make sure that we clear it.
-            zv_assert (i != firstValidImageIndex, "We expected data for this one!");
+            zv_assert (i != firstValidSelectionIndex, "We expected data for this one!");
             this->currentImages[i] = {};
         }
     }
@@ -283,7 +285,7 @@ void ImageWindow::Impl::adjustForNewSelection ()
     bool layoutChanged = this->currentLayout.adjustForConfig(this->mutableState.layoutConfig);
         
     // The first image will decide for all the other sizes.
-    const auto& firstIm = *this->currentImages[firstValidImageIndex].data->cpuData;
+    const auto& firstIm = *this->currentImages[firstValidSelectionIndex].data->cpuData;
 
     if (!this->imageWidgetRect.normal.origin.isValid())
     {
@@ -481,9 +483,12 @@ void ImageWindow::checkImguiGlobalImageKeyEvents ()
     // These key events are valid also in the control window.
     auto& io = ImGui::GetIO();
 
+    if (io.WantCaptureKeyboard)
+        return;
+
     for (const auto code : {
             GLFW_KEY_1, GLFW_KEY_2, GLFW_KEY_3, GLFW_KEY_4, 
-            GLFW_KEY_UP, GLFW_KEY_DOWN, GLFW_KEY_LEFT, GLFW_KEY_RIGHT,
+            GLFW_KEY_UP, GLFW_KEY_DOWN, GLFW_KEY_LEFT, GLFW_KEY_RIGHT, GLFW_KEY_PAGE_UP, GLFW_KEY_PAGE_DOWN,
             GLFW_KEY_O, GLFW_KEY_S, GLFW_KEY_W, 
             GLFW_KEY_N, GLFW_KEY_A, GLFW_KEY_V, GLFW_KEY_PERIOD, GLFW_KEY_COMMA, GLFW_KEY_M,
             GLFW_KEY_C,
@@ -511,6 +516,9 @@ void ImageWindow::processKeyEvent (int keycode)
         case GLFW_KEY_UP:
         case GLFW_KEY_BACKSPACE: runAction(ImageWindowAction::View_PrevImage); break;
 
+        case GLFW_KEY_PAGE_DOWN: runAction(ImageWindowAction::View_NextPageOfImage); break;
+        case GLFW_KEY_PAGE_UP: runAction(ImageWindowAction::View_PrevPageOfImage); break;
+        
         case GLFW_KEY_DOWN:
         case GLFW_KEY_SPACE: runAction(ImageWindowAction::View_NextImage); break;
 
@@ -751,12 +759,19 @@ void ImageWindow::renderFrame ()
     contentChanged |= impl->currentImages.empty();
     if (!contentChanged)
     {
-        const auto selectionRange = imageList.selectedRange();
+        const auto& selectionRange = imageList.selectedRange();
         for (int idx = 0; idx < impl->currentImages.size(); ++idx)
         {
-            const int imageListIdx = selectionRange.startIndex + idx;
-            if (imageListIdx < 0)
+            if (idx >= selectionRange.indices.size())
                 continue;
+            
+            const int imageListIdx = selectionRange.indices[idx];
+            if (imageListIdx < 0)
+            {
+                // If we have data for this guy, we need to clear it.
+                contentChanged = (bool)impl->currentImages[idx].data;
+                continue;
+            }
             
             if (!impl->currentImages[idx].data)
             {
@@ -1151,15 +1166,28 @@ void ImageWindow::runAction (ImageWindowAction action)
             break;
         }
 
+        case ImageWindowAction::View_NextPageOfImage:
+        case ImageWindowAction::View_PrevPageOfImage: {
+            auto& imageList = impl->viewer->imageList();
+            const auto& range = impl->viewer->imageList().selectedRange();
+            const int n = imageList.numEnabledImages();
+            const int count = range.indices.size();
+            const int step = 2 + ((n * 0.1f) / count); // advance by 10% each time, at least 2
+            const int finalStep = range.indices.size() * step;
+            bool forward = (action == ImageWindowAction::View_NextPageOfImage);
+            impl->viewer->imageList().advanceCurrentSelection (forward ? finalStep : -finalStep);
+            break;
+        }
+
         case ImageWindowAction::View_NextImage: {
-            const auto range = impl->viewer->imageList().selectedRange();
-            impl->viewer->imageList().setSelectionStart (range.startIndex + range.count);
+            const auto& range = impl->viewer->imageList().selectedRange();
+            impl->viewer->imageList().advanceCurrentSelection (range.indices.size());
             break;
         }
 
         case ImageWindowAction::View_PrevImage: {
-            const auto range = impl->viewer->imageList().selectedRange();
-            impl->viewer->imageList().setSelectionStart (range.startIndex - range.count);
+            const auto& range = impl->viewer->imageList().selectedRange();
+            impl->viewer->imageList().advanceCurrentSelection (-range.indices.size());
             break;
         }
 

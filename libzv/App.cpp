@@ -136,7 +136,7 @@ bool App::initialize (const std::vector<std::string>& args)
        zv_dbg("%d images provided", (int)images.size());
 
        for (const auto &im : images)
-           defaultViewer->addImageFromFile(im);
+           defaultViewer->addImageFromFile(im, false /* no need to check for existing */);
 
         defaultViewer->refreshPrettyFileNames ();
    }

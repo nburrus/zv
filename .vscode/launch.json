@@ -57,13 +57,13 @@
                     "ignoreFailures": true
                 }
             ],
-            "args": [ "--port", "4207" ],
-            // "args": [ 
-            //     "${workspaceFolder}/tests/rgbgrid.png", 
-            //     "${workspaceFolder}/tests/rgbgrid_small.png",
-            //     "${workspaceFolder}/tests/brettel1997_protan_wn_1.0.png",
-            //     "${workspaceFolder}/tests/brettel1997_tritan_wn_1.0.png",
-            //  ],
+            // "args": [ "--port", "4207" ],
+            "args": [ 
+                "${workspaceFolder}/tests/rgbgrid.png", 
+                "${workspaceFolder}/tests/rgbgrid_small.png",
+                "${workspaceFolder}/tests/brettel1997_protan_wn_1.0.png",
+                "${workspaceFolder}/tests/brettel1997_tritan_wn_1.0.png",
+             ],
             // "args": [ "/common/folderA/foo.png", "/common/folderB/foo.png" ]
         },
 

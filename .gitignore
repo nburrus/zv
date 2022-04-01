@@ -39,3 +39,4 @@ imgui.ini
 
 # Python packaging
 *.egg-info/
+__pycache__/
