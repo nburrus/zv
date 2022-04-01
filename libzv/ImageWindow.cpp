@@ -1118,6 +1118,24 @@ void ImageWindow::renderFrame ()
     // DaltonLensPrefs::setDaltonizeDeficiencyKind((int)impl->mutableState.daltonizeParams.kind);
 }
 
+void copyToClipboard (const ImageSRGBA& im)
+{
+    clip::image_spec spec;
+    spec.width = im.width();
+    spec.height = im.height();
+    spec.bits_per_pixel = 32;
+    spec.bytes_per_row = im.bytesPerRow();
+    spec.red_mask = 0xff;
+    spec.green_mask = 0xff00;
+    spec.blue_mask = 0xff0000;
+    spec.alpha_mask = 0xff000000;
+    spec.red_shift = 8*0;
+    spec.green_shift = 8*1;
+    spec.blue_shift = 8*2;
+    spec.alpha_shift = 8*3;
+    clip::set_image (clip::image(im.rawBytes(), spec));
+}
+
 void ImageWindow::runAction (ImageWindowAction action)
 {
     switch (action)
@@ -1226,7 +1244,14 @@ void ImageWindow::runAction (ImageWindowAction action)
         }
 
         case ImageWindowAction::Edit_CopyImageToClipboard: {
-            zv_dbg ("Not yet implemented.");
+            for (int i = 0; i < impl->currentImages.size(); ++i)
+            {
+                if (impl->currentImages[i].hasValidData())
+                {
+                    copyToClipboard (*impl->currentImages[i].data->cpuData);
+                    break;
+                }
+            }
             break;
         }
 

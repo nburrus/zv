@@ -267,9 +267,13 @@ void ControlsWindow::renderFrame ()
 
             if (ImGui::BeginMenu("Edit"))
             {
-                if (ImGui::MenuItem("Paste from clipboard", CtrlOrCmd_Str "+v", false))
+                if (ImGui::MenuItem("Copy to clipboard", CtrlOrCmd_Str "+c", false))
                 {
                     imageWindow->processKeyEvent(GLFW_KEY_C);
+                }
+                if (ImGui::MenuItem("Paste from clipboard", CtrlOrCmd_Str "+v", false))
+                {
+                    imageWindow->processKeyEvent(GLFW_KEY_V);
                 }
                 ImGui::EndMenu();
             }            
