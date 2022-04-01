@@ -399,11 +399,12 @@ void ControlsWindow::renderFrame ()
                 if (itemPtr->disabled) // from the filter.
                     continue;
 
-                const int minSelectedIndex = selectionRange.indices[0];
+                const int firstValidSelectionIndex = selectionRange.firstValidIndex();
+                const int minSelectedImageIndex = firstValidSelectionIndex >= 0 ? selectionRange.indices[firstValidSelectionIndex] : -1;
                 bool selected = selectionRange.isSelected(idx);
                 const std::string& name = itemPtr->prettyName;                
 
-                if (selected && impl->lastSelectedIdx != idx && idx == minSelectedIndex)
+                if (selected && impl->lastSelectedIdx != idx && idx == minSelectedImageIndex)
                 {
                     ImGui::SetScrollHereY();
                     impl->lastSelectedIdx = idx;
@@ -411,6 +412,7 @@ void ControlsWindow::renderFrame ()
 
                 ImGui::TableNextRow();
                 ImGui::TableNextColumn();
+                ImGui::PushID(idx);
                 if (ImGui::Selectable(name.c_str(), selected, ImGuiSelectableFlags_SpanAllColumns))
                 {
                     // Always trigger this since the global index might change if the current filter
@@ -418,6 +420,7 @@ void ControlsWindow::renderFrame ()
                     imageList.setSelectionStart (idx);
                     impl->lastSelectedIdx = idx;
                 }
+                ImGui::PopID();
 
                 if (!itemPtr->sourceImagePath.empty()
                     && zv::IsItemHovered(ImGuiHoveredFlags_RectOnly, 0.5))
