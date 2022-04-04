@@ -80,6 +80,7 @@ struct Viewer::Impl
 
         bool activateControls = state.toggleControlsRequested && !controlsWindow.isEnabled();
         activateControls |= state.openImageRequested;
+        activateControls |= state.pendingChangesConfirmationRequested;
 
         if (activateControls)
         {
@@ -110,6 +111,13 @@ struct Viewer::Impl
                 controlsWindow.openImage ();
                 state.openImageRequested = false;
             }
+
+            if (state.pendingChangesConfirmationRequested)
+            {
+                controlsWindow.confirmPendingChanges ();
+                state.pendingChangesConfirmationRequested = false;
+            }
+
             controlsWindow.renderFrame();
         }
     }
@@ -225,6 +233,35 @@ void Viewer::onToggleControls()
 void Viewer::onImageWindowGeometryUpdated (const Rect& geometry)
 {
     impl->controlsWindow.repositionAfterNextRendering (geometry, true /* show by default */);
+}
+
+void Viewer::onPendingChangedConfirmed(Confirmation result)
+{
+    if (result == Confirmation::Ok)
+    {
+        impl->controlsWindow.saveAllChanges ();
+    }
+    else if (result == Confirmation::Discard)
+    {
+        impl->imageWindow.discardAllChanges ();
+        auto func = std::move(impl->state.funcIfChangesConfirmed);
+        impl->state.funcIfChangesConfirmed = nullptr;
+        func();
+    }
+    else if (result == Confirmation::Cancel)
+    {
+        // Discard the callback.
+        impl->state.funcIfChangesConfirmed = {};
+    }
+}
+
+void Viewer::onAllChangesSaved ()
+{
+    if (!impl->state.funcIfChangesConfirmed)
+        return;
+    auto func = std::move(impl->state.funcIfChangesConfirmed);
+    impl->state.funcIfChangesConfirmed = nullptr;
+    func();
 }
 
 ImageWindow* Viewer::imageWindow()
@@ -393,6 +430,16 @@ void Viewer::setLayout (int nrows, int ncols)
 void Viewer::runAction (ImageWindowAction action)
 {
     impl->imageWindow.addCommand (ImageWindow::actionCommand(action));
+}
+
+void Viewer::runAfterConfirmingPendingChanges (std::function<void(void)>&& func)
+{
+    // Already a pending confirmation, skip.
+    if (impl->state.funcIfChangesConfirmed)
+        return;
+
+    impl->state.funcIfChangesConfirmed = std::move(func);
+    impl->state.pendingChangesConfirmationRequested = true;
 }
 
 } // zv

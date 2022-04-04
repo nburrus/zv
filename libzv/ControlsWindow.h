@@ -42,7 +42,10 @@ public:
     void setEnabled (bool enabled);
     bool isEnabled () const;    
     void bringToFront ();
+    
     void openImage ();
+    void saveAllChanges ();
+    void confirmPendingChanges ();
     
 private:
     struct Impl;

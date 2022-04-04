@@ -56,7 +56,32 @@ struct ControlsWindow::Impl
     ImVec2 windowSizeAtCurrentDpi = ImVec2(-1,-1);
     
     ImageCursorOverlay cursorOverlay;
+
+    bool saveAllChanges = false;
+    bool askToConfirmPendingChanges = false;
+
+    ModifiedImagePtr modImToSave = nullptr;
+    void saveNextModifiedImage ();
 };
+
+void ControlsWindow::Impl::saveNextModifiedImage ()
+{
+    auto* imageWindow = viewer->imageWindow();
+    modImToSave = imageWindow->getFirstModifiedImage();
+    if (!modImToSave)
+    {
+        viewer->onAllChangesSaved ();
+        return;
+    }
+
+    ImGuiFileDialog::Instance()->OpenModal("SaveImageDlgKey",
+                                           "Save Image",
+                                           "Image files (*.png *.bmp *.gif *.jpg *.jpeg *.pnm){.png,.bmp,.gif,.jpg,.jpeg,.pnm,.pgm}",
+                                           modImToSave->item()->sourceImagePath.empty() ? "new_image.png" : modImToSave->item()->sourceImagePath,
+                                           1, /* vCountSelectionMax */
+                                           nullptr,
+                                           ImGuiFileDialogFlags_ConfirmOverwrite);
+}
 
 ControlsWindow::ControlsWindow()
 : impl (new Impl ())
@@ -180,12 +205,21 @@ void ControlsWindow::repositionAfterNextRendering (const zv::Rect& viewerWindowG
 
 void ControlsWindow::openImage ()
 {
-    ImGuiFileDialog::Instance()->SetFileStyle(IGFD_FileStyleByTypeLink, "", ImVec4(1.0f, 1.0f, 0.0f, 1.0f));
     ImGuiFileDialog::Instance()->OpenModal("ChooseImageDlgKey",
                                            "Open Image",
                                            "Image files (*.png *.bmp *.gif *.jpg *.jpeg *.pnm){.png,.bmp,.gif,.jpg,.jpeg,.pnm,.pgm}",
                                            ".",
                                            10000 /* vCountSelectionMax */);
+}
+
+void ControlsWindow::saveAllChanges ()
+{
+    impl->saveNextModifiedImage ();
+}
+
+void ControlsWindow::confirmPendingChanges ()
+{
+    impl->askToConfirmPendingChanges = true;
 }
 
 #if PLATFORM_MACOS
@@ -383,6 +417,57 @@ void ControlsWindow::renderFrame ()
             ImGuiFileDialog::Instance()->Close();
         }
 
+        if (ImGuiFileDialog::Instance()->Display("SaveImageDlgKey", ImGuiWindowFlags_NoCollapse, contentSize, contentSize))
+        {
+            if (ImGuiFileDialog::Instance()->IsOk() == true)
+            {
+                // map<FileName, FilePathName>
+                std::string outputPath = ImGuiFileDialog::Instance()->GetFilePathName();
+                zv_dbg ("outputPath: %s", outputPath.c_str());
+                impl->modImToSave->discardChanges ();
+            }
+            // close
+            ImGuiFileDialog::Instance()->Close();
+            impl->saveNextModifiedImage ();
+        }
+
+        if (impl->askToConfirmPendingChanges)
+        {
+            ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+            ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+            ImGui::OpenPopup("Confirm pending changes?");
+            if (ImGui::BeginPopupModal("Confirm pending changes?", NULL, ImGuiWindowFlags_AlwaysAutoResize))
+            {
+                ImGui::Text("The current image has been modified.\n Save the pending changes?\n\n");
+                ImGui::Separator();
+
+                if (ImGui::Button("OK", ImVec2(120, 0)))
+                {
+                    impl->askToConfirmPendingChanges = false;
+                    impl->viewer->onPendingChangedConfirmed(Viewer::Confirmation::Ok);
+                    ImGui::CloseCurrentPopup();
+                }
+                ImGui::SetItemDefaultFocus();
+
+                ImGui::SameLine();
+                if (ImGui::Button("Discard", ImVec2(120, 0)))
+                {
+                    impl->askToConfirmPendingChanges = false;
+                    impl->viewer->onPendingChangedConfirmed(Viewer::Confirmation::Discard);
+                    ImGui::CloseCurrentPopup();
+                }
+
+                ImGui::SameLine();
+                if (ImGui::Button("Cancel Action", ImVec2(120, 0)))
+                {
+                    impl->askToConfirmPendingChanges = false;
+                    impl->viewer->onPendingChangedConfirmed(Viewer::Confirmation::Cancel);
+                    ImGui::CloseCurrentPopup();
+                }
+                ImGui::EndPopup();
+            }
+        }
+
         float overlayHeight = 0.f;
         const auto* cursorOverlayInfo = &imageWindow->cursorOverlayInfo();
         if (cursorOverlayInfo->valid())
@@ -465,41 +550,6 @@ void ControlsWindow::renderFrame ()
             }
             ImGui::EndTable();
         }
-
-        // if (ImGui::BeginListBox("##filelist", ImVec2(-FLT_MIN, 4 * ImGui::GetTextLineHeightWithSpacing())))
-        // {
-        //     const float availableWidth = ImGui::GetContentRegionAvail().x;
-        //     const int minSelectedIndex = imageList.selectedIndex();
-        //     const int maxSelectedIndex = minSelectedIndex + imageWindowState.layoutConfig.numImages();
-        //     for (int idx = 0; idx < imageList.numImages(); ++idx)
-        //     {
-        //         const ImageItemPtr& itemPtr = imageList.imageItemFromIndex(idx);
-        //         bool selected = (idx >= minSelectedIndex && idx < maxSelectedIndex);
-        //         const std::string& name = itemPtr->prettyName;
-                
-        //         // Make sure that the last part of the filename will be visible.
-        //         ImVec2 textSize = ImGui::CalcTextSize(name.c_str());
-        //         if (textSize.x > availableWidth)
-        //         {
-        //             ImGui::SetCursorPosX(availableWidth - textSize.x);
-        //         }
-        //         if (ImGui::Selectable(name.c_str(), selected) && idx != minSelectedIndex)
-        //         {
-        //             imageList.selectImage (idx);
-        //         }
-
-        //         if (!itemPtr->sourceImagePath.empty()
-        //             && zv::IsItemHovered(ImGuiHoveredFlags_RectOnly, 0.5))
-        //         {
-        //             ImGui::BeginTooltip();
-        //             ImGui::PushTextWrapPos(availableWidth);
-        //             ImGui::TextUnformatted(itemPtr->sourceImagePath.c_str());
-        //             ImGui::PopTextWrapPos();
-        //             ImGui::EndTooltip();
-        //         }
-        //     }
-        //     ImGui::EndListBox();
-        // }
                 
         if (cursorOverlayInfo->valid())
         {
@@ -530,10 +580,6 @@ void ControlsWindow::renderFrame ()
     // ImGui::PopStyleVar();
 
     ImGui::End();
-
-    // ImGui::ShowDemoWindow();
-    // ImGui::ShowUserGuide();
-    
     impl->imguiGlfwWindow.endFrame ();
     
     if (impl->updateAfterContentSwitch.showAfterNextRendering)

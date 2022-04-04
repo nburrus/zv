@@ -9,6 +9,7 @@
 #include <libzv/MathUtils.h>
 #include <libzv/Image.h>
 #include <libzv/ImageWindowActions.h>
+#include <libzv/Modifiers.h>
 
 #include <memory>
 #include <functional>
@@ -65,6 +66,9 @@ public:
     void checkImguiGlobalImageKeyEvents ();
     void checkImguiGlobalImageMouseEvents ();
     void saveCurrentImage ();
+    void discardAllChanges ();
+
+    ModifiedImagePtr getFirstModifiedImage();
 
 public:
     static Command actionCommand (ImageWindowAction action);

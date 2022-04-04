@@ -74,6 +74,14 @@ struct ModifiedImage
 
     bool hasPendingChanges () const { return !_modifiers.empty(); }
 
+    void discardChanges ()
+    {
+        if (_modifiers.empty ())
+            return;
+        _modifiers.clear ();
+        _modifiersChangedSinceLastUpdate = true;
+    }
+
     const ImageItemDataPtr& data() const { return _modifiers.empty() ? _originalData : _modifiers.back()->output(); }
     
     ImageItemPtr& item() { return _item; }

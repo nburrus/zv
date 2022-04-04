@@ -231,7 +231,31 @@ struct ImageWindow::Impl
         }
         this->shouldUpdateWindowSize = true;
     }
+
+    bool runAfterCheckingPendingChanges (std::function<void(void)>&& func);
 };
+
+bool ImageWindow::Impl::runAfterCheckingPendingChanges (std::function<void(void)>&& func)
+{
+    bool hasPendingChanges = false;
+    for (const auto& it : currentImages)
+    {
+        if (it != nullptr && it->hasPendingChanges())
+        {
+            hasPendingChanges = true;
+            break;
+        }
+    }
+
+    if (!hasPendingChanges)
+    {
+        func();
+        return true;
+    }
+
+    viewer->runAfterConfirmingPendingChanges(std::move(func));
+    return false;
+}
 
 void ImageWindow::Impl::adjustForNewSelection ()
 {
@@ -1254,8 +1278,10 @@ void ImageWindow::runAction (ImageWindowAction action)
         }
 
         case ImageWindowAction::View_NextImage: {
-            const auto& range = impl->viewer->imageList().selectedRange();
-            impl->viewer->imageList().advanceCurrentSelection (range.indices.size());
+            impl->runAfterCheckingPendingChanges ([this]() {
+                const auto& range = impl->viewer->imageList().selectedRange();
+                impl->viewer->imageList().advanceCurrentSelection (range.indices.size());
+            });
             break;
         }
 
@@ -1355,6 +1381,26 @@ ImageWindow::Command ImageWindow::layoutCommand(int numRows, int numCols)
         window.impl->mutableState.layoutConfig = config; 
         window.impl->viewer->imageList().setSelectionCount(config.numImages());
     });
+}
+
+void ImageWindow::discardAllChanges ()
+{
+    for (auto& it : impl->currentImages)
+    {
+        if (it)
+            it->discardChanges();
+    }
+}
+
+ModifiedImagePtr ImageWindow::getFirstModifiedImage()
+{
+    for (auto& it : impl->currentImages)
+    {
+        if (it && it->hasPendingChanges())
+            return it;
+    }
+
+    return nullptr;
 }
 
 } // zv
