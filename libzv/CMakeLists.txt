@@ -77,6 +77,8 @@ add_library(zv
     ImguiUtils.cpp
     ImguiUtils.h
     MathUtils.h
+    Modifiers.h
+    Modifiers.cpp
     OpenGL.cpp
     OpenGL.h
     OpenGL_Shaders.cpp

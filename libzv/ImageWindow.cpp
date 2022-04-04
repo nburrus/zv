@@ -138,7 +138,7 @@ struct ImageWindow::Impl
     ImguiGLFWWindow imguiGlfwWindow;
     Viewer* viewer = nullptr;
 
-    std::vector<ImageItemAndData> currentImages;
+    std::vector<ModifiedImagePtr> currentImages;
     ImageLayout currentLayout;
     
     ImageWindowState mutableState;
@@ -252,6 +252,7 @@ void ImageWindow::Impl::adjustForNewSelection ()
     // It's very important that this gets called while the GL context is bound
     // as it may release some GLTexture in the cache. Would be nice to make this
     // code more robust.
+    this->currentImages.clear ();
     this->currentImages.resize (this->mutableState.layoutConfig.numImages());
     zv_assert (selectedRange.indices.size() == this->currentImages.size(), "Inconsistent state");
     for (int i = 0; i < this->currentImages.size(); ++i)
@@ -259,17 +260,17 @@ void ImageWindow::Impl::adjustForNewSelection ()
         const int selectionIndex = selectedRange.indices[i];
         if (selectionIndex >= 0 && selectionIndex < imageList.numImages())
         {
-            this->currentImages[i].item = imageList.imageItemFromIndex(selectionIndex);
-            this->currentImages[i].data = imageList.getData(this->currentImages[i].item.get());
-            if (this->currentImages[i].hasValidData())
+            const auto& itemPtr = imageList.imageItemFromIndex(selectionIndex);
+            this->currentImages[i] = std::make_shared<ModifiedImage>(itemPtr, imageList.getData(itemPtr.get()));
+            if (this->currentImages[i]->hasValidData())
             {
-                auto &textureData = this->currentImages[i].data->textureData;
+                auto &textureData = this->currentImages[i]->data()->textureData;
                 if (!textureData)
                 {
                     textureData = std::make_unique<GLTexture>();
                     textureData->initialize();
                     // FIXME: not using the cache yet! GPU data releasing can be tricky.
-                    textureData->upload(*this->currentImages[i].data->cpuData);
+                    textureData->upload(*this->currentImages[i]->data()->cpuData);
                 }
             }
         }
@@ -285,7 +286,7 @@ void ImageWindow::Impl::adjustForNewSelection ()
     bool layoutChanged = this->currentLayout.adjustForConfig(this->mutableState.layoutConfig);
         
     // The first image will decide for all the other sizes.
-    const auto& firstIm = *this->currentImages[firstValidSelectionIndex].data->cpuData;
+    const auto& firstIm = *this->currentImages[firstValidSelectionIndex]->data()->cpuData;
 
     if (!this->imageWidgetRect.normal.origin.isValid())
     {
@@ -665,7 +666,7 @@ const CursorOverlayInfo& ImageWindow::cursorOverlayInfo() const
 //     updatedWindowGeometry = impl->updateAfterContentSwitch.targetWindowGeometry;
 // }
 
-void renderImageItem (const ImageItemAndData& item,
+void renderImageItem (const ModifiedImagePtr& modImagePtr,
                       const ImVec2& imageWidgetTopLeft,
                       const ImVec2& imageWidgetSize,
                       ZoomInfo& zoom,
@@ -691,8 +692,28 @@ void renderImageItem (const ImageItemAndData& item,
     uv0 += deltaToAdd;
     uv1 += deltaToAdd;
 
-    GLTexture* imageTexture = item.data->textureData.get();
+    GLTexture* imageTexture = modImagePtr->data()->textureData.get();
     
+    // GLFilter* activeFilter = impl->filterForMode(impl->mutableState.modeForCurrentFrame);
+    // if (activeFilter)
+    // {
+    //     impl->filterProcessor.render (
+    //         *activeFilter,
+    //         currentImage.gpuTexture.textureId (),
+    //         currentImage.gpuTexture.width (),
+    //         currentImage.gpuTexture.height ()
+    //     );
+    //     imageTexture = &impl->filterProcessor.filteredTexture();
+    // }
+
+    // if (impl->saveToFile.requested)
+    // {
+    //     impl->saveToFile.requested = false;
+    //     ImageSRGBA im;
+    //     imageTexture->download (im);
+    //     writePngImage (impl->saveToFile.outPath, im);
+    // }
+
     const bool hasZoom = zoom.zoomFactor != 1;
     const bool useLinearFiltering = imageSmallerThanNormal && !hasZoom;
     // Enable it just for that rendering otherwise the pointer overlay will get filtered too.
@@ -721,7 +742,7 @@ void renderImageItem (const ImageItemAndData& item,
                                                 imageTexture);
     }
 
-    const auto& currentIm = *item.data->cpuData;
+    const auto& currentIm = *modImagePtr->data()->cpuData;
 
     ImVec2 mousePosInImage (0,0);
     ImVec2 mousePosInTexture (0,0);
@@ -740,15 +761,15 @@ void renderImageItem (const ImageItemAndData& item,
 
     if (pointerOverTheImage)
     {
-        if (item.item->eventCallback)
+        if (modImagePtr->item()->eventCallback)
         {
-            item.item->eventCallback(item.item->uniqueId, mousePosInImage.x, mousePosInImage.y, item.item->eventCallbackData);
+            modImagePtr->item()->eventCallback(modImagePtr->item()->uniqueId, mousePosInImage.x, mousePosInImage.y, modImagePtr->item()->eventCallbackData);
         }
     }
 
     if (pointerOverTheImage && overlayInfo)
     {
-        overlayInfo->itemAndData = item;
+        overlayInfo->modImagePtr = modImagePtr;
         overlayInfo->showHelp = false;
         overlayInfo->imageWidgetSize = imageWidgetSize;
         overlayInfo->imageWidgetTopLeft = imageWidgetTopLeft;
@@ -798,11 +819,11 @@ void ImageWindow::renderFrame ()
             if (imageListIdx < 0)
             {
                 // If we have data for this guy, we need to clear it.
-                contentChanged = (bool)impl->currentImages[idx].data;
+                contentChanged = impl->currentImages[idx] && impl->currentImages[idx]->data();
                 continue;
             }
             
-            if (!impl->currentImages[idx].data)
+            if (!impl->currentImages[idx] || !impl->currentImages[idx]->data())
             {
                 // Was a new image added?
                 if (imageListIdx < imageList.numImages())
@@ -817,7 +838,7 @@ void ImageWindow::renderFrame ()
             }
             
             const ImageItemPtr& item = imageList.imageItemFromIndex (imageListIdx);
-            if (impl->currentImages[idx].item->uniqueId != item->uniqueId)
+            if (impl->currentImages[idx]->item()->uniqueId != item->uniqueId)
             {
                 contentChanged = true;
                 break;
@@ -829,9 +850,9 @@ void ImageWindow::renderFrame ()
     // finished, file changed..).
     for (int idx = 0; idx < impl->currentImages.size(); ++idx)
     {
-        if (impl->currentImages[idx].data && impl->currentImages[idx].update ())
+        if (impl->currentImages[idx] && impl->currentImages[idx]->update ())
         {
-            impl->currentImages[idx].data->textureData.reset ();
+            impl->currentImages[idx]->data()->textureData.reset ();
             contentChanged = true;
         }
     }
@@ -911,12 +932,15 @@ void ImageWindow::renderFrame ()
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0,0));
     bool isOpen = true;
     
-    int firstValidImageIndex = 0;
+    int firstValidImageIndex = -1;
     for (firstValidImageIndex = 0; firstValidImageIndex < impl->currentImages.size(); ++firstValidImageIndex)
-        if (impl->currentImages[firstValidImageIndex].item)
+        if (impl->currentImages[firstValidImageIndex])
             break;
 
-    std::string mainWindowName = "zv - " + impl->currentImages[firstValidImageIndex].item->prettyName;
+    // Since we add a default image, this should never happen.
+    zv_assert (firstValidImageIndex >= 0, "We should always have at least one valid image.");
+
+    std::string mainWindowName = "zv - " + impl->currentImages[firstValidImageIndex]->item()->prettyName;
     glfwSetWindowTitle(impl->imguiGlfwWindow.glfwWindow(), mainWindowName.c_str());
 
     if (ImGui::Begin((mainWindowName + "###Image").c_str(), &isOpen, flags))
@@ -942,7 +966,7 @@ void ImageWindow::renderFrame ()
         for (int c = 0; c < impl->currentLayout.config.numCols; ++c)
         {
             const int idx = r*impl->currentLayout.config.numCols + c;
-            if (idx < impl->currentImages.size() && impl->currentImages[idx].hasValidData())
+            if (idx < impl->currentImages.size() && impl->currentImages[idx] && impl->currentImages[idx]->hasValidData())
             {
                 const auto& rect = impl->currentLayout.imageRects[idx];
                 const ImVec2 imageWidgetSize = ImVec2(globalImageWidgetContentSize.x * rect.size.x, 
@@ -962,18 +986,18 @@ void ImageWindow::renderFrame ()
 
         for (int idx = 0; idx < impl->currentImages.size(); ++idx)
         {
-            if (!impl->currentImages[idx].data)
+            if (!impl->currentImages[idx])
                 continue;
             
-            if (!impl->currentImages[idx].data->cpuData->hasData())
+            if (!impl->currentImages[idx]->data()->cpuData->hasData())
             {
                 ImGui::SetCursorScreenPos (widgetGeometries[idx].topLeft);
-                switch (impl->currentImages[idx].data->status)
+                switch (impl->currentImages[idx]->data()->status)
                 {
                     case ImageItemData::Status::FailedToLoad: {
                         ImGui::TextColored(ImVec4(1, 0, 0, 1), "ERROR: could not load the image %s.\nPath: %s",
-                                   impl->currentImages[idx].item->prettyName.c_str(),
-                                   impl->currentImages[idx].item->sourceImagePath.c_str());
+                                   impl->currentImages[idx]->item()->prettyName.c_str(),
+                                   impl->currentImages[idx]->item()->sourceImagePath.c_str());
                         break;
                     }
 
@@ -1002,10 +1026,10 @@ void ImageWindow::renderFrame ()
         {            
             for (int idx = 0; idx < impl->currentImages.size(); ++idx)
             {
-                if (!impl->currentImages[idx].hasValidData())
+                if (!impl->currentImages[idx] || !impl->currentImages[idx]->hasValidData())
                     continue;
 
-                if (impl->cursorOverlayInfo.itemAndData.item->uniqueId == impl->currentImages[idx].item->uniqueId)
+                if (impl->cursorOverlayInfo.modImagePtr->item()->uniqueId == impl->currentImages[idx]->item()->uniqueId)
                     continue;
                 
                 ImVec2 deltaFromTopLeft = impl->cursorOverlayInfo.mousePos - impl->cursorOverlayInfo.imageWidgetTopLeft;
@@ -1027,10 +1051,10 @@ void ImageWindow::renderFrame ()
 
                 for (int idx = 0; idx < impl->currentImages.size(); ++idx)
                 {
-                    if (!impl->currentImages[idx].hasValidData())
+                    if (!impl->currentImages[idx] || !impl->currentImages[idx]->hasValidData())
                         continue;
                     
-                    const auto& im = *impl->currentImages[idx].data->cpuData;
+                    const auto& im = *impl->currentImages[idx]->data()->cpuData;
                     const ImVec2 imSize (im.width(), im.height());
                     ImVec2 mousePosInImage = impl->cursorOverlayInfo.mousePosInTexture * imSize;
                     const int cInImage = int(mousePosInImage.x);
@@ -1039,7 +1063,7 @@ void ImageWindow::renderFrame ()
                     PixelSRGBA sRgba = im(cInImage, rInImage);
                     const auto hsv = zv::convertToHSV(sRgba);
                     std::string caption = formatted("%s\n%4d, %4d (sRGB %3d %3d %3d) (HSV %3d %3d %3d)",
-                                                    impl->currentImages[idx].item->prettyName.c_str(),
+                                                    impl->currentImages[idx]->item()->prettyName.c_str(),
                                                     cInImage, rInImage,
                                                     sRgba.r, sRgba.g, sRgba.b,
                                                     intRnd(hsv.x*360.f), intRnd(hsv.y*100.f), intRnd(hsv.z*100.f/255.f));
@@ -1246,9 +1270,9 @@ void ImageWindow::runAction (ImageWindowAction action)
         case ImageWindowAction::Edit_CopyImageToClipboard: {
             for (int i = 0; i < impl->currentImages.size(); ++i)
             {
-                if (impl->currentImages[i].hasValidData())
-                {
-                    copyToClipboard (*impl->currentImages[i].data->cpuData);
+                if (impl->currentImages[i] && impl->currentImages[i]->hasValidData())
+                {                    
+                    copyToClipboard (*impl->currentImages[i]->data()->cpuData);
                     break;
                 }
             }
@@ -1259,7 +1283,7 @@ void ImageWindow::runAction (ImageWindowAction action)
             if (!impl->cursorOverlayInfo.valid())
                 break;
             
-            const auto& image = *impl->cursorOverlayInfo.itemAndData.data->cpuData;
+            const auto& image = *impl->cursorOverlayInfo.modImagePtr->data()->cpuData;
             ImVec2 mousePosInImage = impl->cursorOverlayInfo.mousePosInImage();
 
             if (!image.contains(mousePosInImage.x, mousePosInImage.y))

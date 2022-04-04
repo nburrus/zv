@@ -8,7 +8,7 @@
 
 #include <libzv/ImguiGLFWWindow.h>
 
-#include <libzv/ImageList.h>
+#include <libzv/Modifiers.h>
 #include <libzv/OpenGL.h>
 #include <libzv/Image.h>
 #include <libzv/MathUtils.h>
@@ -22,23 +22,23 @@ namespace zv
 
 struct CursorOverlayInfo
 {
-    bool valid() const { return itemAndData.data != nullptr; }
+    bool valid() const { return (bool)modImagePtr; }
     
     void clear ()
     {
-        itemAndData = {};
+        modImagePtr = {};
     }
 
     ImVec2 mousePosInImage() const
     {
-        const auto& image = *itemAndData.data->cpuData;
+        const auto& image = *modImagePtr->data()->cpuData;
         ImVec2 imageSize (image.width(), image.height());
         return mousePosInOriginalTexture() * imageSize;
     }
 
     ImVec2 mousePosInOriginalTexture() const
     {
-        const auto& image = *itemAndData.data->cpuData;
+        const auto& image = *modImagePtr->data()->cpuData;
         ImVec2 imageSize (image.width(), image.height());
 
         // This 0.5 offset is important since the mouse coordinate is an integer.
@@ -49,7 +49,7 @@ struct CursorOverlayInfo
         return (uvBottomRight-uvTopLeft)*uv_window + uvTopLeft;
     }
 
-    ImageItemAndData itemAndData;
+    ModifiedImagePtr modImagePtr;
     bool showHelp = false;
     ImVec2 imageWidgetTopLeft;
     ImVec2 imageWidgetSize;

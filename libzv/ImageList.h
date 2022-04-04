@@ -38,7 +38,8 @@ struct ImageItemData
 
     // Update is the only operation that can actually change the content.
     // Returns true if the content changed.
-    virtual bool update () = 0;
+    // Default is a static item data.
+    virtual bool update () { return false; };
 
     // In a context compatible with ImageWindowContext
     std::shared_ptr<ImageSRGBA> cpuData;
@@ -46,11 +47,6 @@ struct ImageItemData
 };
 using ImageItemDataPtr = std::shared_ptr<ImageItemData>;
 using ImageItemDataUniquePtr = std::unique_ptr<ImageItemData>;
-
-struct StaticImageItemData : public ImageItemData
-{
-    virtual bool update () override { return false; }
-};
 
 struct ImageItem
 {
@@ -93,32 +89,6 @@ using ImageItemUniquePtr = std::unique_ptr<ImageItem>;
 
 std::unique_ptr<ImageItem> imageItemFromPath (const std::string& imagePath);
 std::unique_ptr<ImageItem> imageItemFromData (const ImageSRGBA& im, const std::string& name);
-
-struct ImageItemAndData
-{
-    bool hasValidData() const { return data && data->status == ImageItemData::Status::Ready; }
-
-    bool update ()
-    {
-        if (!data)
-            return false;
-        
-        if (data->update())
-        {
-            if (data->cpuData->hasData())
-            {
-                item->metadata.width = data->cpuData->width();
-                item->metadata.height = data->cpuData->height();
-            }
-            return true;
-        }
-
-        return false;
-    }
-
-    ImageItemPtr item;
-    ImageItemDataPtr data;
-};
 
 struct SelectionRange
 {

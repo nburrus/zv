@@ -62,7 +62,7 @@ std::unique_ptr<ImageItemData> getDefaultImage ()
         }
     }
 
-    auto output = std::make_unique<StaticImageItemData>();
+    auto output = std::make_unique<ImageItemData>();
     output->cpuData = image;
     output->status = ImageItemData::Status::Ready;
     return output;
@@ -86,7 +86,7 @@ std::unique_ptr<ImageItemData> loadImageData(ImageItem& input)
     {
         case ImageItem::Source::Data:
         {
-            auto* staticData = new StaticImageItemData();
+            auto* staticData = new ImageItemData();
             staticData->status = ImageItemData::Status::Ready;
             staticData->cpuData = input.sourceData;
             output.reset (staticData);
@@ -95,7 +95,7 @@ std::unique_ptr<ImageItemData> loadImageData(ImageItem& input)
 
         case ImageItem::Source::FilePath:
         {
-            auto* staticData = new StaticImageItemData();
+            auto* staticData = new ImageItemData();
             staticData->status = ImageItemData::Status::Ready;
             staticData->cpuData = std::make_shared<ImageSRGBA>();
 
