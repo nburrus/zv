@@ -252,7 +252,6 @@ void ImageWindow::Impl::adjustForNewSelection ()
     // It's very important that this gets called while the GL context is bound
     // as it may release some GLTexture in the cache. Would be nice to make this
     // code more robust.
-    this->currentImages.clear ();
     this->currentImages.resize (this->mutableState.layoutConfig.numImages());
     zv_assert (selectedRange.indices.size() == this->currentImages.size(), "Inconsistent state");
     for (int i = 0; i < this->currentImages.size(); ++i)
@@ -261,7 +260,11 @@ void ImageWindow::Impl::adjustForNewSelection ()
         if (selectionIndex >= 0 && selectionIndex < imageList.numImages())
         {
             const auto& itemPtr = imageList.imageItemFromIndex(selectionIndex);
-            this->currentImages[i] = std::make_shared<ModifiedImage>(itemPtr, imageList.getData(itemPtr.get()));
+            // Overwrite the image if the ID changed. Otherwise keep the modified image
+            // since it might just have been updated with new modifiers.
+            if (!this->currentImages[i] || this->currentImages[i]->item()->uniqueId != itemPtr->uniqueId)
+                this->currentImages[i] = std::make_shared<ModifiedImage>(itemPtr, imageList.getData(itemPtr.get()));
+                
             if (this->currentImages[i]->hasValidData())
             {
                 auto &textureData = this->currentImages[i]->data()->textureData;
@@ -1310,6 +1313,27 @@ void ImageWindow::runAction (ImageWindowAction action)
             // glfwSetClipboardString(nullptr, clipboardText.c_str());
             clip::set_text(clipboardText.c_str());
             impl->cursorOverlayInfo.timeOfLastCopyToClipboard = currentDateInSeconds();
+            break;
+        }
+
+        case ImageWindowAction::Modify_Rotate90:
+        case ImageWindowAction::Modify_Rotate180:
+        case ImageWindowAction::Modify_Rotate270: {
+            RotateImageModifier::Angle angle;
+            switch (action)
+            {
+                case ImageWindowAction::Modify_Rotate90: angle = RotateImageModifier::Angle::Angle_90; break;
+                case ImageWindowAction::Modify_Rotate180: angle = RotateImageModifier::Angle::Angle_180; break;
+                case ImageWindowAction::Modify_Rotate270: angle = RotateImageModifier::Angle::Angle_270; break;
+            }
+
+            for (const auto& modImPtr : impl->currentImages)
+            {
+                if (!modImPtr)
+                    continue;
+
+                modImPtr->addModifier (std::make_unique<RotateImageModifier>(angle));
+            }
             break;
         }
     }

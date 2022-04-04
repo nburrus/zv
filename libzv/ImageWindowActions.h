@@ -30,6 +30,10 @@ enum class ImageWindowAction
     View_PrevImage,
     View_NextPageOfImage,
     View_PrevPageOfImage,
+
+    Modify_Rotate90,
+    Modify_Rotate180,
+    Modify_Rotate270,
 };
 
 } // zv

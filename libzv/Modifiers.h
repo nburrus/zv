@@ -30,6 +30,11 @@ public:
         return _outputData;
     }
 
+    void clearTextureData ()
+    {
+        _outputData->textureData = {};
+    }
+
 protected:
     virtual void apply (const ImageItemData& input, ImageItemData& output) = 0;
 
@@ -37,7 +42,7 @@ private:
     ImageItemDataPtr _outputData;
 };
 
-class RotateImageModifier : ImageModifier
+class RotateImageModifier : public ImageModifier
 {
 public:
     enum Angle {
@@ -69,33 +74,75 @@ struct ModifiedImage
 
     bool hasPendingChanges () const { return !_modifiers.empty(); }
 
+    const ImageItemDataPtr& data() const { return _modifiers.empty() ? _originalData : _modifiers.back()->output(); }
+    
+    ImageItemPtr& item() { return _item; }
+    const ImageItemPtr& item() const { return _item; }
+
     bool update ()
     {
         if (!_originalData)
             return false;
         
-        if (_originalData->update())
+        bool originalChanged = _originalData->update();
+
+        if (!originalChanged && !_modifiersChangedSinceLastUpdate)
         {
-            if (_originalData->cpuData->hasData())
-            {
-                _item->metadata.width = _originalData->cpuData->width();
-                _item->metadata.height = _originalData->cpuData->height();
-            }
-            return true;
+            return false;
         }
 
-        return false;
+        // Reapply the modification pipeline if needed.
+        if (originalChanged && _originalData->cpuData->hasData())
+        {
+            ImageItemDataPtr input = _originalData;
+            for (auto& modifier : _modifiers)
+            {
+                modifier->apply (input);
+                input = modifier->output ();
+            }
+        }
+        
+        clearIntermediateModifiersData ();
+        _modifiersChangedSinceLastUpdate = false;
+
+        if (data()->cpuData->hasData())
+        {
+            _item->metadata.width = data()->cpuData->width();
+            _item->metadata.height = data()->cpuData->height();
+        }
+
+        return true;
     }
 
-    const ImageItemDataPtr& data() const { return _modifiers.empty() ? _originalData : _modifiers.back().output(); }
-    
-    ImageItemPtr& item() { return _item; }
-    const ImageItemPtr& item() const { return _item; }
+    void addModifier (std::unique_ptr<ImageModifier> modifier)
+    {
+        if (hasValidData())
+        {
+            modifier->apply (data());
+        }
+        _modifiers.push_back (std::move(modifier));
+        _modifiersChangedSinceLastUpdate = true;
+    }
+
+private:
+    void clearIntermediateModifiersData ()
+    {
+        if (_modifiers.size() < 2)
+            return;
+        auto it = _modifiers.rbegin();
+        ++it;
+        while (it != _modifiers.rend())
+        {
+            (*it)->clearTextureData ();
+            ++it;
+        }
+    }
 
 private:
     ImageItemPtr _item;
     ImageItemDataPtr _originalData;
-    std::deque<ImageModifier> _modifiers; // for undo.
+    std::deque<std::unique_ptr<ImageModifier>> _modifiers; // for undo.
+    bool _modifiersChangedSinceLastUpdate = false;    
 };
 using ModifiedImagePtr = std::shared_ptr<ModifiedImage>;
 

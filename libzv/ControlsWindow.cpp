@@ -276,7 +276,24 @@ void ControlsWindow::renderFrame ()
                     imageWindow->processKeyEvent(GLFW_KEY_V);
                 }
                 ImGui::EndMenu();
-            }            
+            }
+
+            if (ImGui::BeginMenu("Transform"))
+            {
+                if (ImGui::MenuItem("Rotate Left (-90)", "", false))
+                {
+                    imageWindow->addCommand (ImageWindow::actionCommand(ImageWindowAction::Modify_Rotate270));
+                }
+                if (ImGui::MenuItem("Rotate Right (+90)", "", false))
+                {
+                    imageWindow->addCommand (ImageWindow::actionCommand(ImageWindowAction::Modify_Rotate90));
+                }
+                if (ImGui::MenuItem("Rotate UpsideDown (180)", "", false))
+                {
+                    imageWindow->addCommand (ImageWindow::actionCommand(ImageWindowAction::Modify_Rotate180));
+                }
+                ImGui::EndMenu();
+            }    
 
             if (ImGui::BeginMenu("View"))
             {
