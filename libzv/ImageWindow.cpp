@@ -436,6 +436,7 @@ void ImageWindow::shutdown()
     // Make sure that we release any GL stuff here with the context set.
     impl->currentImages.clear();
     impl->cursorOverlayInfo.clear ();
+    ImGuiModifier::shutdown();
 
     impl->imguiGlfwWindow.shutdown ();
 }
@@ -466,6 +467,8 @@ bool ImageWindow::initialize (GLFWwindow* parentWindow, Viewer* viewer)
     if (!impl->imguiGlfwWindow.initialize (parentWindow, "Dalton Lens Image Viewer", windowGeometry, false /* viewports */))
         return false;
 
+    ImGuiModifier::initializeFromCurrentContext();
+    
     impl->imguiGlfwWindow.setWindowSizeChangedCallback([this](int width, int height, bool fromUser) {
         if (fromUser)
         {
@@ -1351,6 +1354,7 @@ void ImageWindow::runAction (ImageWindowAction action)
                 case ImageWindowAction::Modify_Rotate90: angle = RotateImageModifier::Angle::Angle_90; break;
                 case ImageWindowAction::Modify_Rotate180: angle = RotateImageModifier::Angle::Angle_180; break;
                 case ImageWindowAction::Modify_Rotate270: angle = RotateImageModifier::Angle::Angle_270; break;
+                default: zv_assert(false, "invalid action"); break;
             }
 
             for (const auto& modImPtr : impl->currentImages)
@@ -1359,6 +1363,19 @@ void ImageWindow::runAction (ImageWindowAction action)
                     continue;
 
                 modImPtr->addModifier (std::make_unique<RotateImageModifier>(angle));
+            }
+            break;
+        }
+            
+        case ImageWindowAction::Annotate_AddLine: {
+            for (const auto& modImPtr : impl->currentImages)
+            {
+                if (!modImPtr)
+                    continue;
+
+                const Point p1 (0,0);
+                const Point p2 (modImPtr->item()->metadata.width, modImPtr->item()->metadata.height);
+                modImPtr->addAnnotation (std::make_unique<LineAnnotation>(p1,p2));
             }
             break;
         }

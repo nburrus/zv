@@ -43,7 +43,7 @@ struct ImageItemData
 
     // In a context compatible with ImageWindowContext
     std::shared_ptr<ImageSRGBA> cpuData;
-    std::unique_ptr<GLTexture> textureData;
+    GLTexturePtr textureData;
 };
 using ImageItemDataPtr = std::shared_ptr<ImageItemData>;
 using ImageItemDataUniquePtr = std::unique_ptr<ImageItemData>;

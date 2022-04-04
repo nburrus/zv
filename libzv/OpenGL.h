@@ -75,6 +75,7 @@ public:
     int height () const { return _height; }
 
     void initialize ();
+    bool isInitialized () const { return _textureId > 0; }
     void initializeWithExistingTextureID (uint32_t textureId, int width, int height);
     void releaseGL ();
 
@@ -93,6 +94,7 @@ private:
     int _width = 0;
     int _height = 0;
 };
+using GLTexturePtr = std::shared_ptr<GLTexture>;
 
 // Offscreen GL context.
 class GLContext
@@ -114,7 +116,7 @@ private:
 class GLFrameBuffer
 {
 public:
-    GLFrameBuffer ();
+    GLFrameBuffer (GLTexturePtr outputTexture = nullptr);
     ~GLFrameBuffer ();
 
 public:

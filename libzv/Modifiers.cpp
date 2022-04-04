@@ -6,6 +6,9 @@
 
 #include "Modifiers.h"
 
+#include <libzv/ImguiUtils.h>
+#include <libzv/Utils.h>
+
 namespace zv
 {
 

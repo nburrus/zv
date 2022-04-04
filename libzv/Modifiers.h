@@ -7,6 +7,8 @@
 #pragma once
 
 #include <libzv/ImageList.h>
+#include <libzv/MathUtils.h>
+#include <libzv/Annotations.h>
 
 #include <deque>
 
@@ -61,6 +63,34 @@ private:
     Angle _angle = Angle::Angle_90;
 };
 
+class ImageAction
+{
+public:
+    using UndoFunc = std::function<void(void)>;
+
+public:
+    ImageAction (std::function<void(void)>&& undoFunc) 
+        : _undoFunc(std::move(undoFunc))
+    {}
+
+    // Only keep the move operators.
+    ImageAction (ImageAction&& other) = default;
+    ImageAction& operator= (ImageAction&& other) = default;
+
+    void undo ()
+    {
+        if (_undoFunc)
+        {
+            auto f = std::move(_undoFunc);
+            _undoFunc = nullptr;
+            f ();
+        }        
+    }
+
+private:
+    UndoFunc _undoFunc;
+};
+
 // Image currently active in the viewer, maybe modified.
 struct ModifiedImage
 {
@@ -79,7 +109,7 @@ struct ModifiedImage
         if (_modifiers.empty ())
             return;
         _modifiers.clear ();
-        _modifiersChangedSinceLastUpdate = true;
+        _modifiersOrAnnotationsChangedSinceLastUpdate = true;
     }
 
     const ImageItemDataPtr& data() const { return _modifiers.empty() ? _originalData : _modifiers.back()->output(); }
@@ -87,14 +117,14 @@ struct ModifiedImage
     ImageItemPtr& item() { return _item; }
     const ImageItemPtr& item() const { return _item; }
 
-    bool update ()
+    bool update (AnnotationRenderer& renderer)
     {
         if (!_originalData)
             return false;
         
         bool originalChanged = _originalData->update();
 
-        if (!originalChanged && !_modifiersChangedSinceLastUpdate)
+        if (!originalChanged && !_modifiersOrAnnotationsChangedSinceLastUpdate)
         {
             return false;
         }
@@ -111,7 +141,7 @@ struct ModifiedImage
         }
         
         clearIntermediateModifiersData ();
-        _modifiersChangedSinceLastUpdate = false;
+        _modifiersOrAnnotationsChangedSinceLastUpdate = false;
 
         if (data()->cpuData->hasData())
         {
@@ -129,7 +159,44 @@ struct ModifiedImage
             modifier->apply (data());
         }
         _modifiers.push_back (std::move(modifier));
-        _modifiersChangedSinceLastUpdate = true;
+        _modifiersOrAnnotationsChangedSinceLastUpdate = true;
+
+        _actions.push_back(ImageAction([this]() {
+            removeLastModifier();
+        }));
+    }
+
+    void addAnnotation (std::unique_ptr<ImageAnnotation> annotation)
+    {
+        _annotations.push_back (std::move(annotation));
+        _modifiersOrAnnotationsChangedSinceLastUpdate = true;
+        _actions.push_back(ImageAction([this]() {
+            removeLastAnnotation();
+        }));
+    }
+
+    void removeLastModifier()
+    {
+        if (_modifiers.empty())
+            return;
+        _modifiers.pop_back();
+        _modifiersOrAnnotationsChangedSinceLastUpdate = true;
+    }
+
+    void removeLastAnnnotation()
+    {
+        if (_annotations.empty())
+            return;
+        _annotations.pop_back();
+        _modifiersOrAnnotationsChangedSinceLastUpdate = true;
+    }
+
+    void undoLastChange ()
+    {
+        if (_actions.empty())
+            return;
+        _actions.back().undo();
+        _actions.pop_back();
     }
 
 private:
@@ -149,8 +216,10 @@ private:
 private:
     ImageItemPtr _item;
     ImageItemDataPtr _originalData;
-    std::deque<std::unique_ptr<ImageModifier>> _modifiers; // for undo.
-    bool _modifiersChangedSinceLastUpdate = false;    
+    std::deque<std::unique_ptr<ImageModifier>> _modifiers;
+    std::deque<std::unique_ptr<ImageAnnotation>> _annotations;
+    std::deque<ImageAction> _actions;
+    bool _modifiersOrAnnotationsChangedSinceLastUpdate = false;    
 };
 using ModifiedImagePtr = std::shared_ptr<ModifiedImage>;
 

@@ -374,12 +374,14 @@ struct GLFrameBuffer::Impl
     GLuint rbo_depth = 0;
     GLint fboBeforeEnabled = 0;
 
-    GLTexture outputColorTexture;
+    GLTexturePtr outputColorTexture;
 };
 
-GLFrameBuffer::GLFrameBuffer ()
+GLFrameBuffer::GLFrameBuffer (GLTexturePtr outputTexture)
 : impl (new Impl())
-{}
+{
+    impl->outputColorTexture = outputTexture;
+}
 
 GLFrameBuffer::~GLFrameBuffer ()
 {
@@ -393,7 +395,7 @@ GLFrameBuffer::~GLFrameBuffer ()
 
 GLTexture& GLFrameBuffer::outputColorTexture ()
 {
-    return impl->outputColorTexture;
+    return *impl->outputColorTexture;
 }
 
 void GLFrameBuffer::enable(int width, int height)
@@ -407,23 +409,27 @@ void GLFrameBuffer::enable(int width, int height)
         
         glGenRenderbuffers(1, &impl->rbo_depth);
         // glGenRenderbuffers(1, &impl->rbo);
-        impl->outputColorTexture.initialize ();
+        if (!impl->outputColorTexture)
+            impl->outputColorTexture = std::make_shared<GLTexture>();
+        
+        if (!impl->outputColorTexture->isInitialized())
+            impl->outputColorTexture->initialize ();
 
         impl->fboInitialized = true;
     }
     
     glBindFramebuffer(GL_FRAMEBUFFER, impl->fbo);     
 
-    if (impl->outputColorTexture.width() != width || impl->outputColorTexture.height() != height)
+    if (impl->outputColorTexture->width() != width || impl->outputColorTexture->height() != height)
     {
         // We should not need a RBO for the color attachment anymore, the texture should be enough.
         // glBindRenderbuffer(GL_RENDERBUFFER, impl->rbo);
         // glRenderbufferStorage(GL_RENDERBUFFER, GL_RGBA8, width, height);
         // glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, impl->rbo);
 
-        impl->outputColorTexture.ensureAllocatedForRGBA (width, height);
-        glBindTexture(GL_TEXTURE_2D, impl->outputColorTexture.textureId());
-        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, impl->outputColorTexture.textureId(), 0);
+        impl->outputColorTexture->ensureAllocatedForRGBA (width, height);
+        glBindTexture(GL_TEXTURE_2D, impl->outputColorTexture->textureId());
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, impl->outputColorTexture->textureId(), 0);
 
         glBindRenderbuffer(GL_RENDERBUFFER, impl->rbo_depth);
         glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, width, height);
@@ -443,14 +449,14 @@ void GLFrameBuffer::disable()
 
 void GLFrameBuffer::downloadBuffer(ImageSRGBA& output) const
 {
-    output.ensureAllocatedBufferForSize (impl->outputColorTexture.width(), impl->outputColorTexture.height());
-    glPixelStorei (GL_UNPACK_ROW_LENGTH, GLint(output.bytesPerRow() / output.bytesPerPixel()));
+    output.ensureAllocatedBufferForSize (impl->outputColorTexture->width(), impl->outputColorTexture->height());
+    glPixelStorei (GL_PACK_ROW_LENGTH, GLint(output.bytesPerRow() / output.bytesPerPixel()));
     glReadPixels(0, 0,
-                 impl->outputColorTexture.width(), impl->outputColorTexture.height(),
+                 impl->outputColorTexture->width(), impl->outputColorTexture->height(),
                  GL_RGBA,
                  GL_UNSIGNED_BYTE,
                  output.data());
-    glPixelStorei (GL_UNPACK_ROW_LENGTH, 0);
+    glPixelStorei (GL_PACK_ROW_LENGTH, 0);
 }
 
 } // zv

@@ -34,6 +34,8 @@ enum class ImageWindowAction
     Modify_Rotate90,
     Modify_Rotate180,
     Modify_Rotate270,
+    
+    Annotate_AddLine,
 };
 
 } // zv

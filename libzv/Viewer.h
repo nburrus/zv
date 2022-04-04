@@ -85,7 +85,7 @@ protected:
     };
     void onPendingChangedConfirmed(Confirmation result);
 
-    void onAllChangesSaved ();
+    void onAllChangesSaved (bool cancelled);
 
     void runAfterConfirmingPendingChanges (std::function<void(void)>&& func);
 

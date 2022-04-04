@@ -255,13 +255,16 @@ void Viewer::onPendingChangedConfirmed(Confirmation result)
     }
 }
 
-void Viewer::onAllChangesSaved ()
+void Viewer::onAllChangesSaved (bool cancelled)
 {
     if (!impl->state.funcIfChangesConfirmed)
         return;
+        
     auto func = std::move(impl->state.funcIfChangesConfirmed);
     impl->state.funcIfChangesConfirmed = nullptr;
-    func();
+    
+    if (!cancelled)
+        func();
 }
 
 ImageWindow* Viewer::imageWindow()

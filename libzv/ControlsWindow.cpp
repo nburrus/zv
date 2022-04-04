@@ -70,13 +70,13 @@ void ControlsWindow::Impl::saveNextModifiedImage ()
     modImToSave = imageWindow->getFirstModifiedImage();
     if (!modImToSave)
     {
-        viewer->onAllChangesSaved ();
+        viewer->onAllChangesSaved (false /* not cancelled */);
         return;
     }
 
     ImGuiFileDialog::Instance()->OpenModal("SaveImageDlgKey",
                                            "Save Image",
-                                           "Image files (*.png *.bmp *.gif *.jpg *.jpeg *.pnm){.png,.bmp,.gif,.jpg,.jpeg,.pnm,.pgm}",
+                                           ".png,.bmp,.gif,.jpg,.jpeg,.pnm,.pgm",
                                            modImToSave->item()->sourceImagePath.empty() ? "new_image.png" : modImToSave->item()->sourceImagePath,
                                            1, /* vCountSelectionMax */
                                            nullptr,
@@ -327,7 +327,16 @@ void ControlsWindow::renderFrame ()
                     imageWindow->addCommand (ImageWindow::actionCommand(ImageWindowAction::Modify_Rotate180));
                 }
                 ImGui::EndMenu();
-            }    
+            }
+            
+            if (ImGui::BeginMenu("Annotate"))
+            {
+                if (ImGui::MenuItem("Add Line", "", false))
+                {
+                    imageWindow->addCommand (ImageWindow::actionCommand(ImageWindowAction::Annotate_AddLine));
+                }
+                ImGui::EndMenu();
+            }
 
             if (ImGui::BeginMenu("View"))
             {
@@ -421,14 +430,19 @@ void ControlsWindow::renderFrame ()
         {
             if (ImGuiFileDialog::Instance()->IsOk() == true)
             {
-                // map<FileName, FilePathName>
                 std::string outputPath = ImGuiFileDialog::Instance()->GetFilePathName();
                 zv_dbg ("outputPath: %s", outputPath.c_str());
-                impl->modImToSave->discardChanges ();
+                // impl->modImToSave->saveChanges (outputPath);
+                // FIXME: TEMP TEMP!
+                impl->modImToSave->discardChanges();
+                ImGuiFileDialog::Instance()->Close();
+                impl->saveNextModifiedImage ();
             }
-            // close
-            ImGuiFileDialog::Instance()->Close();
-            impl->saveNextModifiedImage ();
+            else
+            {
+                ImGuiFileDialog::Instance()->Close();
+                impl->viewer->onAllChangesSaved (true /* cancelled */);
+            }
         }
 
         if (impl->askToConfirmPendingChanges)
