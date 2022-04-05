@@ -41,6 +41,16 @@ struct ImageItemData
     // Default is a static item data.
     virtual bool update () { return false; };
 
+    void ensureUploadedToGPU ()
+    {
+        if (textureData)
+            return;
+        
+        textureData = std::make_unique<GLTexture>();
+        textureData->initialize();
+        textureData->upload(*cpuData);
+    }
+    
     // In a context compatible with ImageWindowContext
     std::shared_ptr<ImageSRGBA> cpuData;
     GLTexturePtr textureData;

@@ -19,66 +19,88 @@
 namespace zv
 {
 
+struct AnnotationRenderer::Impl
+{
+    ImGuiContext* _sharedImguiContext = nullptr;
+    ImGuiContext* _prevContext = nullptr;
+    ImageSRGBA _downloadBuffer;
+};
+
+AnnotationRenderer::AnnotationRenderer ()
+: impl (new Impl())
+{}
+
+AnnotationRenderer::~AnnotationRenderer () = default;
+
 void AnnotationRenderer::initializeFromCurrentContext ()
 {
     ImGuiContext* prevContext = ImGui::GetCurrentContext();
     zv_assert (prevContext, "This should be called with a parent context set.");
-    if (!_sharedImguiContext)
+    if (!impl->_sharedImguiContext)
     {
         // FIXME: use a shared font atlas.
-        _sharedImguiContext = ImGui::CreateContext(prevContext->IO.Fonts);
-        _sharedImguiContext->IO.BackendRendererUserData = prevContext->IO.BackendRendererUserData;
+        impl->_sharedImguiContext = ImGui::CreateContext(prevContext->IO.Fonts);
+        impl->_sharedImguiContext->IO.BackendRendererUserData = prevContext->IO.BackendRendererUserData;
     }
 }
 
 void AnnotationRenderer::shutdown ()
 {
-    if (_sharedImguiContext)
+    if (impl->_sharedImguiContext)
     {
-        ImGui::DestroyContext(_sharedImguiContext);
-        _sharedImguiContext = nullptr;
+        ImGui::DestroyContext(impl->_sharedImguiContext);
+        impl->_sharedImguiContext = nullptr;
     }
 }
 
 void AnnotationRenderer::enableContext ()
 {
-    _prevContext = ImGui::GetCurrentContext();
-    ImGui::SetCurrentContext(_sharedImguiContext);
+    impl->_prevContext = ImGui::GetCurrentContext();
+    ImGui::SetCurrentContext(impl->_sharedImguiContext);
 }
 
 void AnnotationRenderer::disableContext ()
 {
-    ImGui::SetCurrentContext(_prevContext);
-    _prevContext = nullptr;
+    ImGui::SetCurrentContext(impl->_prevContext);
+    impl->_prevContext = nullptr;
 }
 
-void AnnotationRenderer::beginRendering (const ImageItemDataPtr& inputData)
+void AnnotationRenderer::beginRendering (ImageItemData& input)
 {
-    const int outW = input.cpuData->width();
-    const int outH = input.cpuData->height();
+    const int inW = input.cpuData->width();
+    const int inH = input.cpuData->height();
         
+    input.ensureUploadedToGPU();
+    
     enableContext ();
-    ImGui::GetIO().DisplaySize = ImVec2(outW, outH);
+    ImGui::GetIO().DisplaySize = ImVec2(inW, inH);
     ImGui_ImplOpenGL3_NewFrame();
     ImGui::NewFrame();
     ImGui::SetNextWindowPos(ImVec2(0,0), ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2(outW, outH), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(inW, inH), ImGuiCond_Always);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0,0));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0);
     ImGui::Begin("#empty", nullptr, windowFlagsWithoutAnything());
-    ImGui::Image(reinterpret_cast<void*>(input.textureData->textureId()), ImVec2(outW, outH));
-    ImGui::GetWindowDrawList()->AddRectFilled(ImVec2(10, 10) + screenFromWindow, ImVec2(64, 64) + screenFromWindow, IM_COL32(0, 0, 255, 255));    
+    ImGui::Image(reinterpret_cast<void*>(input.textureData->textureId()), ImVec2(inW, inH));
+    ImGui::GetWindowDrawList()->AddRectFilled(ImVec2(10, 10), ImVec2(64, 64), IM_COL32(0, 0, 255, 255));
 }
 
-void AnnotationRenderer::endRendering (ImageItemDataPtr& outputData)
+void AnnotationRenderer::endRendering (ImageItemData& output)
 {
     ImGui::PopStyleVar(2);
     ImGui::End();
     ImGui::Render();
 
+    auto& io = ImGui::GetIO();
+    const int outW = io.DisplaySize.x;
+    const int outH = io.DisplaySize.y;
+
     output.cpuData = std::make_shared<ImageSRGBA>(outW, outH);
     if (!output.textureData)
+    {
         output.textureData = std::make_shared<GLTexture>();
+        output.textureData->initialize();
+    }
 
     GLFrameBuffer frameBuffer (output.textureData);
     frameBuffer.enable(outW, outH);
@@ -89,8 +111,16 @@ void AnnotationRenderer::endRendering (ImageItemDataPtr& outputData)
     checkGLError();
     if (!output.cpuData)
         output.cpuData = std::make_shared<ImageSRGBA>();
-    frameBuffer.downloadBuffer(*output.cpuData);
+    frameBuffer.downloadBuffer(impl->_downloadBuffer);
     frameBuffer.disable();
+    
+    output.cpuData->ensureAllocatedBufferForSize(outW, outH);
+    for (int r = 0; r < outH; ++r)
+    {
+        PixelSRGBA* outRowPtr = output.cpuData->atRowPtr(r);
+        const PixelSRGBA* inRowPtr = impl->_downloadBuffer.atRowPtr(outH - r - 1);
+        memcpy (outRowPtr, inRowPtr, outW * sizeof(PixelSRGBA));
+    }
     
     checkGLError();
     

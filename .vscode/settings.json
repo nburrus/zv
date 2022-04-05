@@ -98,7 +98,8 @@
         "bitset": "cpp",
         "ios": "cpp",
         "locale": "cpp",
-        "stack": "cpp"
+        "stack": "cpp",
+        "filesystem": "cpp"
     },
     "cSpell.words": [
         "zsummer"

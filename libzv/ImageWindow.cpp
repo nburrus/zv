@@ -140,6 +140,7 @@ struct ImageWindow::Impl
 
     std::vector<ModifiedImagePtr> currentImages;
     ImageLayout currentLayout;
+    AnnotationRenderer annotationRenderer;
     
     ImageWindowState mutableState;
 
@@ -287,18 +288,11 @@ void ImageWindow::Impl::adjustForNewSelection ()
             // Overwrite the image if the ID changed. Otherwise keep the modified image
             // since it might just have been updated with new modifiers.
             if (!this->currentImages[i] || this->currentImages[i]->item()->uniqueId != itemPtr->uniqueId)
-                this->currentImages[i] = std::make_shared<ModifiedImage>(itemPtr, imageList.getData(itemPtr.get()));
+                this->currentImages[i] = std::make_shared<ModifiedImage>(this->annotationRenderer, itemPtr, imageList.getData(itemPtr.get()));
                 
             if (this->currentImages[i]->hasValidData())
             {
-                auto &textureData = this->currentImages[i]->data()->textureData;
-                if (!textureData)
-                {
-                    textureData = std::make_unique<GLTexture>();
-                    textureData->initialize();
-                    // FIXME: not using the cache yet! GPU data releasing can be tricky.
-                    textureData->upload(*this->currentImages[i]->data()->cpuData);
-                }
+                this->currentImages[i]->data()->ensureUploadedToGPU ();                
             }
         }
         else
@@ -436,7 +430,7 @@ void ImageWindow::shutdown()
     // Make sure that we release any GL stuff here with the context set.
     impl->currentImages.clear();
     impl->cursorOverlayInfo.clear ();
-    ImGuiModifier::shutdown();
+    impl->annotationRenderer.shutdown();
 
     impl->imguiGlfwWindow.shutdown ();
 }
@@ -467,7 +461,7 @@ bool ImageWindow::initialize (GLFWwindow* parentWindow, Viewer* viewer)
     if (!impl->imguiGlfwWindow.initialize (parentWindow, "Dalton Lens Image Viewer", windowGeometry, false /* viewports */))
         return false;
 
-    ImGuiModifier::initializeFromCurrentContext();
+    impl->annotationRenderer.initializeFromCurrentContext();
     
     impl->imguiGlfwWindow.setWindowSizeChangedCallback([this](int width, int height, bool fromUser) {
         if (fromUser)

@@ -8,27 +8,29 @@
 
 #include <libzv/ImageList.h>
 
-struct ImGuiContext;
-
 namespace zv
 {
 
 class AnnotationRenderer
 {
 public:
+    AnnotationRenderer ();
+    ~AnnotationRenderer ();
+    
+public:
     void initializeFromCurrentContext ();
     void shutdown ();
 
-    void beginRendering (const ImageItemDataPtr& inputData);
-    void endRendering (ImageItemDataPtr& outputData);
+    void beginRendering (ImageItemData& inputData);
+    void endRendering (ImageItemData& outputData);
 
 private:
     void enableContext ();
     void disableContext ();
 
 private:
-    ImGuiContext* _sharedImguiContext = nullptr;
-    ImGuiContext* _prevContext = nullptr;
+    struct Impl;
+    std::unique_ptr<Impl> impl;
 };
 
 class ImageAnnotation

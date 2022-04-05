@@ -49,6 +49,8 @@ elseif (WIN32)
 endif()
 
 add_library(zv
+    Annotations.h
+    Annotations.cpp
     App.cpp
     App.h
     ColorConversion.cpp

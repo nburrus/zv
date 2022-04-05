@@ -414,13 +414,11 @@ void GLFrameBuffer::enable(int width, int height)
         
         if (!impl->outputColorTexture->isInitialized())
             impl->outputColorTexture->initialize ();
-
-        impl->fboInitialized = true;
     }
     
     glBindFramebuffer(GL_FRAMEBUFFER, impl->fbo);     
 
-    if (impl->outputColorTexture->width() != width || impl->outputColorTexture->height() != height)
+    if (!impl->fboInitialized || impl->outputColorTexture->width() != width || impl->outputColorTexture->height() != height)
     {
         // We should not need a RBO for the color attachment anymore, the texture should be enough.
         // glBindRenderbuffer(GL_RENDERBUFFER, impl->rbo);
@@ -438,6 +436,7 @@ void GLFrameBuffer::enable(int width, int height)
         zv_assert (glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE, "FB creation failed.");
     }
 
+    impl->fboInitialized = true;
     glViewport(0,0,width,height);
 }
 

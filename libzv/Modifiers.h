@@ -94,128 +94,56 @@ private:
 // Image currently active in the viewer, maybe modified.
 struct ModifiedImage
 {
-    ModifiedImage(const ImageItemPtr& item,
+    ModifiedImage(AnnotationRenderer& renderer,
+                  const ImageItemPtr& item,
                   const ImageItemDataPtr& originalData)
-                  : _item (item)
+                  : _annotationRenderer (renderer)
+                  , _item (item)
                   , _originalData (originalData)
     {}
 
     bool hasValidData() const { return data() && data()->status == ImageItemData::Status::Ready; }
-
+    
     bool hasPendingChanges () const { return !_modifiers.empty(); }
 
-    void discardChanges ()
-    {
-        if (_modifiers.empty ())
-            return;
-        _modifiers.clear ();
-        _modifiersOrAnnotationsChangedSinceLastUpdate = true;
+    const ImageItemDataPtr& data() const 
+    { 
+        if (_annotatedData) 
+            return _annotatedData;
+        return dataWithoutAnnotations();
     }
 
-    const ImageItemDataPtr& data() const { return _modifiers.empty() ? _originalData : _modifiers.back()->output(); }
+    const ImageItemDataPtr& dataWithoutAnnotations() const 
+    {
+        if (!_modifiers.empty()) 
+            return _modifiers.back()->output();
+        return _originalData;
+    }
     
     ImageItemPtr& item() { return _item; }
     const ImageItemPtr& item() const { return _item; }
 
-    bool update (AnnotationRenderer& renderer)
-    {
-        if (!_originalData)
-            return false;
-        
-        bool originalChanged = _originalData->update();
+    bool update ();
 
-        if (!originalChanged && !_modifiersOrAnnotationsChangedSinceLastUpdate)
-        {
-            return false;
-        }
 
-        // Reapply the modification pipeline if needed.
-        if (originalChanged && _originalData->cpuData->hasData())
-        {
-            ImageItemDataPtr input = _originalData;
-            for (auto& modifier : _modifiers)
-            {
-                modifier->apply (input);
-                input = modifier->output ();
-            }
-        }
-        
-        clearIntermediateModifiersData ();
-        _modifiersOrAnnotationsChangedSinceLastUpdate = false;
+    void addModifier (std::unique_ptr<ImageModifier> modifier);
+    void removeLastModifier();
 
-        if (data()->cpuData->hasData())
-        {
-            _item->metadata.width = data()->cpuData->width();
-            _item->metadata.height = data()->cpuData->height();
-        }
+    void addAnnotation (std::unique_ptr<ImageAnnotation> annotation);
+    void removeLastAnnotation();
 
-        return true;
-    }
-
-    void addModifier (std::unique_ptr<ImageModifier> modifier)
-    {
-        if (hasValidData())
-        {
-            modifier->apply (data());
-        }
-        _modifiers.push_back (std::move(modifier));
-        _modifiersOrAnnotationsChangedSinceLastUpdate = true;
-
-        _actions.push_back(ImageAction([this]() {
-            removeLastModifier();
-        }));
-    }
-
-    void addAnnotation (std::unique_ptr<ImageAnnotation> annotation)
-    {
-        _annotations.push_back (std::move(annotation));
-        _modifiersOrAnnotationsChangedSinceLastUpdate = true;
-        _actions.push_back(ImageAction([this]() {
-            removeLastAnnotation();
-        }));
-    }
-
-    void removeLastModifier()
-    {
-        if (_modifiers.empty())
-            return;
-        _modifiers.pop_back();
-        _modifiersOrAnnotationsChangedSinceLastUpdate = true;
-    }
-
-    void removeLastAnnnotation()
-    {
-        if (_annotations.empty())
-            return;
-        _annotations.pop_back();
-        _modifiersOrAnnotationsChangedSinceLastUpdate = true;
-    }
-
-    void undoLastChange ()
-    {
-        if (_actions.empty())
-            return;
-        _actions.back().undo();
-        _actions.pop_back();
-    }
+    void discardChanges ();
+    void undoLastChange ();
 
 private:
-    void clearIntermediateModifiersData ()
-    {
-        if (_modifiers.size() < 2)
-            return;
-        auto it = _modifiers.rbegin();
-        ++it;
-        while (it != _modifiers.rend())
-        {
-            (*it)->clearTextureData ();
-            ++it;
-        }
-    }
+    void renderAnnotations ();
+    void clearIntermediateModifiersData ();
 
 private:
     ImageItemPtr _item;
     ImageItemDataPtr _originalData;
+    AnnotationRenderer& _annotationRenderer;
+    ImageItemDataPtr _annotatedData;
     std::deque<std::unique_ptr<ImageModifier>> _modifiers;
     std::deque<std::unique_ptr<ImageAnnotation>> _annotations;
     std::deque<ImageAction> _actions;
