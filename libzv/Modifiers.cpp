@@ -8,6 +8,7 @@
 
 #include <libzv/ImguiUtils.h>
 #include <libzv/Utils.h>
+#include <libzv/MathUtils.h>
 
 namespace zv
 {
@@ -209,6 +210,20 @@ void RotateImageModifier::apply (const ImageItemData& input, ImageItemData& outp
         }
     }
 
+    output.textureData = {};
+    output.status = ImageItemData::Status::Ready;
+}
+
+void CropImageModifier::apply (const ImageItemData& input, ImageItemData& output)
+{
+    const auto& inIm = (*input.cpuData);
+    const int inW = inIm.width();
+    const int inH = inIm.height();
+    
+    Rect rect = _params.validRectForSize (inW, inH);
+    
+    output.cpuData = std::make_shared<ImageSRGBA>();
+    *output.cpuData = crop (inIm, rect);
     output.textureData = {};
     output.status = ImageItemData::Status::Ready;
 }

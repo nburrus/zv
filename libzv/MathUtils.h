@@ -148,6 +148,13 @@ namespace zv
             return *this;
         }
         
+        inline Point& operator+=(const Point& rhs)
+        {
+            x += rhs.x;
+            y += rhs.y;
+            return *this;
+        }
+        
         bool isValid() const { return !std::isnan(x) && !std::isnan(y); }
 
         double x = NAN;
@@ -157,6 +164,11 @@ namespace zv
     inline Point operator-(const Point& p1, const Point& p2)
     {
         Point p = p1; p -= p2; return p;
+    }
+
+    inline Point operator+(const Point& p1, const Point& p2)
+    {
+        Point p = p1; p += p2; return p;
     }
 
     struct Rect
@@ -174,6 +186,11 @@ namespace zv
             return r;
         }
 
+        Point topLeft() const { return origin; }
+        Point topRight() const { return origin + Point(size.x, 0); }
+        Point bottomRight() const { return origin + size; }
+        Point bottomLeft() const { return origin + Point(0, size.y); }
+        
         bool contains (const Point& p) const
         {
             return (p.x >= origin.x

@@ -234,6 +234,11 @@ struct ImageWindow::Impl
     }
 
     bool runAfterCheckingPendingChanges (std::function<void(void)>&& func);
+    
+    void applyCurrentTool ();
+    
+    using CreateModifierFunc = std::function<std::unique_ptr<ImageModifier>(void)>;
+    void addModifier (const CreateModifierFunc& createModifier);
 };
 
 bool ImageWindow::Impl::runAfterCheckingPendingChanges (std::function<void(void)>&& func)
@@ -381,6 +386,35 @@ void ImageWindow::Impl::adjustForNewSelection ()
     }
 
     this->mutableState.activeMode = ViewerMode::Original;
+}
+
+void ImageWindow::Impl::addModifier(const CreateModifierFunc& createModifier)
+{
+    for (const auto& modImPtr : this->currentImages)
+    {
+        if (!modImPtr)
+            continue;
+
+        modImPtr->addModifier (createModifier());
+    }
+}
+
+void ImageWindow::Impl::applyCurrentTool()
+{
+    switch (mutableState.activeToolState.kind)
+    {
+        case ActiveToolState::Kind::Crop: {
+            this->addModifier([this]() {
+                return std::make_unique<CropImageModifier>(mutableState.activeToolState.cropParams);
+            });
+            mutableState.activeToolState.kind = ActiveToolState::Kind::None;
+            break;
+        }
+            
+        default:
+        case ActiveToolState::Kind::None:
+            break;
+    }
 }
 
 // void Viewer::addImageData (const ImageSRGBA& image, const std::string& imageName)
@@ -692,12 +726,18 @@ const CursorOverlayInfo& ImageWindow::cursorOverlayInfo() const
 //     updatedWindowGeometry = impl->updateAfterContentSwitch.targetWindowGeometry;
 // }
 
-void renderImageItem (const ModifiedImagePtr& modImagePtr,
-                      const ImVec2& imageWidgetTopLeft,
-                      const ImVec2& imageWidgetSize,
-                      ZoomInfo& zoom,
-                      bool imageSmallerThanNormal,
-                      CursorOverlayInfo* overlayInfo)
+struct ImageWidgetRoi
+{
+    ImVec2 uv0;
+    ImVec2 uv1;
+};
+
+ImageWidgetRoi renderImageItem (const ModifiedImagePtr& modImagePtr,
+                          const ImVec2& imageWidgetTopLeft,
+                          const ImVec2& imageWidgetSize,
+                          ZoomInfo& zoom,
+                          bool imageSmallerThanNormal,
+                          CursorOverlayInfo* overlayInfo)
 {
     auto& io = ImGui::GetIO();
     
@@ -719,26 +759,6 @@ void renderImageItem (const ModifiedImagePtr& modImagePtr,
     uv1 += deltaToAdd;
 
     GLTexture* imageTexture = modImagePtr->data()->textureData.get();
-    
-    // GLFilter* activeFilter = impl->filterForMode(impl->mutableState.modeForCurrentFrame);
-    // if (activeFilter)
-    // {
-    //     impl->filterProcessor.render (
-    //         *activeFilter,
-    //         currentImage.gpuTexture.textureId (),
-    //         currentImage.gpuTexture.width (),
-    //         currentImage.gpuTexture.height ()
-    //     );
-    //     imageTexture = &impl->filterProcessor.filteredTexture();
-    // }
-
-    // if (impl->saveToFile.requested)
-    // {
-    //     impl->saveToFile.requested = false;
-    //     ImageSRGBA im;
-    //     imageTexture->download (im);
-    //     writePngImage (impl->saveToFile.outPath, im);
-    // }
 
     const bool hasZoom = zoom.zoomFactor != 1;
     const bool useLinearFiltering = imageSmallerThanNormal && !hasZoom;
@@ -757,7 +777,7 @@ void renderImageItem (const ModifiedImagePtr& modImagePtr,
                  imageWidgetSize,
                  uv0,
                  uv1);
-
+    
     if (useLinearFiltering)
     {
         ImGui::GetWindowDrawList()->AddCallback([](const ImDrawList *parent_list, const ImDrawCmd *cmd)
@@ -821,6 +841,11 @@ void renderImageItem (const ModifiedImagePtr& modImagePtr,
         if (zoom.zoomFactor >= 2)
             zoom.zoomFactor /= 2;
     }
+    
+    ImageWidgetRoi roi;
+    roi.uv0 = uv0;
+    roi.uv1 = uv1;
+    return roi;
 }
 
 void ImageWindow::renderFrame ()
@@ -1041,12 +1066,55 @@ void ImageWindow::renderFrame ()
             }
             else
             {
-                renderImageItem(impl->currentImages[idx],
-                                widgetGeometries[idx].topLeft,
-                                widgetGeometries[idx].size,
-                                impl->zoom,
-                                imageSmallerThanNormal,
-                                &impl->cursorOverlayInfo);
+                ImageWidgetRoi uvRoi = renderImageItem(impl->currentImages[idx],
+                                                       widgetGeometries[idx].topLeft,
+                                                       widgetGeometries[idx].size,
+                                                       impl->zoom,
+                                                       imageSmallerThanNormal,
+                                                       &impl->cursorOverlayInfo);
+
+                switch (impl->mutableState.activeToolState.kind)
+                {
+                    case ActiveToolState::Kind::Crop:
+                    {
+                        auto* drawList = ImGui::GetWindowDrawList();
+                        const auto& im = *impl->currentImages[idx]->data()->cpuData;
+                        Rect textureRoi = impl->mutableState.activeToolState.cropParams.textureRect();
+                        Rect widgetRoi;
+                        {
+                            double sx = (uvRoi.uv1.x - uvRoi.uv0.x);
+                            double sy = (uvRoi.uv1.y - uvRoi.uv0.y);
+                            widgetRoi.origin.x = (textureRoi.origin.x - uvRoi.uv0.x)/sx;
+                            widgetRoi.origin.y = (textureRoi.origin.y - uvRoi.uv0.y)/sy;
+                            widgetRoi.size.x = textureRoi.size.x/sx;
+                            widgetRoi.size.y = textureRoi.size.y/sy;
+                        }
+                        
+                        {
+                            double sx = widgetGeometries[idx].size.x;
+                            double sy = widgetGeometries[idx].size.y;
+                            widgetRoi.origin.x = widgetRoi.origin.x*sx + widgetGeometries[idx].topLeft.x;
+                            widgetRoi.origin.y = widgetRoi.origin.y*sy + widgetGeometries[idx].topLeft.y;
+                            widgetRoi.size.x *= sx;
+                            widgetRoi.size.y *= sy;
+                        }
+                        
+                        ImGui::GetWindowDrawList()->AddRect(imVec2(widgetRoi.topLeft()),
+                                                            imVec2(widgetRoi.bottomRight()),
+                                                            IM_COL32(255,215,0,255),
+                                                            0.0f /* rounding */,
+                                                            0 /* ImDrawFlags */,
+                                                            2.0f /* thickness */);
+                        ImGui::GetWindowDrawList()->AddCircleFilled(imVec2(widgetRoi.topLeft()), 4.f, IM_COL32(255,215,0,255));
+                        ImGui::GetWindowDrawList()->AddCircleFilled(imVec2(widgetRoi.topRight()), 4.f, IM_COL32(255,215,0,255));
+                        ImGui::GetWindowDrawList()->AddCircleFilled(imVec2(widgetRoi.bottomLeft()), 4.f, IM_COL32(255,215,0,255));
+                        ImGui::GetWindowDrawList()->AddCircleFilled(imVec2(widgetRoi.bottomRight()), 4.f, IM_COL32(255,215,0,255));
+                        break;
+                    }
+                        
+                    default:
+                        break;
+                };
             }
         }
 
@@ -1361,13 +1429,12 @@ void ImageWindow::runAction (ImageWindowAction action)
                 default: zv_assert(false, "invalid action"); break;
             }
 
-            for (const auto& modImPtr : impl->currentImages)
-            {
-                if (!modImPtr)
-                    continue;
-
-                modImPtr->addModifier (std::make_unique<RotateImageModifier>(angle));
-            }
+            impl->addModifier ([angle]() { return std::make_unique<RotateImageModifier>(angle); });
+            break;
+        }
+            
+        case ImageWindowAction::ApplyCurrentTool: {
+            impl->applyCurrentTool ();
             break;
         }
             
@@ -1413,11 +1480,11 @@ void ImageWindow::discardAllChanges ()
     }
 }
 
-ModifiedImagePtr ImageWindow::getFirstModifiedImage()
+ModifiedImagePtr ImageWindow::getFirstValidImage(bool modifiedOnly)
 {
     for (auto& it : impl->currentImages)
     {
-        if (it && it->hasPendingChanges())
+        if (it && (!modifiedOnly || it->hasPendingChanges()))
             return it;
     }
 

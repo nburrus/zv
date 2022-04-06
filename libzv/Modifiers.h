@@ -63,6 +63,50 @@ private:
     Angle _angle = Angle::Angle_90;
 };
 
+class CropImageModifier : public ImageModifier
+{
+public:
+    struct Params
+    {
+        // All these values are ratio.
+        // This makes it easy to apply to multiples images
+        // with different original sizes.
+        float x = 0.1f;
+        float y = 0.1f;
+        float w = 0.8f;
+        float h = 0.8f;
+        
+        Rect validRectForSize(int width, int height) const
+        {
+            int left = x * width + 0.5f;
+            int top = y * height + 0.5f;
+            int right = left + w * width + 0.5f;
+            int bottom = top + h * height + 0.5f;
+            left = keepInRange(left, 0, width-2);
+            top = keepInRange(top, 0, height-2);
+            right = keepInRange(right, left+1, width-1);
+            bottom = keepInRange(bottom, top+1, height-1);
+            const int outW = right-left;
+            const int outH = bottom-top;
+            return Rect::from_x_y_w_h(left, top, outW, outH);
+        }
+        
+        Rect textureRect () const
+        {
+            return Rect::from_x_y_w_h(x, y, w, h);
+        }
+    };
+
+    CropImageModifier (const Params& params) : _params (params)
+    {}
+
+public:
+    virtual void apply (const ImageItemData& input, ImageItemData& output) override;
+
+private:
+    Params _params;
+};
+
 class ImageAction
 {
 public:

@@ -70,7 +70,7 @@ public:
     void saveCurrentImage ();
     void discardAllChanges ();
 
-    ModifiedImagePtr getFirstModifiedImage();
+    ModifiedImagePtr getFirstValidImage(bool modifiedOnly);
 
 public:
     static Command actionCommand (ImageWindowAction action);

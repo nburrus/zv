@@ -36,6 +36,8 @@ enum class ImageWindowAction
     Modify_Rotate180,
     Modify_Rotate270,
     
+    ApplyCurrentTool,
+    
     Annotate_AddLine,
 };
 

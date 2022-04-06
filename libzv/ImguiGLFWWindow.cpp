@@ -420,6 +420,7 @@ bool ImguiGLFWWindow::initialize (GLFWwindow* parentWindow,
 
             ImFontConfig config;
             config.MergeMode = true;
+            config.GlyphOffset.y = 3.0*dpiScale.x; // so icons are centered in buttons.
             config.FontBuilderFlags = ImGuiFreeTypeBuilderFlags_LightHinting;
             // config.GlyphMinAdvanceX = 15.0f; // Use if you want to make the icon monospaced
             static const ImWchar icon_ranges[] = { ICON_MIN, ICON_MAX, 0 };

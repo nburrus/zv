@@ -6,6 +6,8 @@
 
 #pragma once
 
+#include <libzv/Modifiers.h>
+
 namespace zv
 {
 
@@ -31,6 +33,18 @@ struct LayoutConfig
     bool operator!=(const LayoutConfig& rhs) const { return !(*this == rhs); }
 };
 
+struct ActiveToolState
+{
+    enum class Kind {
+        None,
+        Crop,
+    };
+    
+    Kind kind = Kind::None;
+    
+    CropImageModifier::Params cropParams;
+};
+
 struct ImageWindowState
 {
     ViewerMode activeMode = ViewerMode::None;
@@ -46,6 +60,8 @@ struct ImageWindowState
 
     InputState controlsInputState;
     InputState inputState;
+    
+    ActiveToolState activeToolState;
     
     LayoutConfig layoutConfig;
 

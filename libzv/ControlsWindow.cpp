@@ -84,7 +84,7 @@ struct ControlsWindow::Impl
 void ControlsWindow::Impl::saveNextModifiedImage ()
 {
     auto* imageWindow = viewer->imageWindow();
-    modImToSave = imageWindow->getFirstModifiedImage();
+    modImToSave = imageWindow->getFirstValidImage(true /* modified only */);
     if (!modImToSave)
     {
         viewer->onAllChangesSaved (false /* not cancelled */);
@@ -186,20 +186,79 @@ void ControlsWindow::Impl::maybeRenderConfirmPendingChanges ()
 
 void ControlsWindow::Impl::renderTransformTab (float cursorOverlayHeight)
 {
-    ImVec2 contentSize = ImGui::GetContentRegionAvail();
-    ImGui::Text ("Transforms");
+    auto* imageWindow = this->viewer->imageWindow();
+    ModifiedImagePtr firstModIm = imageWindow->getFirstValidImage(false /* not only modified */);
+    auto& state = imageWindow->mutableState();
     
-    ImGui::Text(ICON_ROTATE_LEFT);
-    ImGui::Text(ICON_ROTATE_RIGHT);
-    ImGui::Text(ICON_CROP);
-    ImGui::Text(ICON_RECTANGLE);
-    helpMarker("Helper marker", 64);
+    ImVec2 contentSize = ImGui::GetContentRegionAvail();
+    ImGui::Spacing();
+    ImGui::Button(ICON_ROTATE_LEFT);
+    ImGui::SameLine();
+    ImGui::Button(ICON_ROTATE_RIGHT);
+    ImGui::SameLine();
+    if (ImGui::Button(ICON_CROP))
+    {
+        state.activeToolState.kind = ActiveToolState::Kind::Crop;
+    }
+    
+    if (!firstModIm->hasValidData())
+        return;
+    
+    const auto& firstIm = *(firstModIm->data()->cpuData);
+    
+    switch (state.activeToolState.kind)
+    {
+        case ActiveToolState::Kind::Crop: {
+            ImGui::Spacing();
+            ImGui::Separator();
+            ImGui::Text("Cropping Tool");
+            
+            int leftInPixels = state.activeToolState.cropParams.x * firstIm.width() + 0.5f;
+            if (ImGui::SliderInt("Left", &leftInPixels, 0, firstIm.width()))
+            {
+                state.activeToolState.cropParams.x = leftInPixels / float(firstIm.width());
+            }
+            
+            int topInPixels = state.activeToolState.cropParams.y * firstIm.height() + 0.5f;
+            if (ImGui::SliderInt("Top", &topInPixels, 0, firstIm.height()))
+            {
+                state.activeToolState.cropParams.y = topInPixels / float(firstIm.height());
+            }
+            
+            int widthInPixels = state.activeToolState.cropParams.w * firstIm.width() + 0.5f;
+            if (ImGui::SliderInt("Width", &widthInPixels, 0, firstIm.width()))
+            {
+                state.activeToolState.cropParams.w = widthInPixels / float(firstIm.width());
+            }
+            
+            int heightInPixels = state.activeToolState.cropParams.h * firstIm.height() + 0.5f;
+            if (ImGui::SliderInt("Height", &heightInPixels, 0, firstIm.height()))
+            {
+                state.activeToolState.cropParams.h = heightInPixels / float(firstIm.height());
+            }
+            
+            if (ImGui::Button("Apply"))
+            {
+                imageWindow->addCommand(ImageWindow::actionCommand(ImageWindowAction::ApplyCurrentTool));
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Cancel"))
+            {
+                state.activeToolState.kind = ActiveToolState::Kind::None;
+            }
+            break;
+        }
+            
+        default:
+        case ActiveToolState::Kind::None:
+            break;
+    }
 }
 
 void ControlsWindow::Impl::renderAnnotateTab (float cursorOverlayHeight)
 {
     ImVec2 contentSize = ImGui::GetContentRegionAvail();
-    ImGui::Text ("Annotations");
+    ImGui::Button(ICON_RECTANGLE);
 }
 
 void ControlsWindow::Impl::renderImageList (float cursorOverlayHeight)
@@ -643,9 +702,10 @@ void ControlsWindow::renderFrame ()
         impl->maybeRenderSaveImage ();
         impl->maybeRenderConfirmPendingChanges ();        
 
-        float cursorOverlayHeight = 0.f;
         const auto& cursorOverlayInfo = imageWindow->cursorOverlayInfo();
-        if (cursorOverlayInfo.valid())
+        const bool showCursorOverlay = cursorOverlayInfo.valid();
+        float cursorOverlayHeight = 0.f;
+        if (showCursorOverlay)
         {
             cursorOverlayHeight = monoFontSize*13.5;
         }
@@ -671,7 +731,7 @@ void ControlsWindow::renderFrame ()
             ImGui::EndTabBar();
         }        
                         
-        if (cursorOverlayInfo.valid())
+        if (showCursorOverlay)
             impl->renderCursorInfo (cursorOverlayInfo, cursorOverlayHeight);
 
         imageWindow->checkImguiGlobalImageKeyEvents ();

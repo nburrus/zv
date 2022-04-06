@@ -17,6 +17,7 @@
 #include <cstdint>
 
 #include "MathUtils.h"
+#include "Utils.h"
 
 namespace zv
 {
@@ -381,6 +382,7 @@ namespace zv
         finalRoi.size.x = std::min(input.width() - finalRoi.origin.x, finalRoi.size.x);
         finalRoi.size.y = std::min(input.height() - finalRoi.origin.y, finalRoi.size.y);
         
+        zv_assert (finalRoi.size.x > 0 && finalRoi.size.y > 0, "Invalid roi");
         Image<T> output (finalRoi.size.x, finalRoi.size.y);
         for (int r = 0; r < output.height(); ++r)
         for (int c = 0; c < output.width(); ++c)
