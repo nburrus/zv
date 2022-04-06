@@ -7,7 +7,7 @@
 #pragma once
 
 #include <libzv/MathUtils.h>
-#include <IconsFontAwesome5.h>
+#include <FontIcomoon.h>
 
 #include <imgui.h>
 
@@ -22,7 +22,7 @@ inline ImVec2 imSize (zv::Rect& r) { return imVec2(r.size); }
 // In your own code you may want to display an actual icon if you are using a merged icon fonts (see docs/FONTS.md)
 inline void helpMarker(const char* desc, float wrapWidth)
 {
-    ImGui::Text(ICON_FA_QUESTION_CIRCLE);
+    ImGui::Text(ICON_QUESTION); // FIXME: add question circle
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_RectOnly))
     {
         ImGui::BeginTooltip();

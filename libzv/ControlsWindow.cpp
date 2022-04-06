@@ -22,6 +22,8 @@
 
 #include <ImGuiFileDialog/ImGuiFileDialog.h>
 
+#include <FontIcomoon.h>
+
 #include <cstdio>
 
 #if PLATFORM_MACOS
@@ -74,6 +76,8 @@ struct ControlsWindow::Impl
     void maybeRenderSaveImage ();
     void maybeRenderConfirmPendingChanges ();
     void renderImageList (float cursorOverlayHeight);
+    void renderTransformTab (float cursorOverlayHeight);
+    void renderAnnotateTab (float cursorOverlayHeight);
     void renderCursorInfo (const CursorOverlayInfo& cursorOverlayInfo, float overlayHeight);
 };
 
@@ -178,6 +182,24 @@ void ControlsWindow::Impl::maybeRenderConfirmPendingChanges ()
             ImGui::EndPopup();
         }
     }
+}
+
+void ControlsWindow::Impl::renderTransformTab (float cursorOverlayHeight)
+{
+    ImVec2 contentSize = ImGui::GetContentRegionAvail();
+    ImGui::Text ("Transforms");
+    
+    ImGui::Text(ICON_ROTATE_LEFT);
+    ImGui::Text(ICON_ROTATE_RIGHT);
+    ImGui::Text(ICON_CROP);
+    ImGui::Text(ICON_RECTANGLE);
+    helpMarker("Helper marker", 64);
+}
+
+void ControlsWindow::Impl::renderAnnotateTab (float cursorOverlayHeight)
+{
+    ImVec2 contentSize = ImGui::GetContentRegionAvail();
+    ImGui::Text ("Annotations");
 }
 
 void ControlsWindow::Impl::renderImageList (float cursorOverlayHeight)
@@ -628,7 +650,26 @@ void ControlsWindow::renderFrame ()
             cursorOverlayHeight = monoFontSize*13.5;
         }
 
-        impl->renderImageList (cursorOverlayHeight);
+        ImGuiTabBarFlags tab_bar_flags = ImGuiTabBarFlags_None;
+        if (ImGui::BeginTabBar("MyTabBar", tab_bar_flags))
+        {
+            if (ImGui::BeginTabItem("Image List"))
+            {
+                impl->renderImageList (cursorOverlayHeight);
+                ImGui::EndTabItem();
+            }
+            if (ImGui::BeginTabItem("Transform"))
+            {
+                impl->renderTransformTab (cursorOverlayHeight);
+                ImGui::EndTabItem();
+            }
+            if (ImGui::BeginTabItem("Annotate"))
+            {
+                impl->renderAnnotateTab (cursorOverlayHeight);
+                ImGui::EndTabItem();
+            }
+            ImGui::EndTabBar();
+        }        
                         
         if (cursorOverlayInfo.valid())
             impl->renderCursorInfo (cursorOverlayInfo, cursorOverlayHeight);

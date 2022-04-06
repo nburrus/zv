@@ -11,9 +11,9 @@
 
 #include <libzv/ProggyVector_font.hpp>
 #include <libzv/Arimo_font.hpp>
-#include <libzv/FontAwesome_font.hpp>
+#include <libzv/FontIcomoon_data.hpp>
 
-#include <IconsFontAwesome5.h>
+#include <FontIcomoon.h>
 
 #include <libzv/OpenGL.h>
 #include <libzv/Utils.h>
@@ -26,6 +26,7 @@
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl3.h"
 #include "imgui_internal.h"
+#include <imgui/misc/freetype/imgui_freetype.h>
 
 #include <GL/gl3w.h>
 #include <GLFW/glfw3.h>
@@ -419,9 +420,12 @@ bool ImguiGLFWWindow::initialize (GLFWwindow* parentWindow,
 
             ImFontConfig config;
             config.MergeMode = true;
+            config.FontBuilderFlags = ImGuiFreeTypeBuilderFlags_LightHinting;
             // config.GlyphMinAdvanceX = 15.0f; // Use if you want to make the icon monospaced
-            static const ImWchar icon_ranges[] = { ICON_MIN_FA, ICON_MAX_FA, 0 };
-            font = io.Fonts->AddFontFromMemoryCompressedTTF(zv::FontAwesome5_compressed_data, zv::FontAwesome5_compressed_size, 17.0f * retinaScaleFactor.x * dpiScale.x, &config, icon_ranges);
+            static const ImWchar icon_ranges[] = { ICON_MIN, ICON_MAX, 0 };
+            font = io.Fonts->AddFontFromMemoryCompressedTTF(zv::Icomoon_compressed_data, zv::Icomoon_compressed_size, 17.0f * retinaScaleFactor.x * dpiScale.x, &config, icon_ranges);
+            // font = io.Fonts->AddFontFromMemoryCompressedTTF(zv::FontAwesome5_solid_compressed_data, zv::FontAwesome5_solid_compressed_size, 17.0f * retinaScaleFactor.x * dpiScale.x, &config, icon_ranges);
+            // font = io.Fonts->AddFontFromMemoryCompressedTTF(zv::FontAwesome5_compressed_data, zv::FontAwesome5_compressed_size, 17.0f * retinaScaleFactor.x * dpiScale.x, &config, icon_ranges);
             
             font->Scale /= retinaScaleFactor.x;
         }
