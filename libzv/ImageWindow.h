@@ -60,6 +60,8 @@ public:
     // Force a move semantic to avoid copies of the embedded std::function.
     void addCommand (Command&& command);
 
+    bool canUndo() const;
+
     zv::Rect geometry () const;
 
     void processKeyEvent (int keycode);

@@ -93,6 +93,7 @@ void ModifiedImage::removeLastModifier()
     if (_modifiers.empty())
         return;
     _modifiers.pop_back();
+    renderAnnotations ();
     _modifiersOrAnnotationsChangedSinceLastUpdate = true;
 }
 
@@ -102,6 +103,7 @@ void ModifiedImage::removeLastAnnotation()
         return;
     _annotations.pop_back();
     _modifiersOrAnnotationsChangedSinceLastUpdate = true;
+    renderAnnotations ();
 }
 
 void ModifiedImage::undoLastChange ()

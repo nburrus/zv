@@ -301,6 +301,10 @@ void ControlsWindow::renderFrame ()
 
             if (ImGui::BeginMenu("Edit"))
             {
+                if (ImGui::MenuItem("Undo", CtrlOrCmd_Str "+z", false, imageWindow->canUndo()))
+                {
+                    imageWindow->addCommand(ImageWindow::actionCommand(ImageWindowAction::Edit_Undo));
+                }
                 if (ImGui::MenuItem("Copy to clipboard", CtrlOrCmd_Str "+c", false))
                 {
                     imageWindow->processKeyEvent(GLFW_KEY_C);

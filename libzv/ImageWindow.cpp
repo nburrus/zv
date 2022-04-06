@@ -516,7 +516,7 @@ void ImageWindow::checkImguiGlobalImageKeyEvents ()
             GLFW_KEY_UP, GLFW_KEY_DOWN, GLFW_KEY_LEFT, GLFW_KEY_RIGHT, GLFW_KEY_PAGE_UP, GLFW_KEY_PAGE_DOWN,
             GLFW_KEY_O, GLFW_KEY_S, GLFW_KEY_W, 
             GLFW_KEY_N, GLFW_KEY_A, GLFW_KEY_V, GLFW_KEY_PERIOD, GLFW_KEY_COMMA, GLFW_KEY_M,
-            GLFW_KEY_C,
+            GLFW_KEY_C, GLFW_KEY_Z,            
             GLFW_KEY_SPACE, GLFW_KEY_BACKSPACE
         })
     {
@@ -555,6 +555,8 @@ void ImageWindow::processKeyEvent (int keycode)
         
         case GLFW_KEY_DOWN:
         case GLFW_KEY_SPACE: runAction(ImageWindowAction::View_NextImage); break;
+
+        case GLFW_KEY_Z: if (CtrlOrCmd(io)) runAction(ImageWindowAction::Edit_Undo); break;
 
         case GLFW_KEY_C: {
             if (CtrlOrCmd(io))
@@ -965,6 +967,8 @@ void ImageWindow::renderFrame ()
     zv_assert (firstValidImageIndex >= 0, "We should always have at least one valid image.");
 
     std::string mainWindowName = "zv - " + impl->currentImages[firstValidImageIndex]->item()->prettyName;
+    if (impl->currentImages[firstValidImageIndex]->hasPendingChanges())
+        mainWindowName += " [edited]";
     glfwSetWindowTitle(impl->imguiGlfwWindow.glfwWindow(), mainWindowName.c_str());
 
     if (ImGui::Begin((mainWindowName + "###Image").c_str(), &isOpen, flags))
@@ -1288,6 +1292,12 @@ void ImageWindow::runAction (ImageWindowAction action)
             break;
         }
 
+        case ImageWindowAction::Edit_Undo: {
+            for (auto& it : impl->currentImages)
+                it->undoLastChange ();
+            break;
+        }
+
         case ImageWindowAction::Edit_PasteImageFromClipboard: {
             impl->viewer->addPastedImage ();
             break;
@@ -1412,6 +1422,16 @@ ModifiedImagePtr ImageWindow::getFirstModifiedImage()
     }
 
     return nullptr;
+}
+
+bool ImageWindow::canUndo() const
+{
+    for (auto& it : impl->currentImages)
+    {
+        if (it && it->canUndo())
+            return true;
+    }
+    return false;
 }
 
 } // zv

@@ -104,7 +104,9 @@ struct ModifiedImage
 
     bool hasValidData() const { return data() && data()->status == ImageItemData::Status::Ready; }
     
-    bool hasPendingChanges () const { return !_modifiers.empty(); }
+    bool hasPendingChanges () const { return _annotatedData || !_modifiers.empty(); }
+
+    bool canUndo () const { return !_actions.empty(); }
 
     const ImageItemDataPtr& data() const 
     { 
@@ -124,7 +126,6 @@ struct ModifiedImage
     const ImageItemPtr& item() const { return _item; }
 
     bool update ();
-
 
     void addModifier (std::unique_ptr<ImageModifier> modifier);
     void removeLastModifier();

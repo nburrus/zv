@@ -24,6 +24,7 @@ enum class ImageWindowAction
     Edit_CopyCursorInfoToClipboard,
     Edit_CopyImageToClipboard,
     Edit_PasteImageFromClipboard,
+    Edit_Undo,
 
     View_ToggleOverlay,
     View_NextImage,
