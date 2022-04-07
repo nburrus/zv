@@ -213,28 +213,29 @@ void ControlsWindow::Impl::renderTransformTab (float cursorOverlayHeight)
             ImGui::Separator();
             ImGui::Text("Cropping Tool");
             
-            int leftInPixels = state.activeToolState.cropParams.x * firstIm.width() + 0.5f;
+            auto& textureRect = state.activeToolState.cropParams.textureRect;
+            int leftInPixels = textureRect.origin.x * firstIm.width() + 0.5f;
             if (ImGui::SliderInt("Left", &leftInPixels, 0, firstIm.width()))
             {
-                state.activeToolState.cropParams.x = leftInPixels / float(firstIm.width());
+                textureRect.origin.x = leftInPixels / float(firstIm.width());
             }
             
-            int topInPixels = state.activeToolState.cropParams.y * firstIm.height() + 0.5f;
+            int topInPixels = textureRect.origin.y * firstIm.height() + 0.5f;
             if (ImGui::SliderInt("Top", &topInPixels, 0, firstIm.height()))
             {
-                state.activeToolState.cropParams.y = topInPixels / float(firstIm.height());
+                textureRect.origin.y = topInPixels / float(firstIm.height());
             }
             
-            int widthInPixels = state.activeToolState.cropParams.w * firstIm.width() + 0.5f;
+            int widthInPixels = textureRect.size.x * firstIm.width() + 0.5f;
             if (ImGui::SliderInt("Width", &widthInPixels, 0, firstIm.width()))
             {
-                state.activeToolState.cropParams.w = widthInPixels / float(firstIm.width());
+                textureRect.size.x = widthInPixels / float(firstIm.width());
             }
             
-            int heightInPixels = state.activeToolState.cropParams.h * firstIm.height() + 0.5f;
+            int heightInPixels = textureRect.size.y * firstIm.height() + 0.5f;
             if (ImGui::SliderInt("Height", &heightInPixels, 0, firstIm.height()))
             {
-                state.activeToolState.cropParams.h = heightInPixels / float(firstIm.height());
+                textureRect.size.y = heightInPixels / float(firstIm.height());
             }
             
             if (ImGui::Button("Apply"))

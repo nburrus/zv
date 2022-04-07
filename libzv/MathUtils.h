@@ -157,6 +157,8 @@ namespace zv
         
         bool isValid() const { return !std::isnan(x) && !std::isnan(y); }
 
+        double length() const { return std::sqrt(x*x + y*y); }
+
         double x = NAN;
         double y = NAN;
     };
@@ -186,11 +188,59 @@ namespace zv
             return r;
         }
 
+        void scale (double sx, double sy)
+        {
+            origin.x *= sx;
+            origin.y *= sy;
+            size.x *= sx;
+            size.y *= sy;
+        }
+            
         Point topLeft() const { return origin; }
         Point topRight() const { return origin + Point(size.x, 0); }
         Point bottomRight() const { return origin + size; }
         Point bottomLeft() const { return origin + Point(0, size.y); }
         
+        void moveTopLeft (Point tl)
+        {
+            auto br = bottomRight();
+            origin.x = std::min(br.x, tl.x);
+            origin.y = std::min(br.y, tl.y);
+            size.x = br.x - origin.x;
+            size.y = br.y - origin.y;
+        }
+
+        void moveTopRight (Point tr)
+        {
+            auto bl = bottomLeft();
+            tr.x = std::max(tr.x, bl.x);
+            tr.y = std::min(tr.y, bl.y);
+            
+            origin.y = tr.y;
+            size.x = tr.x - bl.x;
+            size.y = bl.y - tr.y;
+        }
+
+        void moveBottomRight (Point br)
+        {
+            auto tl = topLeft();
+            br.x = std::max(tl.x, br.x);
+            br.y = std::max(tl.y, br.y);
+            
+            size.x = br.x - tl.x;
+            size.y = br.y - tl.y;
+        }
+
+        void moveBottomLeft (Point bl)
+        {
+            auto tr = topRight();
+            bl.x = std::min(tr.x, bl.x);
+            bl.y = std::max(tr.y, bl.y);
+            origin.x = bl.x;
+            size.x = tr.x - bl.x;
+            size.y = bl.y - tr.y;
+        }
+
         bool contains (const Point& p) const
         {
             return (p.x >= origin.x

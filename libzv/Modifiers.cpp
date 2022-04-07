@@ -220,12 +220,68 @@ void CropImageModifier::apply (const ImageItemData& input, ImageItemData& output
     const int inW = inIm.width();
     const int inH = inIm.height();
     
-    Rect rect = _params.validRectForSize (inW, inH);
+    Rect rect = _params.validImageRectForSize (inW, inH);
     
     output.cpuData = std::make_shared<ImageSRGBA>();
     *output.cpuData = crop (inIm, rect);
     output.textureData = {};
     output.status = ImageItemData::Status::Ready;
+}
+
+Rect CropImageModifier::Params::imageAlignedTextureRect (int width, int height) const
+{
+    Rect rounded;
+    auto tl = textureRect.topLeft();
+    auto br = textureRect.bottomRight();
+    tl.x = int(tl.x*width + 0.5f) / double(width);
+    tl.y = int(tl.y*height + 0.5f) / double(height);
+    br.x = int(br.x*width + 0.5f) / double(width);
+    br.y = int(br.y*height + 0.5f) / double(height);
+    
+    rounded.origin.x = tl.x;
+    rounded.origin.y = tl.y;
+    rounded.size.x = br.x - tl.x;
+    rounded.size.y = br.y - tl.y;
+    return rounded;
+}
+
+Rect CropImageModifier::Params::validImageRectForSize(int width, int height) const
+{
+    Rect alignedRect = imageAlignedTextureRect(width, height);
+    alignedRect.scale (width, height);
+    alignedRect.origin.x = keepInRange(alignedRect.origin.x, 0., width-2.);
+    alignedRect.origin.y = keepInRange(alignedRect.origin.y, 0., height-2.);
+    Point br = alignedRect.bottomRight();
+    br.x = keepInRange(br.x, alignedRect.origin.x + 1., width - 1.);
+    br.y = keepInRange(br.y, alignedRect.origin.y + 1., height - 1.);
+    alignedRect.size.x = br.x - alignedRect.origin.x;
+    alignedRect.size.y = br.y - alignedRect.origin.y;
+    return alignedRect;
+}
+
+Point CropImageModifier::Params::controlPointPos (int idx, const Rect& imageAlignedTextureRect)
+{
+    switch (idx)
+    {
+        case 0: return imageAlignedTextureRect.topLeft();
+        case 1: return imageAlignedTextureRect.topRight();
+        case 2: return imageAlignedTextureRect.bottomLeft();
+        case 3: return imageAlignedTextureRect.bottomRight();
+    }
+    return Point(-1,-1);
+}
+
+void CropImageModifier::Params::updateControlPoint (int idx, const Point& p, int imageWidth, int imageHeight)
+{
+    switch (idx)
+    {
+        case 0: textureRect.moveTopLeft(p); break;
+        case 1: textureRect.moveTopRight(p); break;
+        case 2: textureRect.moveBottomLeft(p); break;
+        case 3: textureRect.moveBottomRight(p); break;
+    }
+
+    // makeValid (imageWidth, imageHeight);
 }
 
 } // zv

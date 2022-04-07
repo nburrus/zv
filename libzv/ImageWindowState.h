@@ -7,6 +7,7 @@
 #pragma once
 
 #include <libzv/Modifiers.h>
+#include <libzv/ImguiUtils.h>
 
 namespace zv
 {
@@ -43,6 +44,7 @@ struct ActiveToolState
     Kind kind = Kind::None;
     
     CropImageModifier::Params cropParams;
+    std::vector<ControlPoint> activeControlPoints;
 };
 
 struct ImageWindowState

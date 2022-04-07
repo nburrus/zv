@@ -59,6 +59,7 @@
             ],
             // "args": [ "--port", "4207" ],
             "args": [ 
+                "${workspaceFolder}/tests/baboon.png",
                 "${workspaceFolder}/tests/rgbgrid.png", 
                 "${workspaceFolder}/tests/rgbgrid_small.png",
                 "${workspaceFolder}/tests/brettel1997_protan_wn_1.0.png",

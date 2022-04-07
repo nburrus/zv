@@ -17,6 +17,7 @@ namespace zv
 inline ImVec2 imVec2 (zv::Point p) { return ImVec2(p.x, p.y); }
 inline ImVec2 imPos (zv::Rect& r) { return imVec2(r.origin); }
 inline ImVec2 imSize (zv::Rect& r) { return imVec2(r.size); }
+inline Point toPoint (ImVec2 v) { return Point(v.x, v.y); }
 
 // Helper to display a little (?) mark which shows a tooltip when hovered.
 // In your own code you may want to display an actual icon if you are using a merged icon fonts (see docs/FONTS.md)
@@ -49,5 +50,22 @@ inline ImGuiWindowFlags windowFlagsWithoutAnything()
 }
 
 bool IsItemHovered(ImGuiHoveredFlags flags, float delaySeconds);
+
+struct ControlPoint
+{
+public:
+    ControlPoint (Point pos)
+        : _pos (pos)
+    {}
+
+    void update (Point pos, const std::function<void(Point)>& onDragUpdate);
+    void render () const;
+
+private:
+    // Widget pos.
+    bool _dragged = false;
+    Point _pos;
+    const float _radius = 5.f;
+};
 
 } // zv

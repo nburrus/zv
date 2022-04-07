@@ -848,6 +848,75 @@ ImageWidgetRoi renderImageItem (const ModifiedImagePtr& modImagePtr,
     return roi;
 }
 
+// Takes into account the zoom level.
+struct WidgetToImageTransform
+{
+    WidgetToImageTransform (const ImageWidgetRoi& uvRoi, const Rect& widgetRect)
+    : uvRoi (uvRoi), widgetRect(widgetRect)
+    {}
+    
+    Rect textureToWidget(const Rect& textureRoi) const
+    {
+        Rect widgetRoi;
+        widgetRoi.origin = textureToWidget(textureRoi.origin);
+        Point bottomRight = textureToWidget(textureRoi.bottomRight());
+        widgetRoi.size = bottomRight - widgetRoi.origin;
+        return widgetRoi;
+    }
+    
+    // texturePos means normalized image coordinates ([0,1])
+    // The zoom level change uv0 (topLeft) and uv1 (bottomRight)
+    // of the input image texture.
+    Point textureToWidget (Point texturePos) const
+    {
+        Point uvRoiPos;
+        // First go to the uvRoi coordinate space.
+        {
+            double sx = (uvRoi.uv1.x - uvRoi.uv0.x);
+            double sy = (uvRoi.uv1.y - uvRoi.uv0.y);
+            uvRoiPos.x = (texturePos.x - uvRoi.uv0.x)/sx;
+            uvRoiPos.y = (texturePos.y - uvRoi.uv0.y)/sy;
+        }
+        
+        // Now go to the widget space.
+        Point widgetPos;
+        {
+            double sx = widgetRect.size.x;
+            double sy = widgetRect.size.y;
+            widgetPos.x = uvRoiPos.x*sx + widgetRect.origin.x;
+            widgetPos.y = uvRoiPos.y*sy + widgetRect.origin.y;
+        }
+        return widgetPos;
+    }
+    
+    // Inverse transform.
+    Point widgetToTexture (Point widgetPos) const
+    {
+        // First go to the uvRoi coordinate space
+        Point uvRoiPos;
+        {
+            double sx = widgetRect.size.x;
+            double sy = widgetRect.size.y;
+            uvRoiPos.x = (widgetPos.x - widgetRect.origin.x) / sx;
+            uvRoiPos.y = (widgetPos.y - widgetRect.origin.y) / sy;
+        }
+        
+        // Now to the texture space.
+        Point texturePos;
+        {
+            double sx = (uvRoi.uv1.x - uvRoi.uv0.x);
+            double sy = (uvRoi.uv1.y - uvRoi.uv0.y);
+            texturePos.x = uvRoiPos.x*sx + uvRoi.uv0.x;
+            texturePos.y = uvRoiPos.y*sy + uvRoi.uv0.y;
+        }
+        
+        return texturePos;
+    }
+    
+    const ImageWidgetRoi uvRoi;
+    const Rect widgetRect;
+};
+
 void ImageWindow::renderFrame ()
 {    
     for (Command& command : impl->pendingCommands)
@@ -1008,12 +1077,7 @@ void ImageWindow::renderFrame ()
         const auto globalImageWidgetContentSize = globalImageWidgetSize - ImVec2(impl->currentLayout.config.numCols-1, impl->currentLayout.config.numRows-1)*impl->gridPadding;
         const bool imageSmallerThanNormal = int(impl->imageWidgetRect.current.size.x) < int(impl->imageWidgetRect.normal.size.x);
         
-        struct ImageItemGeometry
-        {
-            ImVec2 topLeft;
-            ImVec2 size;
-        };
-        std::vector<ImageItemGeometry> widgetGeometries (impl->currentImages.size());
+        std::vector<Rect> widgetGeometries (impl->currentImages.size());
 
         for (int r = 0; r < impl->currentLayout.config.numRows; ++r)
         for (int c = 0; c < impl->currentLayout.config.numCols; ++c)
@@ -1022,11 +1086,11 @@ void ImageWindow::renderFrame ()
             if (idx < impl->currentImages.size() && impl->currentImages[idx] && impl->currentImages[idx]->hasValidData())
             {
                 const auto& rect = impl->currentLayout.imageRects[idx];
-                const ImVec2 imageWidgetSize = ImVec2(globalImageWidgetContentSize.x * rect.size.x, 
+                const Point imageWidgetSize = Point(globalImageWidgetContentSize.x * rect.size.x,
                                                       globalImageWidgetContentSize.y * rect.size.y);
-                const ImVec2 imageWidgetTopLeft = ImVec2(globalImageWidgetContentSize.x * rect.origin.x + c*impl->gridPadding, 
+                const Point imageWidgetTopLeft = Point(globalImageWidgetContentSize.x * rect.origin.x + c*impl->gridPadding,
                                                          globalImageWidgetContentSize.y * rect.origin.y + r*impl->gridPadding);
-                widgetGeometries[idx].topLeft = imageWidgetTopLeft;
+                widgetGeometries[idx].origin = imageWidgetTopLeft;
                 widgetGeometries[idx].size = imageWidgetSize;
             }
             
@@ -1044,7 +1108,7 @@ void ImageWindow::renderFrame ()
             
             if (!impl->currentImages[idx]->data()->cpuData->hasData())
             {
-                ImGui::SetCursorScreenPos (widgetGeometries[idx].topLeft);
+                ImGui::SetCursorScreenPos (imVec2(widgetGeometries[idx].topLeft()));
                 switch (impl->currentImages[idx]->data()->status)
                 {
                     case ImageItemData::Status::FailedToLoad: {
@@ -1067,37 +1131,24 @@ void ImageWindow::renderFrame ()
             else
             {
                 ImageWidgetRoi uvRoi = renderImageItem(impl->currentImages[idx],
-                                                       widgetGeometries[idx].topLeft,
-                                                       widgetGeometries[idx].size,
+                                                       imPos(widgetGeometries[idx]),
+                                                       imSize(widgetGeometries[idx]),
                                                        impl->zoom,
                                                        imageSmallerThanNormal,
                                                        &impl->cursorOverlayInfo);
-
+                
+                WidgetToImageTransform transform(uvRoi, widgetGeometries[idx]);
+                
                 switch (impl->mutableState.activeToolState.kind)
                 {
                     case ActiveToolState::Kind::Crop:
                     {
                         auto* drawList = ImGui::GetWindowDrawList();
                         const auto& im = *impl->currentImages[idx]->data()->cpuData;
-                        Rect textureRoi = impl->mutableState.activeToolState.cropParams.textureRect();
-                        Rect widgetRoi;
-                        {
-                            double sx = (uvRoi.uv1.x - uvRoi.uv0.x);
-                            double sy = (uvRoi.uv1.y - uvRoi.uv0.y);
-                            widgetRoi.origin.x = (textureRoi.origin.x - uvRoi.uv0.x)/sx;
-                            widgetRoi.origin.y = (textureRoi.origin.y - uvRoi.uv0.y)/sy;
-                            widgetRoi.size.x = textureRoi.size.x/sx;
-                            widgetRoi.size.y = textureRoi.size.y/sy;
-                        }
-                        
-                        {
-                            double sx = widgetGeometries[idx].size.x;
-                            double sy = widgetGeometries[idx].size.y;
-                            widgetRoi.origin.x = widgetRoi.origin.x*sx + widgetGeometries[idx].topLeft.x;
-                            widgetRoi.origin.y = widgetRoi.origin.y*sy + widgetGeometries[idx].topLeft.y;
-                            widgetRoi.size.x *= sx;
-                            widgetRoi.size.y *= sy;
-                        }
+                        auto& cropParams = impl->mutableState.activeToolState.cropParams;
+                        auto& controlPoints = impl->mutableState.activeToolState.activeControlPoints;
+                        Rect textureRoi = impl->mutableState.activeToolState.cropParams.imageAlignedTextureRect(im.width(), im.height());
+                        Rect widgetRoi = transform.textureToWidget(textureRoi);
                         
                         ImGui::GetWindowDrawList()->AddRect(imVec2(widgetRoi.topLeft()),
                                                             imVec2(widgetRoi.bottomRight()),
@@ -1105,15 +1156,37 @@ void ImageWindow::renderFrame ()
                                                             0.0f /* rounding */,
                                                             0 /* ImDrawFlags */,
                                                             2.0f /* thickness */);
-                        ImGui::GetWindowDrawList()->AddCircleFilled(imVec2(widgetRoi.topLeft()), 4.f, IM_COL32(255,215,0,255));
-                        ImGui::GetWindowDrawList()->AddCircleFilled(imVec2(widgetRoi.topRight()), 4.f, IM_COL32(255,215,0,255));
-                        ImGui::GetWindowDrawList()->AddCircleFilled(imVec2(widgetRoi.bottomLeft()), 4.f, IM_COL32(255,215,0,255));
-                        ImGui::GetWindowDrawList()->AddCircleFilled(imVec2(widgetRoi.bottomRight()), 4.f, IM_COL32(255,215,0,255));
+
+                        if (idx == firstValidImageIndex)
+                        {
+                            if (impl->mutableState.activeToolState.activeControlPoints.empty())
+                            {
+                                for (int i = 0; i < cropParams.numControlPoints(); ++i)
+                                {
+                                    controlPoints.push_back (ControlPoint(cropParams.controlPointPos(i, textureRoi)));
+                                }
+                            }
+                            
+                            for (int i = 0; i < cropParams.numControlPoints(); ++i)
+                            {
+                                const auto widgetPos = transform.textureToWidget(cropParams.controlPointPos(i, textureRoi));
+                                controlPoints[i].update (widgetPos, [&](Point updatedWidgetPos){
+                                    Point updatedTexturePos = transform.widgetToTexture(updatedWidgetPos);
+                                    cropParams.updateControlPoint(i, updatedTexturePos, im.width(), im.height());
+                                });
+                            }
+                            
+                            for (const auto& cp: controlPoints)
+                                cp.render ();
+                        }
+                        
                         break;
                     }
                         
-                    default:
+                    default: {
+                        impl->mutableState.activeToolState.activeControlPoints.clear ();
                         break;
+                    }
                 };
             }
         }
@@ -1130,9 +1203,9 @@ void ImageWindow::renderFrame ()
                 
                 ImVec2 deltaFromTopLeft = impl->cursorOverlayInfo.mousePos - impl->cursorOverlayInfo.imageWidgetTopLeft;
                 // FIXME: replace this with an image of a cross-hair texture. Filled black with a white outline.
-                ImGui::GetForegroundDrawList()->AddCircle(widgetGeometries[idx].topLeft + deltaFromTopLeft, 4.0, IM_COL32(255,255,255,180), 0, 2.0f);
-                ImGui::GetForegroundDrawList()->AddCircle(widgetGeometries[idx].topLeft + deltaFromTopLeft, 5.0, IM_COL32(0,0,0,180), 0, 1.f);
-                ImGui::GetForegroundDrawList()->AddCircle(widgetGeometries[idx].topLeft + deltaFromTopLeft, 3.0, IM_COL32(0,0,0,180), 0, 1.f);
+                ImGui::GetForegroundDrawList()->AddCircle(imPos(widgetGeometries[idx]) + deltaFromTopLeft, 4.0, IM_COL32(255,255,255,180), 0, 2.0f);
+                ImGui::GetForegroundDrawList()->AddCircle(imPos(widgetGeometries[idx]) + deltaFromTopLeft, 5.0, IM_COL32(0,0,0,180), 0, 1.f);
+                ImGui::GetForegroundDrawList()->AddCircle(imPos(widgetGeometries[idx]) + deltaFromTopLeft, 3.0, IM_COL32(0,0,0,180), 0, 1.f);
             }
 
             // const bool showStatusBar = (impl->mutableState.inputState.shiftIsPressed || controlsWindowState.shiftIsPressed);
@@ -1168,22 +1241,22 @@ void ImageWindow::renderFrame ()
 
                     if (showOnBottom)
                     {
-                        textStart = widgetGeometries[idx].topLeft;
+                        textStart = imPos(widgetGeometries[idx]);
                         textStart.x += monoFontSize*0.5;
                         
-                        textAreaStart = widgetGeometries[idx].topLeft;
-                        textAreaEnd = widgetGeometries[idx].topLeft + widgetGeometries[idx].size;
+                        textAreaStart = imVec2(widgetGeometries[idx].topLeft());
+                        textAreaEnd = imVec2(widgetGeometries[idx].bottomRight());
 
                         textStart.y += widgetGeometries[idx].size.y - monoFontSize*2.1;
                         textAreaStart.y = textStart.y - monoFontSize*0.1;
                     }
                     else
                     {
-                        textStart = widgetGeometries[idx].topLeft;
+                        textStart = imPos(widgetGeometries[idx]);
                         textStart.x += monoFontSize*0.5;
                         textStart.y += monoFontSize*0.15;
                         
-                        textAreaStart = widgetGeometries[idx].topLeft;
+                        textAreaStart = imPos(widgetGeometries[idx]);
                         textAreaEnd = textAreaStart + ImVec2(widgetGeometries[idx].size.x, monoFontSize*2.2);
                     }
                     
