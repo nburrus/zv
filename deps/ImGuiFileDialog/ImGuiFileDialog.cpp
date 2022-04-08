@@ -886,13 +886,20 @@ namespace IGFD
 	// will not been exposed to IGFD API
 	bool IGFD::FilterManager::prFillFileStyle(std::shared_ptr<FileInfos> vFileInfos) const
 	{
+		// todo : better system to found regarding what style to priorize regarding other
+		// maybe with a lambda fucntion for let the user use his style
+		// according to his use case
 		if (vFileInfos.use_count() && !prFilesStyle.empty())
 		{
 			for (const auto& _flag : prFilesStyle)
 			{
 				for (const auto& _file : _flag.second)
 				{
-					if (_flag.first & IGFD_FileStyleByTypeLink && vFileInfos->fileType.symlink)
+					if ((_flag.first & IGFD_FileStyleByTypeDir && _flag.first & IGFD_FileStyleByTypeLink && vFileInfos->fileType.isDir() && vFileInfos->fileType.isSymLink()) ||
+						(_flag.first & IGFD_FileStyleByTypeFile && _flag.first & IGFD_FileStyleByTypeLink && vFileInfos->fileType.isFile() && vFileInfos->fileType.isSymLink()) ||
+						(_flag.first & IGFD_FileStyleByTypeLink && vFileInfos->fileType.isSymLink()) ||
+						(_flag.first & IGFD_FileStyleByTypeDir && vFileInfos->fileType.isDir()) ||
+						(_flag.first & IGFD_FileStyleByTypeFile && vFileInfos->fileType.isFile()))
 					{
 						if (_file.first.empty()) // for all links
 						{
@@ -902,29 +909,7 @@ namespace IGFD
 						{
 							vFileInfos->fileStyle = _file.second;
 						}
-					}
-					else if (_flag.first & IGFD_FileStyleByTypeDir && vFileInfos->fileType.isDir())
-					{
-						if (_file.first.empty()) // for all dirs
-						{
-							vFileInfos->fileStyle = _file.second;
-						}
-						else if (_file.first == vFileInfos->fileNameExt) // for dirs who are equal to style criteria
-						{
-							vFileInfos->fileStyle = _file.second;
-						}
-					}
-					else if (_flag.first & IGFD_FileStyleByTypeFile && vFileInfos->fileType.isFile())
-					{
-						if (_file.first.empty()) // for all files
-						{
-							vFileInfos->fileStyle = _file.second;
-						}
-						else if (_file.first == vFileInfos->fileNameExt) // for files who are equal to style criteria
-						{
-							vFileInfos->fileStyle = _file.second;
-						}
-					}					
+					}			
 
 					if (_flag.first & IGFD_FileStyleByExtention)
 					{
@@ -932,29 +917,6 @@ namespace IGFD
 						{
 							vFileInfos->fileStyle = _file.second;
 						}
-
-						if (_flag.first & IGFD_FileStyleByTypeLink && vFileInfos->fileType.symlink)
-						{
-							if (_file.first == vFileInfos->fileExt)
-							{
-								vFileInfos->fileStyle = _file.second;
-							}
-						}
-						// can make sense for some dirs like the hidden by ex ".git"
-						else if (_flag.first & IGFD_FileStyleByTypeDir && vFileInfos->fileType.isDir())
-						{
-							if (_file.first == vFileInfos->fileExt)
-							{
-								vFileInfos->fileStyle = _file.second;
-							}
-						}
-						else if (_flag.first & IGFD_FileStyleByTypeFile && vFileInfos->fileType.isFile())
-						{
-							if (_file.first == vFileInfos->fileExt)
-							{
-								vFileInfos->fileStyle = _file.second;
-							}
-						}						
 					}
 					if (_flag.first & IGFD_FileStyleByFullName)
 					{
@@ -962,56 +924,12 @@ namespace IGFD
 						{
 							vFileInfos->fileStyle = _file.second;
 						}
-
-						if (_flag.first & IGFD_FileStyleByTypeLink && vFileInfos->fileType.symlink)
-						{
-							if (_file.first == vFileInfos->fileNameExt)
-							{
-								vFileInfos->fileStyle = _file.second;
-							}
-						}
-						else if (_flag.first & IGFD_FileStyleByTypeDir && vFileInfos->fileType.isDir())
-						{
-							if (_file.first == vFileInfos->fileNameExt)
-							{
-								vFileInfos->fileStyle = _file.second;
-							}
-						}
-						else if (_flag.first & IGFD_FileStyleByTypeFile && vFileInfos->fileType.isFile())
-						{
-							if (_file.first == vFileInfos->fileNameExt)
-							{
-								vFileInfos->fileStyle = _file.second;
-							}
-						}						
 					}
 					if (_flag.first & IGFD_FileStyleByContainedInFullName)
 					{
 						if (vFileInfos->fileNameExt.find(_file.first) != std::string::npos)
 						{
 							vFileInfos->fileStyle = _file.second;
-						}
-
-						if (_flag.first & IGFD_FileStyleByTypeLink && vFileInfos->fileType.symlink)
-						{
-							if (vFileInfos->fileNameExt.find(_file.first) != std::string::npos)
-							{
-								vFileInfos->fileStyle = _file.second;
-							}
-						}
-						else if (_flag.first & IGFD_FileStyleByTypeDir && vFileInfos->fileType.isDir())
-						{
-							if (vFileInfos->fileNameExt.find(_file.first) != std::string::npos)
-							{
-								vFileInfos->fileStyle = _file.second;
-							}
-						}
-						else if (_flag.first & IGFD_FileStyleByTypeFile && vFileInfos->fileType.isFile())
-						{
-							if (vFileInfos->fileNameExt.find(_file.first) != std::string::npos)
-							{
-								vFileInfos->fileStyle = _file.second;
-							}
 						}
 					}
 
@@ -1434,7 +1352,7 @@ namespace IGFD
 						if (!a.use_count() || !b.use_count())
 							return false;
 
-						if (a->fileType != b->fileType) return (a->fileType == 'd'); // directory in first
+						if (a->fileType != b->fileType) return (a->fileType.isDir()); // directory in first
 						if (a->thumbnailInfo.textureWidth == b->thumbnailInfo.textureWidth)
 							return (a->thumbnailInfo.textureHeight < b->thumbnailInfo.textureHeight);
 						return (a->thumbnailInfo.textureWidth < b->thumbnailInfo.textureWidth);
@@ -1452,7 +1370,7 @@ namespace IGFD
 						if (!a.use_count() || !b.use_count())
 							return false;
 
-						if (a->fileType != b->fileType) return (a->fileType != 'd'); // directory in last
+						if (a->fileType != b->fileType) return (!a->fileType.isDir()); // directory in last
 						if (a->thumbnailInfo.textureWidth == b->thumbnailInfo.textureWidth)
 							return (a->thumbnailInfo.textureHeight > b->thumbnailInfo.textureHeight);
 						return (a->thumbnailInfo.textureWidth > b->thumbnailInfo.textureWidth);
@@ -1586,12 +1504,12 @@ namespace IGFD
 				FileType fileType;
 				if (file.is_symlink())
 				{
-					fileType.symlink = file.is_symlink();
-					fileType.content = FileType::LinkToUnknown;
+					fileType.SetSymLink(file.is_symlink());
+					fileType.SetContent(FileType::LinkToUnknown);
 				}
 				
-				if (file.is_directory()) { fileType.content = FileType::Directory; } // directory or symlink to directory
-				else if (file.is_regular_file()) { fileType.content = FileType::File; }
+				if (file.is_directory()) { fileType.SetContent(FileType::Directory); } // directory or symlink to directory
+				else if (file.is_regular_file()) { fileType.SetContent(FileType::File); }
 
 				if (fileType.isValid())
 				{
@@ -1680,16 +1598,23 @@ namespace IGFD
 			ClearPathLists();
 
 #ifdef USE_STD_FILESYSTEM
-			//const auto wpath = IGFD::Utils::WGetString(path.c_str());
 			const std::filesystem::path fspath(path);
 			const auto dir_iter = std::filesystem::directory_iterator(fspath);
-			AddPath(vFileDialogInternal, path, "..", 'd');
+			FileType fstype = FileType(FileType::Directory, std::filesystem::is_symlink(std::filesystem::status(fspath)));
+			AddPath(vFileDialogInternal, path, "..", fstype);
 			for (const auto& file : dir_iter)
 			{
+				FileType fileType; 
+				if (file.is_symlink())
+				{
+					fileType.SetSymLink(file.is_symlink());
+					fileType.SetContent(FileType::LinkToUnknown);
+				}
 				if (file.is_directory())
 				{
+					fileType.SetContent(FileType::Directory);
 					auto fileNameExt = file.path().filename().string();
-					AddPath(vFileDialogInternal, path, fileNameExt, 'd');
+					AddPath(vFileDialogInternal, path, fileNameExt, fileType);
 				}
 			}
 #else // dirent
@@ -1706,7 +1631,7 @@ namespace IGFD
 					if (ent->d_type == DT_DIR)
 					{
 						auto fileNameExt = ent->d_name;
-						AddPath(vFileDialogInternal, path, fileNameExt, 'd');
+						AddPath(vFileDialogInternal, path, fileNameExt, FileType(FileType::Directory, false));
 					}
 				}
 
@@ -1747,7 +1672,7 @@ namespace IGFD
 				auto info = std::make_shared<FileInfos>();
 				info->fileNameExt = drive;
 				info->fileNameExt_optimized = prOptimizeFilenameForSearchOperations(drive);
-				info->fileType.content = FileType::Directory;
+				info->fileType.SetContent(FileType::Directory);
 
 				if (!info->fileNameExt.empty())
 				{
@@ -2702,7 +2627,7 @@ namespace IGFD
 				// retrieve datas of the texture file if its an image file
 				if (file.use_count())
 				{
-					if (file->fileType == 'f') //-V522
+					if (file->fileType.isFile()) //-V522
 					{
 						if (file->fileExt == ".png"
 							|| file->fileExt == ".bmp"
@@ -2809,7 +2734,7 @@ namespace IGFD
 	{
 		if (vFileInfos.use_count())
 		{
-			if (vFileInfos->fileType == 'f')
+			if (vFileInfos->fileType.isFile())
 			{
 				if (vFileInfos->fileExt == ".png"
 					|| vFileInfos->fileExt == ".bmp"
@@ -3117,7 +3042,7 @@ namespace IGFD
 						auto infos = fdi.GetFilteredFileAt(prLocateFileByInputChar_lastFileIdx);
 						if (infos.use_count())
 						{
-							if (infos->fileType == 'd') //-V522
+							if (infos->fileType.isDir()) //-V522
 							{
 								if (fdi.puDLGDirectoryMode) // directory chooser
 								{
@@ -3257,7 +3182,7 @@ namespace IGFD
 					auto infos = fdi.GetFilteredFileAt(prLocateFileByInputChar_lastFileIdx);
 					if (infos.use_count())
 					{
-						if (infos->fileType == 'd') //-V522
+						if (infos->fileType.isDir()) //-V522
 						{
 							if (!fdi.puDLGDirectoryMode || enterInDirectory)
 							{
@@ -4741,7 +4666,7 @@ namespace IGFD
 						}
 						if (ImGui::TableNextColumn()) // file size
 						{
-							if (infos->fileType != 'd')
+							if (!infos->fileType.isDir())
 							{
 								ImGui::Text("%s ", infos->formatedFileSize.c_str());
 							}
