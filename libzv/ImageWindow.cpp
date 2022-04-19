@@ -582,24 +582,24 @@ void ImageWindow::processKeyEvent (int keycode)
     switch (keycode)
     {
         case GLFW_KEY_UP:
-        case GLFW_KEY_BACKSPACE: runAction(ImageWindowAction::View_PrevImage); break;
+        case GLFW_KEY_BACKSPACE: enqueueAction(ImageWindowAction::View_PrevImage); break;
 
-        case GLFW_KEY_PAGE_DOWN: runAction(ImageWindowAction::View_NextPageOfImage); break;
-        case GLFW_KEY_PAGE_UP: runAction(ImageWindowAction::View_PrevPageOfImage); break;
+        case GLFW_KEY_PAGE_DOWN: enqueueAction(ImageWindowAction::View_NextPageOfImage); break;
+        case GLFW_KEY_PAGE_UP: enqueueAction(ImageWindowAction::View_PrevPageOfImage); break;
         
         case GLFW_KEY_DOWN:
-        case GLFW_KEY_SPACE: runAction(ImageWindowAction::View_NextImage); break;
+        case GLFW_KEY_SPACE: enqueueAction(ImageWindowAction::View_NextImage); break;
 
-        case GLFW_KEY_Z: if (CtrlOrCmd(io)) runAction(ImageWindowAction::Edit_Undo); break;
+        case GLFW_KEY_Z: if (CtrlOrCmd(io)) enqueueAction(ImageWindowAction::Edit_Undo); break;
 
         case GLFW_KEY_C: {
             if (CtrlOrCmd(io))
             {
-                runAction(ImageWindowAction::Edit_CopyImageToClipboard); 
+                enqueueAction(ImageWindowAction::Edit_CopyImageToClipboard);
             }
             else
             {
-                runAction(ImageWindowAction::Edit_CopyCursorInfoToClipboard); 
+                enqueueAction(ImageWindowAction::Edit_CopyCursorInfoToClipboard);
             }            
             break;
         }
@@ -619,7 +619,7 @@ void ImageWindow::processKeyEvent (int keycode)
             // No image saving for now.
             if (CtrlOrCmd(io))
             {
-                runAction (ImageWindowAction::File_OpenImage);
+                enqueueAction (ImageWindowAction::File_OpenImage);
             }
             break;
         }
@@ -628,23 +628,23 @@ void ImageWindow::processKeyEvent (int keycode)
         case GLFW_KEY_V: {
             if (CtrlOrCmd(io))
             {
-                runAction(ImageWindowAction::Edit_PasteImageFromClipboard); 
+                enqueueAction(ImageWindowAction::Edit_PasteImageFromClipboard);
             }
             else
             {
-                runAction (ImageWindowAction::View_ToggleOverlay);
+                enqueueAction (ImageWindowAction::View_ToggleOverlay);
             }      
             break;
         }
         
         // Zoom
-        case GLFW_KEY_N: runAction(ImageWindowAction::Zoom_Normal); break;
-        case GLFW_KEY_M: runAction(ImageWindowAction::Zoom_Maxspect); break;
-        case GLFW_KEY_A: runAction (ImageWindowAction::Zoom_RestoreAspectRatio); break;
-        case GLFW_KEY_PERIOD: runAction (ImageWindowAction::Zoom_Inc10p); break;
-        case GLFW_KEY_COMMA: runAction (ImageWindowAction::Zoom_Dec10p); break;
-        case '<': runAction (ImageWindowAction::Zoom_div2); break;
-        case '>': runAction (ImageWindowAction::Zoom_x2); break;
+        case GLFW_KEY_N: enqueueAction(ImageWindowAction::Zoom_Normal); break;
+        case GLFW_KEY_M: enqueueAction(ImageWindowAction::Zoom_Maxspect); break;
+        case GLFW_KEY_A: enqueueAction (ImageWindowAction::Zoom_RestoreAspectRatio); break;
+        case GLFW_KEY_PERIOD: enqueueAction (ImageWindowAction::Zoom_Inc10p); break;
+        case GLFW_KEY_COMMA: enqueueAction (ImageWindowAction::Zoom_Dec10p); break;
+        case '<': enqueueAction (ImageWindowAction::Zoom_div2); break;
+        case '>': enqueueAction (ImageWindowAction::Zoom_x2); break;
 
         // Layout
         case GLFW_KEY_1: addCommand(ImageWindow::layoutCommand(1,1)); break;
@@ -1435,7 +1435,11 @@ void ImageWindow::runAction (ImageWindowAction action)
 
         case ImageWindowAction::Edit_Undo: {
             for (auto& it : impl->currentImages)
-                it->undoLastChange ();
+            {
+                if (it.get() && it->hasValidData())
+                    it->undoLastChange ();
+            }
+            impl->cursorOverlayInfo.clear();
             break;
         }
 
@@ -1524,6 +1528,11 @@ void ImageWindow::runAction (ImageWindowAction action)
             break;
         }
     }
+}
+
+void ImageWindow::enqueueAction (ImageWindowAction action)
+{
+    addCommand(actionCommand(action));
 }
 
 ImageWindow::Command ImageWindow::actionCommand (ImageWindowAction action)

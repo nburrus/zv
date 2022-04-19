@@ -59,6 +59,7 @@ public:
     
     // Force a move semantic to avoid copies of the embedded std::function.
     void addCommand (Command&& command);
+    void enqueueAction (ImageWindowAction action);
 
     bool canUndo() const;
 

@@ -13,6 +13,7 @@
 #include <libzv/GLFWUtils.h>
 #include <libzv/ImageCursorOverlay.h>
 #include <libzv/PlatformSpecific.h>
+#include <libzv/Platform.h>
 #include <libzv/Viewer.h>
 
 #include <libzv/Utils.h>
@@ -192,9 +193,11 @@ void ControlsWindow::Impl::renderTransformTab (float cursorOverlayHeight)
     
     ImVec2 contentSize = ImGui::GetContentRegionAvail();
     ImGui::Spacing();
-    ImGui::Button(ICON_ROTATE_LEFT);
+    if (ImGui::Button(ICON_ROTATE_LEFT))
+        imageWindow->addCommand (ImageWindow::actionCommand(ImageWindowAction::Modify_Rotate270));
     ImGui::SameLine();
-    ImGui::Button(ICON_ROTATE_RIGHT);
+    if (ImGui::Button(ICON_ROTATE_RIGHT))
+        imageWindow->addCommand (ImageWindow::actionCommand(ImageWindowAction::Modify_Rotate90));
     ImGui::SameLine();
     if (ImGui::Button(ICON_CROP))
     {
@@ -735,6 +738,8 @@ void ControlsWindow::renderFrame ()
         if (showCursorOverlay)
             impl->renderCursorInfo (cursorOverlayInfo, cursorOverlayHeight);
 
+        zv_dbg("showCursorOverlay = %d", showCursorOverlay);
+        
         imageWindow->checkImguiGlobalImageKeyEvents ();
         imageWindow->checkImguiGlobalImageMouseEvents ();
         

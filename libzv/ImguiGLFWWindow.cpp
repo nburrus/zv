@@ -543,6 +543,8 @@ void ImguiGLFWWindow::endFrame ()
     // Rendering
     ImGui::Render();
 
+    checkGLError ();
+    
     glViewport(0, 0, impl->currentFrameInfo.frameBufferWidth, impl->currentFrameInfo.frameBufferHeight);
     glClearColor(0.1, 0.1, 0.1, 1);
     glClear(GL_COLOR_BUFFER_BIT);
