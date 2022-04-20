@@ -239,6 +239,9 @@ struct ImageWindow::Impl
     
     using CreateModifierFunc = std::function<std::unique_ptr<ImageModifier>(void)>;
     void addModifier (const CreateModifierFunc& createModifier);
+
+    using CreateAnnotationFunc = std::function<std::unique_ptr<ImageAnnotation>(void)>;
+    void addAnnotation(const CreateAnnotationFunc& createAnnnotation);
 };
 
 bool ImageWindow::Impl::runAfterCheckingPendingChanges (std::function<void(void)>&& func)
@@ -399,13 +402,32 @@ void ImageWindow::Impl::addModifier(const CreateModifierFunc& createModifier)
     }
 }
 
+void ImageWindow::Impl::addAnnotation(const CreateAnnotationFunc& createAnnotation)
+{
+    for (const auto& modImPtr : this->currentImages)
+    {
+        if (!modImPtr)
+            continue;
+
+        modImPtr->addAnnotation (createAnnotation());
+    }
+}
+
 void ImageWindow::Impl::applyCurrentTool()
 {
     switch (mutableState.activeToolState.kind)
     {
-        case ActiveToolState::Kind::Crop: {
+        case ActiveToolState::Kind::Transform_Crop: {
             this->addModifier([this]() {
-                return std::make_unique<CropImageModifier>(mutableState.activeToolState.cropParams);
+                return std::make_unique<CropImageModifier>(mutableState.activeToolState.tool.cropImageModifier->params());
+            });
+            mutableState.activeToolState.kind = ActiveToolState::Kind::None;
+            break;
+        }
+        
+        case ActiveToolState::Kind::Annotate_Line: {
+            this->addAnnotation([this]() {
+                return std::make_unique<LineAnnotation>(mutableState.activeToolState.lineParams);
             });
             mutableState.activeToolState.kind = ActiveToolState::Kind::None;
             break;
@@ -726,12 +748,6 @@ const CursorOverlayInfo& ImageWindow::cursorOverlayInfo() const
 //     updatedWindowGeometry = impl->updateAfterContentSwitch.targetWindowGeometry;
 // }
 
-struct ImageWidgetRoi
-{
-    ImVec2 uv0;
-    ImVec2 uv1;
-};
-
 ImageWidgetRoi renderImageItem (const ModifiedImagePtr& modImagePtr,
                           const ImVec2& imageWidgetTopLeft,
                           const ImVec2& imageWidgetSize,
@@ -847,75 +863,6 @@ ImageWidgetRoi renderImageItem (const ModifiedImagePtr& modImagePtr,
     roi.uv1 = uv1;
     return roi;
 }
-
-// Takes into account the zoom level.
-struct WidgetToImageTransform
-{
-    WidgetToImageTransform (const ImageWidgetRoi& uvRoi, const Rect& widgetRect)
-    : uvRoi (uvRoi), widgetRect(widgetRect)
-    {}
-    
-    Rect textureToWidget(const Rect& textureRoi) const
-    {
-        Rect widgetRoi;
-        widgetRoi.origin = textureToWidget(textureRoi.origin);
-        Point bottomRight = textureToWidget(textureRoi.bottomRight());
-        widgetRoi.size = bottomRight - widgetRoi.origin;
-        return widgetRoi;
-    }
-    
-    // texturePos means normalized image coordinates ([0,1])
-    // The zoom level change uv0 (topLeft) and uv1 (bottomRight)
-    // of the input image texture.
-    Point textureToWidget (Point texturePos) const
-    {
-        Point uvRoiPos;
-        // First go to the uvRoi coordinate space.
-        {
-            double sx = (uvRoi.uv1.x - uvRoi.uv0.x);
-            double sy = (uvRoi.uv1.y - uvRoi.uv0.y);
-            uvRoiPos.x = (texturePos.x - uvRoi.uv0.x)/sx;
-            uvRoiPos.y = (texturePos.y - uvRoi.uv0.y)/sy;
-        }
-        
-        // Now go to the widget space.
-        Point widgetPos;
-        {
-            double sx = widgetRect.size.x;
-            double sy = widgetRect.size.y;
-            widgetPos.x = uvRoiPos.x*sx + widgetRect.origin.x;
-            widgetPos.y = uvRoiPos.y*sy + widgetRect.origin.y;
-        }
-        return widgetPos;
-    }
-    
-    // Inverse transform.
-    Point widgetToTexture (Point widgetPos) const
-    {
-        // First go to the uvRoi coordinate space
-        Point uvRoiPos;
-        {
-            double sx = widgetRect.size.x;
-            double sy = widgetRect.size.y;
-            uvRoiPos.x = (widgetPos.x - widgetRect.origin.x) / sx;
-            uvRoiPos.y = (widgetPos.y - widgetRect.origin.y) / sy;
-        }
-        
-        // Now to the texture space.
-        Point texturePos;
-        {
-            double sx = (uvRoi.uv1.x - uvRoi.uv0.x);
-            double sy = (uvRoi.uv1.y - uvRoi.uv0.y);
-            texturePos.x = uvRoiPos.x*sx + uvRoi.uv0.x;
-            texturePos.y = uvRoiPos.y*sy + uvRoi.uv0.y;
-        }
-        
-        return texturePos;
-    }
-    
-    const ImageWidgetRoi uvRoi;
-    const Rect widgetRect;
-};
 
 void ImageWindow::renderFrame ()
 {    
@@ -1141,50 +1088,21 @@ void ImageWindow::renderFrame ()
                 
                 switch (impl->mutableState.activeToolState.kind)
                 {
-                    case ActiveToolState::Kind::Crop:
+                    case ActiveToolState::Kind::Transform_Crop:
                     {
-                        auto* drawList = ImGui::GetWindowDrawList();
-                        const auto& im = *impl->currentImages[idx]->data()->cpuData;
-                        auto& cropParams = impl->mutableState.activeToolState.cropParams;
-                        auto& controlPoints = impl->mutableState.activeToolState.activeControlPoints;
-                        Rect textureRoi = impl->mutableState.activeToolState.cropParams.imageAlignedTextureRect(im.width(), im.height());
-                        Rect widgetRoi = transform.textureToWidget(textureRoi);
-                        
-                        ImGui::GetWindowDrawList()->AddRect(imVec2(widgetRoi.topLeft()),
-                                                            imVec2(widgetRoi.bottomRight()),
-                                                            IM_COL32(255,215,0,255),
-                                                            0.0f /* rounding */,
-                                                            0 /* ImDrawFlags */,
-                                                            2.0f /* thickness */);
-
-                        if (idx == firstValidImageIndex)
-                        {
-                            if (impl->mutableState.activeToolState.activeControlPoints.empty())
-                            {
-                                for (int i = 0; i < cropParams.numControlPoints(); ++i)
-                                {
-                                    controlPoints.push_back (ControlPoint(cropParams.controlPointPos(i, textureRoi)));
-                                }
-                            }
-                            
-                            for (int i = 0; i < cropParams.numControlPoints(); ++i)
-                            {
-                                const auto widgetPos = transform.textureToWidget(cropParams.controlPointPos(i, textureRoi));
-                                controlPoints[i].update (widgetPos, [&](Point updatedWidgetPos){
-                                    Point updatedTexturePos = transform.widgetToTexture(updatedWidgetPos);
-                                    cropParams.updateControlPoint(i, updatedTexturePos, im.width(), im.height());
-                                });
-                            }
-                            
-                            for (const auto& cp: controlPoints)
-                                cp.render ();
-                        }
-                        
+                        ModifierRenderingContext context;
+                        context.widgetToImageTransform = transform;
+                        const auto &im = *impl->currentImages[idx]->data()->cpuData;
+                        context.imageWidth = im.width();
+                        context.imageHeight = im.height();
+                        context.firstValidImageIndex = (idx == firstValidImageIndex);
+                        impl->mutableState.activeToolState.tool.cropImageModifier->renderAsActiveTool (context);
                         break;
                     }
                         
                     default: {
-                        impl->mutableState.activeToolState.activeControlPoints.clear ();
+                        // Clear any pending modifier.
+                        impl->mutableState.activeToolState.tool = {};
                         break;
                     }
                 };
@@ -1512,19 +1430,6 @@ void ImageWindow::runAction (ImageWindowAction action)
             
         case ImageWindowAction::ApplyCurrentTool: {
             impl->applyCurrentTool ();
-            break;
-        }
-            
-        case ImageWindowAction::Annotate_AddLine: {
-            for (const auto& modImPtr : impl->currentImages)
-            {
-                if (!modImPtr)
-                    continue;
-
-                const Point p1 (0,0);
-                const Point p2 (modImPtr->item()->metadata.width, modImPtr->item()->metadata.height);
-                modImPtr->addAnnotation (std::make_unique<LineAnnotation>(p1,p2));
-            }
             break;
         }
     }

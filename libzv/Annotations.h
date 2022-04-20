@@ -39,17 +39,32 @@ public:
     virtual ~ImageAnnotation () = default;
 
 public:
-    virtual void render () = 0;
+    virtual void render (int imageWidth, int imageHeight) = 0;
 };
 
 class LineAnnotation : public ImageAnnotation
 {
 public:
-    LineAnnotation (const Point& p1, const Point& p2) : _p1 (p1), _p2 (p2) {}
-    virtual void render () override;
+    struct Params
+    {
+        // The coordinates are in the uv texture ([0,1] range).
+        Line textureLine = Line(Point(0.1,0.1), Point(0.5,0.5));
+
+        Line imageAlignedTextureLine (int width, int height) const;
+        Line validImageLineForSize(int width, int height) const;
+
+        int numControlPoints () const { return 2; }
+        void updateControlPoint (int idx, const Point& p, int imageWidth, int imageHeight);
+
+        static Point controlPointPos (int idx, const Line& imageAlignedTextureLine);
+    };
+
+public:
+    LineAnnotation (const Params& params) : _params (params) {}
+    virtual void render (int imageWidth, int imageHeight) override;
 
 private:
-    Point _p1, _p2;
+    Params _params;
 };
 
 } // namespace zv

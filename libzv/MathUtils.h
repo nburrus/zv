@@ -173,6 +173,12 @@ namespace zv
         Point p = p1; p += p2; return p;
     }
 
+    inline Point uvToRoundedPixel (const Point& uvP, int width, int height)
+    {
+        return Point(int(uvP.x*width + 0.5f) / double(width),
+                     int(uvP.y*height + 0.5f) / double(height));
+    }
+
     struct Rect
     {
         Point origin;
@@ -271,6 +277,23 @@ namespace zv
             size.y *= s;
             return *this;
         }
+    };
+
+    struct Line
+    {
+        Line () = default;
+        Line (const Point& p1, const Point& p2) : p1(p1), p2(p2) {}
+
+        void scale (double sx, double sy)
+        {
+            p1.x *= sx;
+            p1.y *= sy;
+            p2.x *= sx;
+            p2.y *= sy;
+        }
+
+        Point p1;
+        Point p2;
     };
 
 } // zv

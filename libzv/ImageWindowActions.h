@@ -37,8 +37,6 @@ enum class ImageWindowAction
     Modify_Rotate270,
     
     ApplyCurrentTool,
-    
-    Annotate_AddLine,
 };
 
 } // zv

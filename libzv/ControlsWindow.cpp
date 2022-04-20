@@ -207,7 +207,7 @@ void ControlsWindow::Impl::renderTransformTab (float cursorOverlayHeight)
     ImGui::SameLine();
 
     if (ImGui::Button(ICON_CROP))
-        state.activeToolState.kind = ActiveToolState::Kind::Crop;
+        state.activeToolState.kind = ActiveToolState::Kind::Transform_Crop;
     helpMarker ("Crop", contentSize.x * 0.8, false /* no extra question mark */);
     
     if (!firstModIm->hasValidData())
@@ -217,12 +217,13 @@ void ControlsWindow::Impl::renderTransformTab (float cursorOverlayHeight)
     
     switch (state.activeToolState.kind)
     {
-        case ActiveToolState::Kind::Crop: {
+        case ActiveToolState::Kind::Transform_Crop: {
             ImGui::Spacing();
             ImGui::Separator();
             ImGui::Text("Cropping Tool");
             
-            auto& textureRect = state.activeToolState.cropParams.textureRect;
+            auto& cropParams = state.activeToolState.tool.cropImageModifier->paramsRef();
+            auto& textureRect = cropParams.textureRect;
             int leftInPixels = textureRect.origin.x * firstIm.width() + 0.5f;
             if (ImGui::SliderInt("Left", &leftInPixels, 0, firstIm.width()))
             {
@@ -268,7 +269,67 @@ void ControlsWindow::Impl::renderTransformTab (float cursorOverlayHeight)
 void ControlsWindow::Impl::renderAnnotateTab (float cursorOverlayHeight)
 {
     ImVec2 contentSize = ImGui::GetContentRegionAvail();
-    ImGui::Button(ICON_RECTANGLE);
+    auto* imageWindow = this->viewer->imageWindow();
+    auto& state = imageWindow->mutableState();
+    ModifiedImagePtr firstModIm = imageWindow->getFirstValidImage(false /* not only modified */);
+
+    if (ImGui::Button(ICON_RECTANGLE))
+        state.activeToolState.kind = ActiveToolState::Kind::Annotate_Line;
+    helpMarker ("Add Line", contentSize.x * 0.8, false /* no extra question mark */);
+
+    if (!firstModIm->hasValidData())
+        return;
+    
+    const auto& firstIm = *(firstModIm->data()->cpuData);
+
+    switch (state.activeToolState.kind)
+    {
+        case ActiveToolState::Kind::Annotate_Line: {
+            ImGui::Spacing();
+            ImGui::Separator();
+            ImGui::Text("Add Line");
+            
+            auto& textureLine = state.activeToolState.lineParams.textureLine;
+            int p1x = textureLine.p1.x * firstIm.width() + 0.5f;
+            if (ImGui::SliderInt("Point 1 [x]", &p1x, 0, firstIm.width()))
+            {
+                textureLine.p1.x = p1x / float(firstIm.width());
+            }
+
+            int p1y = textureLine.p1.y * firstIm.height() + 0.5f;
+            if (ImGui::SliderInt("Point 1 [y]", &p1y, 0, firstIm.height()))
+            {
+                textureLine.p1.y = p1y / float(firstIm.height());
+            }
+
+            int p2x = textureLine.p2.x * firstIm.width() + 0.5f;
+            if (ImGui::SliderInt("Point 2 [x]", &p2x, 0, firstIm.width()))
+            {
+                textureLine.p2.x = p2x / float(firstIm.width());
+            }
+
+            int p2y = textureLine.p2.y * firstIm.height() + 0.5f;
+            if (ImGui::SliderInt("Point 1 [y]", &p2y, 0, firstIm.height()))
+            {
+                textureLine.p2.y = p2y / float(firstIm.height());
+            }
+                        
+            if (ImGui::Button("Apply"))
+            {
+                imageWindow->addCommand(ImageWindow::actionCommand(ImageWindowAction::ApplyCurrentTool));
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Cancel"))
+            {
+                state.activeToolState.kind = ActiveToolState::Kind::None;
+            }
+            break;
+        }
+            
+        default:
+        case ActiveToolState::Kind::None:
+            break;
+    }
 }
 
 void ControlsWindow::Impl::renderImageList (float cursorOverlayHeight)
@@ -433,6 +494,10 @@ void ControlsWindow::Impl::renderMenu ()
                 {
                     imageWindow->addCommand (ImageWindow::actionCommand(ImageWindowAction::Modify_Rotate180));
                 }
+                if (ImGui::MenuItem("Crop Image", "", false))
+                {
+                    imageWindowState.activeToolState.kind = ActiveToolState::Kind::Transform_Crop;
+                }
                 ImGui::EndMenu();
             }
 
@@ -440,7 +505,7 @@ void ControlsWindow::Impl::renderMenu ()
             {
                 if (ImGui::MenuItem("Add Line", "", false))
                 {
-                    imageWindow->addCommand (ImageWindow::actionCommand(ImageWindowAction::Annotate_AddLine));
+                    imageWindowState.activeToolState.kind = ActiveToolState::Kind::Annotate_Line;
                 }
                 ImGui::EndMenu();
             }

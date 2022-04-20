@@ -38,13 +38,19 @@ struct ActiveToolState
 {
     enum class Kind {
         None,
-        Crop,
+        
+        Transform_Crop,
+        
+        Annotate_Line,
     };
     
     Kind kind = Kind::None;
     
-    CropImageModifier::Params cropParams;
-    std::vector<ControlPoint> activeControlPoints;
+    struct {
+        CropImageModifierPtr cropImageModifier = nullptr;
+    } tool;
+    
+    LineAnnotation::Params lineParams;
 };
 
 struct ImageWindowState

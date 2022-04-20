@@ -24,6 +24,8 @@ struct AnnotationRenderer::Impl
     ImGuiContext* _sharedImguiContext = nullptr;
     ImGuiContext* _prevContext = nullptr;
     ImageSRGBA _downloadBuffer;
+    int imageWidth = -1;
+    int imageHeight = -1;
 };
 
 AnnotationRenderer::AnnotationRenderer ()
@@ -69,6 +71,9 @@ void AnnotationRenderer::beginRendering (ImageItemData& input)
 {
     const int inW = input.cpuData->width();
     const int inH = input.cpuData->height();
+
+    impl->imageWidth = inW;
+    impl->imageHeight = inH;
         
     input.ensureUploadedToGPU();
     
@@ -128,9 +133,48 @@ void AnnotationRenderer::endRendering (ImageItemData& output)
     output.status = ImageItemData::Status::Ready;
 }
 
-void LineAnnotation::render ()
+void LineAnnotation::render (int imageWidth, int imageHeight)
 {
-    ImGui::GetWindowDrawList()->AddLine(imVec2(_p1), imVec2(_p2), IM_COL32(255, 0, 0, 255));
+    Line imageLine = _params.imageAlignedTextureLine (imageWidth, imageHeight);
+    ImGui::GetWindowDrawList()->AddLine(imVec2(imageLine.p1), imVec2(imageLine.p2), IM_COL32(255, 0, 0, 255));
+}
+
+Line LineAnnotation::Params::imageAlignedTextureLine (int width, int height) const
+{
+    Line rounded;
+    rounded.p1 = uvToRoundedPixel (textureLine.p1, width, height);
+    rounded.p2 = uvToRoundedPixel (textureLine.p2, width, height);
+    return rounded;
+}
+
+Line LineAnnotation::Params::validImageLineForSize(int width, int height) const
+{
+    Line alignedLine = imageAlignedTextureLine(width, height);
+    alignedLine.scale (width, height);
+    alignedLine.p1.x = keepInRange(alignedLine.p1.x, 0., width-1.0);
+    alignedLine.p2.x = keepInRange(alignedLine.p2.x, 0., width-1.0);
+    alignedLine.p1.x = keepInRange(alignedLine.p1.y, 0., height-1.0);
+    alignedLine.p2.y = keepInRange(alignedLine.p2.y, 0., height-1.0);
+    return alignedLine;
+}
+
+Point LineAnnotation::Params::controlPointPos (int idx, const Line& imageAlignedTextureLine)
+{
+    switch (idx)
+    {
+        case 0: return imageAlignedTextureLine.p1;
+        case 1: return imageAlignedTextureLine.p2;
+    }
+    return Point(-1,-1);
+}
+
+void LineAnnotation::Params::updateControlPoint (int idx, const Point& p, int imageWidth, int imageHeight)
+{
+    switch (idx)
+    {
+        case 0: textureLine.p1 = p; break;
+        case 1: textureLine.p2 = p; break;
+    }
 }
 
 } // namespace zv
