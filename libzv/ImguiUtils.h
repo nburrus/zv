@@ -21,9 +21,11 @@ inline Point toPoint (ImVec2 v) { return Point(v.x, v.y); }
 
 // Helper to display a little (?) mark which shows a tooltip when hovered.
 // In your own code you may want to display an actual icon if you are using a merged icon fonts (see docs/FONTS.md)
-inline void helpMarker(const char* desc, float wrapWidth)
+inline void helpMarker(const char* desc, float wrapWidth, bool add_question_mark = true)
 {
-    ImGui::Text(ICON_QUESTION); // FIXME: add question circle
+    if (add_question_mark)
+        ImGui::Text(ICON_QUESTION); // FIXME: add question circle
+        
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_RectOnly))
     {
         ImGui::BeginTooltip();

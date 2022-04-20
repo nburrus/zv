@@ -193,16 +193,22 @@ void ControlsWindow::Impl::renderTransformTab (float cursorOverlayHeight)
     
     ImVec2 contentSize = ImGui::GetContentRegionAvail();
     ImGui::Spacing();
+
     if (ImGui::Button(ICON_ROTATE_LEFT))
         imageWindow->addCommand (ImageWindow::actionCommand(ImageWindowAction::Modify_Rotate270));
+    helpMarker ("Rotate Left (-90º)", contentSize.x * 0.8, false /* no extra question mark */);
+
     ImGui::SameLine();
+
     if (ImGui::Button(ICON_ROTATE_RIGHT))
         imageWindow->addCommand (ImageWindow::actionCommand(ImageWindowAction::Modify_Rotate90));
+    helpMarker ("Rotate Right (+90º)", contentSize.x * 0.8, false /* no extra question mark */);
+
     ImGui::SameLine();
+
     if (ImGui::Button(ICON_CROP))
-    {
         state.activeToolState.kind = ActiveToolState::Kind::Crop;
-    }
+    helpMarker ("Crop", contentSize.x * 0.8, false /* no extra question mark */);
     
     if (!firstModIm->hasValidData())
         return;
@@ -737,8 +743,6 @@ void ControlsWindow::renderFrame ()
                         
         if (showCursorOverlay)
             impl->renderCursorInfo (cursorOverlayInfo, cursorOverlayHeight);
-
-        zv_dbg("showCursorOverlay = %d", showCursorOverlay);
         
         imageWindow->checkImguiGlobalImageKeyEvents ();
         imageWindow->checkImguiGlobalImageMouseEvents ();
