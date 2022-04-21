@@ -93,6 +93,11 @@ struct WidgetToImageTransform
         widgetRoi.size = bottomRight - widgetRoi.origin;
         return widgetRoi;
     }
+
+    Line textureToWidget(const Line& textureLine) const
+    {
+        return Line(textureToWidget(textureLine.p1), textureToWidget(textureLine.p2));        
+    }
     
     // texturePos means normalized image coordinates ([0,1])
     // The zoom level change uv0 (topLeft) and uv1 (bottomRight)

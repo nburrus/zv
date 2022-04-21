@@ -7,6 +7,7 @@
 #pragma once
 
 #include <libzv/Modifiers.h>
+#include <libzv/InteractiveTool.h>
 #include <libzv/ImguiUtils.h>
 
 namespace zv
@@ -46,11 +47,10 @@ struct ActiveToolState
     
     Kind kind = Kind::None;
     
-    struct {
-        CropImageModifierPtr cropImageModifier = nullptr;
-    } tool;
-    
-    LineAnnotation::Params lineParams;
+    InteractiveTool* activeTool ();
+
+    CropTool cropTool;
+    LineTool lineTool;
 };
 
 struct ImageWindowState

@@ -7,6 +7,7 @@
 #pragma once
 
 #include <libzv/ImageList.h>
+#include <libzv/ImguiUtils.h>
 
 namespace zv
 {
@@ -49,6 +50,8 @@ public:
     {
         // The coordinates are in the uv texture ([0,1] range).
         Line textureLine = Line(Point(0.1,0.1), Point(0.5,0.5));
+        int lineWidth = 2;
+        ImColor color = ImColor (ImVec4(1,1,0,1));
 
         Line imageAlignedTextureLine (int width, int height) const;
         Line validImageLineForSize(int width, int height) const;
@@ -58,7 +61,7 @@ public:
 
         static Point controlPointPos (int idx, const Line& imageAlignedTextureLine);
     };
-
+    
 public:
     LineAnnotation (const Params& params) : _params (params) {}
     virtual void render (int imageWidth, int imageHeight) override;

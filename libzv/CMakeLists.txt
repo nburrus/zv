@@ -74,10 +74,13 @@ add_library(zv
     ImageWindow.h
     ImageWindowActions.h
     ImageWindowState.h
+    ImageWindowState.cpp
     ImguiGLFWWindow.cpp
     ImguiGLFWWindow.h
     ImguiUtils.cpp
     ImguiUtils.h
+    InteractiveTool.h
+    InteractiveTool.cpp
     MathUtils.h
     Modifiers.h
     Modifiers.cpp

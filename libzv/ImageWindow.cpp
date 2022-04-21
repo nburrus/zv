@@ -415,36 +415,18 @@ void ImageWindow::Impl::addAnnotation(const CreateAnnotationFunc& createAnnotati
 
 void ImageWindow::Impl::applyCurrentTool()
 {
-    switch (mutableState.activeToolState.kind)
+    if (mutableState.activeToolState.kind == ActiveToolState::Kind::None)
+        return;
+    
+    for (const auto& modImPtr : this->currentImages)
     {
-        case ActiveToolState::Kind::Transform_Crop: {
-            this->addModifier([this]() {
-                return std::make_unique<CropImageModifier>(mutableState.activeToolState.tool.cropImageModifier->params());
-            });
-            mutableState.activeToolState.kind = ActiveToolState::Kind::None;
-            break;
-        }
-        
-        case ActiveToolState::Kind::Annotate_Line: {
-            this->addAnnotation([this]() {
-                return std::make_unique<LineAnnotation>(mutableState.activeToolState.lineParams);
-            });
-            mutableState.activeToolState.kind = ActiveToolState::Kind::None;
-            break;
-        }
-            
-        default:
-        case ActiveToolState::Kind::None:
-            break;
+        if (!modImPtr)
+            continue;
+        mutableState.activeToolState.activeTool()->addToImage (*modImPtr);        
     }
-}
 
-// void Viewer::addImageData (const ImageSRGBA& image, const std::string& imageName)
-// {
-//     zv::Rect updatedViewerWindowGeometry;
-//     impl->imageWindow.showImage (image, imageName, updatedViewerWindowGeometry);
-//     impl->controlsWindow.repositionAfterNextRendering (updatedViewerWindowGeometry, true /* show by default */);
-// }
+    that.setActiveTool (ActiveToolState::Kind::None);
+}
 
 ImageWindow::ImageWindow()
 : impl (new Impl(*this))
@@ -573,7 +555,8 @@ void ImageWindow::checkImguiGlobalImageKeyEvents ()
             GLFW_KEY_O, GLFW_KEY_S, GLFW_KEY_W, 
             GLFW_KEY_N, GLFW_KEY_A, GLFW_KEY_V, GLFW_KEY_PERIOD, GLFW_KEY_COMMA, GLFW_KEY_M,
             GLFW_KEY_C, GLFW_KEY_Z,            
-            GLFW_KEY_SPACE, GLFW_KEY_BACKSPACE
+            GLFW_KEY_SPACE, GLFW_KEY_BACKSPACE,
+            GLFW_KEY_ESCAPE, GLFW_KEY_ENTER,
         })
     {
         if (ImGui::IsKeyPressed(code))
@@ -603,6 +586,9 @@ void ImageWindow::processKeyEvent (int keycode)
 
     switch (keycode)
     {
+        case GLFW_KEY_ESCAPE: enqueueAction(ImageWindowAction::CancelCurrentTool); break;
+        case GLFW_KEY_ENTER: enqueueAction(ImageWindowAction::ApplyCurrentTool); break;
+        
         case GLFW_KEY_UP:
         case GLFW_KEY_BACKSPACE: enqueueAction(ImageWindowAction::View_PrevImage); break;
 
@@ -1086,26 +1072,16 @@ void ImageWindow::renderFrame ()
                 
                 WidgetToImageTransform transform(uvRoi, widgetGeometries[idx]);
                 
-                switch (impl->mutableState.activeToolState.kind)
+                if (impl->mutableState.activeToolState.kind != ActiveToolState::Kind::None)
                 {
-                    case ActiveToolState::Kind::Transform_Crop:
-                    {
-                        ModifierRenderingContext context;
-                        context.widgetToImageTransform = transform;
-                        const auto &im = *impl->currentImages[idx]->data()->cpuData;
-                        context.imageWidth = im.width();
-                        context.imageHeight = im.height();
-                        context.firstValidImageIndex = (idx == firstValidImageIndex);
-                        impl->mutableState.activeToolState.tool.cropImageModifier->renderAsActiveTool (context);
-                        break;
-                    }
-                        
-                    default: {
-                        // Clear any pending modifier.
-                        impl->mutableState.activeToolState.tool = {};
-                        break;
-                    }
-                };
+                    InteractiveToolRenderingContext context;
+                    context.widgetToImageTransform = transform;
+                    const auto &im = *impl->currentImages[idx]->data()->cpuData;
+                    context.imageWidth = im.width();
+                    context.imageHeight = im.height();
+                    context.firstValidImageIndex = (idx == firstValidImageIndex);
+                    impl->mutableState.activeToolState.activeTool()->renderAsActiveTool (context);
+                }
             }
         }
 
@@ -1432,6 +1408,11 @@ void ImageWindow::runAction (ImageWindowAction action)
             impl->applyCurrentTool ();
             break;
         }
+
+        case ImageWindowAction::CancelCurrentTool: {
+            setActiveTool (ActiveToolState::Kind::None);
+            break;
+        }
     }
 }
 
@@ -1486,6 +1467,14 @@ bool ImageWindow::canUndo() const
             return true;
     }
     return false;
+}
+
+void ImageWindow::setActiveTool (ActiveToolState::Kind kind)
+{
+    if (kind == impl->mutableState.activeToolState.kind)
+        return;
+
+    impl->mutableState.activeToolState.kind = kind;
 }
 
 } // zv

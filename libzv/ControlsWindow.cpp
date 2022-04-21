@@ -76,6 +76,8 @@ struct ControlsWindow::Impl
     void maybeRenderOpenImage ();
     void maybeRenderSaveImage ();
     void maybeRenderConfirmPendingChanges ();
+    
+    void renderActiveTool (const ModifiedImagePtr& firstModIm, InteractiveTool::Kind acceptedKind);
     void renderImageList (float cursorOverlayHeight);
     void renderTransformTab (float cursorOverlayHeight);
     void renderAnnotateTab (float cursorOverlayHeight);
@@ -185,6 +187,40 @@ void ControlsWindow::Impl::maybeRenderConfirmPendingChanges ()
     }
 }
 
+void ControlsWindow::Impl::renderActiveTool (const ModifiedImagePtr& firstModIm, InteractiveTool::Kind acceptedKind)
+{    
+    const auto& firstIm = *(firstModIm->data()->cpuData);
+
+    auto* imageWindow = this->viewer->imageWindow();
+    auto& state = imageWindow->mutableState();
+
+    if (state.activeToolState.kind == ActiveToolState::Kind::None)
+        return;
+
+    InteractiveTool* activeTool = state.activeToolState.activeTool();
+
+    if (activeTool->kind() != acceptedKind)
+        return;    
+
+    if (state.activeToolState.kind != ActiveToolState::Kind::None)
+    {
+        ImGui::Spacing();
+        ImGui::Separator();
+
+        activeTool->renderControls(firstIm);
+
+        if (ImGui::Button("Apply"))
+        {
+            imageWindow->addCommand(ImageWindow::actionCommand(ImageWindowAction::ApplyCurrentTool));
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel"))
+        {
+            imageWindow->addCommand(ImageWindow::actionCommand(ImageWindowAction::CancelCurrentTool));
+        }
+    }
+}
+
 void ControlsWindow::Impl::renderTransformTab (float cursorOverlayHeight)
 {
     auto* imageWindow = this->viewer->imageWindow();
@@ -207,63 +243,13 @@ void ControlsWindow::Impl::renderTransformTab (float cursorOverlayHeight)
     ImGui::SameLine();
 
     if (ImGui::Button(ICON_CROP))
-        state.activeToolState.kind = ActiveToolState::Kind::Transform_Crop;
+        imageWindow->setActiveTool (ActiveToolState::Kind::Transform_Crop);
     helpMarker ("Crop", contentSize.x * 0.8, false /* no extra question mark */);
     
     if (!firstModIm->hasValidData())
         return;
     
-    const auto& firstIm = *(firstModIm->data()->cpuData);
-    
-    switch (state.activeToolState.kind)
-    {
-        case ActiveToolState::Kind::Transform_Crop: {
-            ImGui::Spacing();
-            ImGui::Separator();
-            ImGui::Text("Cropping Tool");
-            
-            auto& cropParams = state.activeToolState.tool.cropImageModifier->paramsRef();
-            auto& textureRect = cropParams.textureRect;
-            int leftInPixels = textureRect.origin.x * firstIm.width() + 0.5f;
-            if (ImGui::SliderInt("Left", &leftInPixels, 0, firstIm.width()))
-            {
-                textureRect.origin.x = leftInPixels / float(firstIm.width());
-            }
-            
-            int topInPixels = textureRect.origin.y * firstIm.height() + 0.5f;
-            if (ImGui::SliderInt("Top", &topInPixels, 0, firstIm.height()))
-            {
-                textureRect.origin.y = topInPixels / float(firstIm.height());
-            }
-            
-            int widthInPixels = textureRect.size.x * firstIm.width() + 0.5f;
-            if (ImGui::SliderInt("Width", &widthInPixels, 0, firstIm.width()))
-            {
-                textureRect.size.x = widthInPixels / float(firstIm.width());
-            }
-            
-            int heightInPixels = textureRect.size.y * firstIm.height() + 0.5f;
-            if (ImGui::SliderInt("Height", &heightInPixels, 0, firstIm.height()))
-            {
-                textureRect.size.y = heightInPixels / float(firstIm.height());
-            }
-            
-            if (ImGui::Button("Apply"))
-            {
-                imageWindow->addCommand(ImageWindow::actionCommand(ImageWindowAction::ApplyCurrentTool));
-            }
-            ImGui::SameLine();
-            if (ImGui::Button("Cancel"))
-            {
-                state.activeToolState.kind = ActiveToolState::Kind::None;
-            }
-            break;
-        }
-            
-        default:
-        case ActiveToolState::Kind::None:
-            break;
-    }
+    renderActiveTool (firstModIm, InteractiveTool::Kind::Modifier);
 }
 
 void ControlsWindow::Impl::renderAnnotateTab (float cursorOverlayHeight)
@@ -274,62 +260,13 @@ void ControlsWindow::Impl::renderAnnotateTab (float cursorOverlayHeight)
     ModifiedImagePtr firstModIm = imageWindow->getFirstValidImage(false /* not only modified */);
 
     if (ImGui::Button(ICON_RECTANGLE))
-        state.activeToolState.kind = ActiveToolState::Kind::Annotate_Line;
+        imageWindow->setActiveTool (ActiveToolState::Kind::Annotate_Line);
     helpMarker ("Add Line", contentSize.x * 0.8, false /* no extra question mark */);
 
     if (!firstModIm->hasValidData())
         return;
     
-    const auto& firstIm = *(firstModIm->data()->cpuData);
-
-    switch (state.activeToolState.kind)
-    {
-        case ActiveToolState::Kind::Annotate_Line: {
-            ImGui::Spacing();
-            ImGui::Separator();
-            ImGui::Text("Add Line");
-            
-            auto& textureLine = state.activeToolState.lineParams.textureLine;
-            int p1x = textureLine.p1.x * firstIm.width() + 0.5f;
-            if (ImGui::SliderInt("Point 1 [x]", &p1x, 0, firstIm.width()))
-            {
-                textureLine.p1.x = p1x / float(firstIm.width());
-            }
-
-            int p1y = textureLine.p1.y * firstIm.height() + 0.5f;
-            if (ImGui::SliderInt("Point 1 [y]", &p1y, 0, firstIm.height()))
-            {
-                textureLine.p1.y = p1y / float(firstIm.height());
-            }
-
-            int p2x = textureLine.p2.x * firstIm.width() + 0.5f;
-            if (ImGui::SliderInt("Point 2 [x]", &p2x, 0, firstIm.width()))
-            {
-                textureLine.p2.x = p2x / float(firstIm.width());
-            }
-
-            int p2y = textureLine.p2.y * firstIm.height() + 0.5f;
-            if (ImGui::SliderInt("Point 1 [y]", &p2y, 0, firstIm.height()))
-            {
-                textureLine.p2.y = p2y / float(firstIm.height());
-            }
-                        
-            if (ImGui::Button("Apply"))
-            {
-                imageWindow->addCommand(ImageWindow::actionCommand(ImageWindowAction::ApplyCurrentTool));
-            }
-            ImGui::SameLine();
-            if (ImGui::Button("Cancel"))
-            {
-                state.activeToolState.kind = ActiveToolState::Kind::None;
-            }
-            break;
-        }
-            
-        default:
-        case ActiveToolState::Kind::None:
-            break;
-    }
+    renderActiveTool (firstModIm, InteractiveTool::Kind::Annotation);
 }
 
 void ControlsWindow::Impl::renderImageList (float cursorOverlayHeight)

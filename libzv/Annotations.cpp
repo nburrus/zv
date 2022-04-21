@@ -135,8 +135,8 @@ void AnnotationRenderer::endRendering (ImageItemData& output)
 
 void LineAnnotation::render (int imageWidth, int imageHeight)
 {
-    Line imageLine = _params.imageAlignedTextureLine (imageWidth, imageHeight);
-    ImGui::GetWindowDrawList()->AddLine(imVec2(imageLine.p1), imVec2(imageLine.p2), IM_COL32(255, 0, 0, 255));
+    Line imageLine = _params.validImageLineForSize (imageWidth, imageHeight);
+    ImGui::GetWindowDrawList()->AddLine(imVec2(imageLine.p1), imVec2(imageLine.p2), _params.color, _params.lineWidth);
 }
 
 Line LineAnnotation::Params::imageAlignedTextureLine (int width, int height) const
@@ -152,8 +152,8 @@ Line LineAnnotation::Params::validImageLineForSize(int width, int height) const
     Line alignedLine = imageAlignedTextureLine(width, height);
     alignedLine.scale (width, height);
     alignedLine.p1.x = keepInRange(alignedLine.p1.x, 0., width-1.0);
+    alignedLine.p1.y = keepInRange(alignedLine.p1.y, 0., height-1.0);
     alignedLine.p2.x = keepInRange(alignedLine.p2.x, 0., width-1.0);
-    alignedLine.p1.x = keepInRange(alignedLine.p1.y, 0., height-1.0);
     alignedLine.p2.y = keepInRange(alignedLine.p2.y, 0., height-1.0);
     return alignedLine;
 }

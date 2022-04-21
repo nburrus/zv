@@ -37,6 +37,7 @@ enum class ImageWindowAction
     Modify_Rotate270,
     
     ApplyCurrentTool,
+    CancelCurrentTool,
 };
 
 } // zv

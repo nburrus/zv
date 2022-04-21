@@ -9,6 +9,7 @@
 #include <libzv/MathUtils.h>
 #include <libzv/Image.h>
 #include <libzv/ImageWindowActions.h>
+#include <libzv/ImageWindowState.h>
 #include <libzv/Modifiers.h>
 
 #include <memory>
@@ -20,7 +21,6 @@ namespace zv
 {
 
 class Viewer;
-struct ImageWindowState;
 struct CursorOverlayInfo;
 
 // Manages a single ImGuiWindow
@@ -70,6 +70,8 @@ public:
     void checkImguiGlobalImageMouseEvents ();
     void saveCurrentImage ();
     void discardAllChanges ();
+
+    void setActiveTool (ActiveToolState::Kind kind);
 
     ModifiedImagePtr getFirstValidImage(bool modifiedOnly);
 

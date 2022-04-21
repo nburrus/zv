@@ -287,41 +287,4 @@ void CropImageModifier::Params::updateControlPoint (int idx, const Point& p, int
     // makeValid (imageWidth, imageHeight);
 }
 
-void CropImageModifier::renderAsActiveTool (const ModifierRenderingContext& context)
-{
-    auto *drawList = ImGui::GetWindowDrawList();
-    Rect textureRoi = _params.imageAlignedTextureRect(context.imageWidth, context.imageHeight);
-    Rect widgetRoi = context.widgetToImageTransform.textureToWidget(textureRoi);
-
-    ImGui::GetWindowDrawList()->AddRect(imVec2(widgetRoi.topLeft()),
-                                        imVec2(widgetRoi.bottomRight()),
-                                        IM_COL32(255, 215, 0, 255),
-                                        0.0f /* rounding */,
-                                        0 /* ImDrawFlags */,
-                                        2.0f /* thickness */);
-
-    if (context.firstValidImageIndex)
-    {
-        if (_controlPoints.empty())
-        {
-            for (int i = 0; i < _params.numControlPoints(); ++i)
-            {
-                _controlPoints.push_back(ControlPoint(_params.controlPointPos(i, textureRoi)));
-            }
-        }
-
-        for (int i = 0; i < _params.numControlPoints(); ++i)
-        {
-            const auto widgetPos = context.widgetToImageTransform.textureToWidget(_params.controlPointPos(i, textureRoi));
-            _controlPoints[i].update(widgetPos, [&](Point updatedWidgetPos) {
-                Point updatedTexturePos = context.widgetToImageTransform.widgetToTexture(updatedWidgetPos);
-                _params.updateControlPoint(i, updatedTexturePos, context.imageWidth, context.imageHeight); 
-            });
-        }
-
-        for (const auto &cp : _controlPoints)
-            cp.render();
-    }
-}
-
 } // zv

@@ -94,7 +94,6 @@ zvlog = ZVLog()
 
 if __name__ == "__main__":
     zvlog.start ()
-    zvlog.enabled = True
     zvlog.image("random1", np.random.default_rng().random(size=(256,256,3), dtype=np.float32), group="default")
     zvlog.image("random2", np.random.default_rng().random(size=(256,256,3), dtype=np.float32), group="default")
 

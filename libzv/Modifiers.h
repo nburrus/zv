@@ -9,7 +9,6 @@
 #include <libzv/ImageList.h>
 #include <libzv/MathUtils.h>
 #include <libzv/Annotations.h>
-#include <libzv/ImguiUtils.h>
 
 #include <deque>
 
@@ -64,14 +63,6 @@ private:
     Angle _angle = Angle::Angle_90;
 };
 
-struct ModifierRenderingContext
-{
-    WidgetToImageTransform widgetToImageTransform;
-    int imageWidth = -1;
-    int imageHeight = -1;
-    bool firstValidImageIndex = false;
-};
-
 class CropImageModifier : public ImageModifier
 {
 public:
@@ -95,16 +86,12 @@ public:
     {}
 
     const Params& params () const { return _params; }
-    Params& paramsRef () { return _params; }
 
 public:
     virtual void apply (const ImageItemData& input, ImageItemData& output) override;
 
-    void renderAsActiveTool (const ModifierRenderingContext& context);
-
 private:
     Params _params;
-    std::vector<ControlPoint> _controlPoints;
 };
 using CropImageModifierPtr = std::shared_ptr<CropImageModifier>;
 
