@@ -23,7 +23,7 @@ set (zv_deps_sources
 
     ${DEPS_DIR}/ImGuiFileDialog/ImGuiFileDialog.cpp
 
-    ../client/znet.cpp
+    ../client/zv/znet.cpp
 )
 
 if (APPLE)

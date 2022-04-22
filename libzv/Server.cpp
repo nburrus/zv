@@ -4,8 +4,8 @@
 // of the BSD license.  See the LICENSE file for details.
 //
 
-#include <client/znet_zv.h>
-#include <client/Message.h>
+#include <client/zv/znet_zv.h>
+#include <client/zv/Message.h>
 
 #include "Server.h"
 

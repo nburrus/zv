@@ -2,7 +2,7 @@
 #include <libzv/Viewer.h>
 #include <libzv/ColorConversion.h>
 
-#include <client/Client.h>
+#include <client/zv/Client.h>
 
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
