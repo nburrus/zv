@@ -239,9 +239,6 @@ struct ImageWindow::Impl
     
     using CreateModifierFunc = std::function<std::unique_ptr<ImageModifier>(void)>;
     void addModifier (const CreateModifierFunc& createModifier);
-
-    using CreateAnnotationFunc = std::function<std::unique_ptr<ImageAnnotation>(void)>;
-    void addAnnotation(const CreateAnnotationFunc& createAnnnotation);
 };
 
 bool ImageWindow::Impl::runAfterCheckingPendingChanges (std::function<void(void)>&& func)
@@ -340,26 +337,26 @@ void ImageWindow::Impl::adjustForNewSelection ()
         {
             case WindowGeometryMode::Normal:
             {
-                that.addCommand (actionCommand(ImageWindowAction::Zoom_Normal));
+                that.addCommand (actionCommand(ImageWindowAction::Kind::Zoom_Normal));
                 break;
             }
 
             case WindowGeometryMode::AspectRatio:
             {
-                that.addCommand (actionCommand(ImageWindowAction::Zoom_RestoreAspectRatio));
+                that.addCommand (actionCommand(ImageWindowAction::Kind::Zoom_RestoreAspectRatio));
                 break;
             }
 
             case WindowGeometryMode::Maxspect:
             {
-                that.addCommand (actionCommand(ImageWindowAction::Zoom_Maxspect));
+                that.addCommand (actionCommand(ImageWindowAction::Kind::Zoom_Maxspect));
                 break;
             }
 
             case WindowGeometryMode::ScaleSpect:
             {
                 // If the user adjusts the size, leave it as is. It's less disturbing.
-                // that.addCommand (actionCommand(ImageWindowAction::Zoom_RestoreAspectRatio));
+                // that.addCommand (actionCommand(ImageWindowAction::Kind::Zoom_RestoreAspectRatio));
                 break;
             }
 
@@ -399,17 +396,6 @@ void ImageWindow::Impl::addModifier(const CreateModifierFunc& createModifier)
             continue;
 
         modImPtr->addModifier (createModifier());
-    }
-}
-
-void ImageWindow::Impl::addAnnotation(const CreateAnnotationFunc& createAnnotation)
-{
-    for (const auto& modImPtr : this->currentImages)
-    {
-        if (!modImPtr)
-            continue;
-
-        modImPtr->addAnnotation (createAnnotation());
     }
 }
 
@@ -586,28 +572,28 @@ void ImageWindow::processKeyEvent (int keycode)
 
     switch (keycode)
     {
-        case GLFW_KEY_ESCAPE: enqueueAction(ImageWindowAction::CancelCurrentTool); break;
-        case GLFW_KEY_ENTER: enqueueAction(ImageWindowAction::ApplyCurrentTool); break;
+        case GLFW_KEY_ESCAPE: enqueueAction(ImageWindowAction::Kind::CancelCurrentTool); break;
+        case GLFW_KEY_ENTER: enqueueAction(ImageWindowAction::Kind::ApplyCurrentTool); break;
         
         case GLFW_KEY_UP:
-        case GLFW_KEY_BACKSPACE: enqueueAction(ImageWindowAction::View_PrevImage); break;
+        case GLFW_KEY_BACKSPACE: enqueueAction(ImageWindowAction::Kind::View_PrevImage); break;
 
-        case GLFW_KEY_PAGE_DOWN: enqueueAction(ImageWindowAction::View_NextPageOfImage); break;
-        case GLFW_KEY_PAGE_UP: enqueueAction(ImageWindowAction::View_PrevPageOfImage); break;
+        case GLFW_KEY_PAGE_DOWN: enqueueAction(ImageWindowAction::Kind::View_NextPageOfImage); break;
+        case GLFW_KEY_PAGE_UP: enqueueAction(ImageWindowAction::Kind::View_PrevPageOfImage); break;
         
         case GLFW_KEY_DOWN:
-        case GLFW_KEY_SPACE: enqueueAction(ImageWindowAction::View_NextImage); break;
+        case GLFW_KEY_SPACE: enqueueAction(ImageWindowAction::Kind::View_NextImage); break;
 
-        case GLFW_KEY_Z: if (CtrlOrCmd(io)) enqueueAction(ImageWindowAction::Edit_Undo); break;
+        case GLFW_KEY_Z: if (CtrlOrCmd(io)) enqueueAction(ImageWindowAction::Kind::Edit_Undo); break;
 
         case GLFW_KEY_C: {
             if (CtrlOrCmd(io))
             {
-                enqueueAction(ImageWindowAction::Edit_CopyImageToClipboard);
+                enqueueAction(ImageWindowAction::Kind::Edit_CopyImageToClipboard);
             }
             else
             {
-                enqueueAction(ImageWindowAction::Edit_CopyCursorInfoToClipboard);
+                enqueueAction(ImageWindowAction::Kind::Edit_CopyCursorInfoToClipboard);
             }            
             break;
         }
@@ -627,7 +613,7 @@ void ImageWindow::processKeyEvent (int keycode)
             // No image saving for now.
             if (CtrlOrCmd(io))
             {
-                enqueueAction (ImageWindowAction::File_OpenImage);
+                enqueueAction (ImageWindowAction::Kind::File_OpenImage);
             }
             break;
         }
@@ -636,23 +622,23 @@ void ImageWindow::processKeyEvent (int keycode)
         case GLFW_KEY_V: {
             if (CtrlOrCmd(io))
             {
-                enqueueAction(ImageWindowAction::Edit_PasteImageFromClipboard);
+                enqueueAction(ImageWindowAction::Kind::Edit_PasteImageFromClipboard);
             }
             else
             {
-                enqueueAction (ImageWindowAction::View_ToggleOverlay);
+                enqueueAction (ImageWindowAction::Kind::View_ToggleOverlay);
             }      
             break;
         }
         
         // Zoom
-        case GLFW_KEY_N: enqueueAction(ImageWindowAction::Zoom_Normal); break;
-        case GLFW_KEY_M: enqueueAction(ImageWindowAction::Zoom_Maxspect); break;
-        case GLFW_KEY_A: enqueueAction (ImageWindowAction::Zoom_RestoreAspectRatio); break;
-        case GLFW_KEY_PERIOD: enqueueAction (ImageWindowAction::Zoom_Inc10p); break;
-        case GLFW_KEY_COMMA: enqueueAction (ImageWindowAction::Zoom_Dec10p); break;
-        case '<': enqueueAction (ImageWindowAction::Zoom_div2); break;
-        case '>': enqueueAction (ImageWindowAction::Zoom_x2); break;
+        case GLFW_KEY_N: enqueueAction(ImageWindowAction::Kind::Zoom_Normal); break;
+        case GLFW_KEY_M: enqueueAction(ImageWindowAction::Kind::Zoom_Maxspect); break;
+        case GLFW_KEY_A: enqueueAction (ImageWindowAction::Kind::Zoom_RestoreAspectRatio); break;
+        case GLFW_KEY_PERIOD: enqueueAction (ImageWindowAction::Kind::Zoom_Inc10p); break;
+        case GLFW_KEY_COMMA: enqueueAction (ImageWindowAction::Kind::Zoom_Dec10p); break;
+        case '<': enqueueAction (ImageWindowAction::Kind::Zoom_div2); break;
+        case '>': enqueueAction (ImageWindowAction::Kind::Zoom_x2); break;
 
         // Layout
         case GLFW_KEY_1: addCommand(ImageWindow::layoutCommand(1,1)); break;
@@ -1223,24 +1209,24 @@ void copyToClipboard (const ImageSRGBA& im)
     clip::set_image (clip::image(im.rawBytes(), spec));
 }
 
-void ImageWindow::runAction (ImageWindowAction action)
+void ImageWindow::runAction (const ImageWindowAction& action)
 {
-    switch (action)
+    switch (action.kind)
     {
-        case ImageWindowAction::Zoom_Normal: {
+        case ImageWindowAction::Kind::Zoom_Normal: {
             impl->lastGeometryMode = Impl::WindowGeometryMode::Normal;
             impl->imageWidgetRect.current = impl->imageWidgetRect.normal;
             impl->shouldUpdateWindowSize = true;
             break;
         }
 
-        case ImageWindowAction::Zoom_RestoreAspectRatio: {            
+        case ImageWindowAction::Kind::Zoom_RestoreAspectRatio: {            
             impl->adjustAspectRatio (); 
             impl->lastGeometryMode = Impl::WindowGeometryMode::AspectRatio;
             break;
         }
 
-        case ImageWindowAction::Zoom_x2: {
+        case ImageWindowAction::Kind::Zoom_x2: {
             impl->imageWidgetRect.current.size.x *= 2.f;
             impl->imageWidgetRect.current.size.y *= 2.f;
             impl->shouldUpdateWindowSize = true;
@@ -1249,7 +1235,7 @@ void ImageWindow::runAction (ImageWindowAction action)
             break;
         }
 
-        case ImageWindowAction::Zoom_div2: {
+        case ImageWindowAction::Kind::Zoom_div2: {
             if (impl->imageWidgetRect.current.size.x > 64 && impl->imageWidgetRect.current.size.y > 64)
             {
                 impl->imageWidgetRect.current.size.x *= 0.5f;
@@ -1261,7 +1247,7 @@ void ImageWindow::runAction (ImageWindowAction action)
             break;
         }
 
-        case ImageWindowAction::Zoom_Inc10p: {
+        case ImageWindowAction::Kind::Zoom_Inc10p: {
             impl->imageWidgetRect.current.size.x *= 1.1f;
             impl->imageWidgetRect.current.size.y *= 1.1f;
             impl->shouldUpdateWindowSize = true;
@@ -1270,7 +1256,7 @@ void ImageWindow::runAction (ImageWindowAction action)
             break;
         }
 
-        case ImageWindowAction::Zoom_Dec10p: {
+        case ImageWindowAction::Kind::Zoom_Dec10p: {
             if (impl->imageWidgetRect.current.size.x > 64 && impl->imageWidgetRect.current.size.y > 64)
             {
                 impl->imageWidgetRect.current.size.x *= 0.9f;
@@ -1282,7 +1268,7 @@ void ImageWindow::runAction (ImageWindowAction action)
             break;
         }
 
-        case ImageWindowAction::Zoom_Maxspect: {
+        case ImageWindowAction::Kind::Zoom_Maxspect: {
             impl->imageWidgetRect.current.size.x = impl->monitorSize.x;
             impl->imageWidgetRect.current.size.y = impl->monitorSize.y;
             impl->adjustAspectRatio ();
@@ -1290,30 +1276,30 @@ void ImageWindow::runAction (ImageWindowAction action)
             break;
         }
 
-        case ImageWindowAction::File_OpenImage: {
+        case ImageWindowAction::Kind::File_OpenImage: {
             impl->viewer->onOpenImage();
             break;
         }
 
-        case ImageWindowAction::View_ToggleOverlay: {
+        case ImageWindowAction::Kind::View_ToggleOverlay: {
             impl->mutableState.infoOverlayEnabled = !impl->mutableState.infoOverlayEnabled;
             break;
         }
 
-        case ImageWindowAction::View_NextPageOfImage:
-        case ImageWindowAction::View_PrevPageOfImage: {
+        case ImageWindowAction::Kind::View_NextPageOfImage:
+        case ImageWindowAction::Kind::View_PrevPageOfImage: {
             auto& imageList = impl->viewer->imageList();
             const auto& range = impl->viewer->imageList().selectedRange();
             const int n = imageList.numEnabledImages();
             const int count = range.indices.size();
             const int step = 2 + ((n * 0.1f) / count); // advance by 10% each time, at least 2
             const int finalStep = range.indices.size() * step;
-            bool forward = (action == ImageWindowAction::View_NextPageOfImage);
+            bool forward = (action.kind == ImageWindowAction::Kind::View_NextPageOfImage);
             impl->viewer->imageList().advanceCurrentSelection (forward ? finalStep : -finalStep);
             break;
         }
 
-        case ImageWindowAction::View_NextImage: {
+        case ImageWindowAction::Kind::View_NextImage: {
             impl->runAfterCheckingPendingChanges ([this]() {
                 const auto& range = impl->viewer->imageList().selectedRange();
                 impl->viewer->imageList().advanceCurrentSelection (range.indices.size());
@@ -1321,13 +1307,22 @@ void ImageWindow::runAction (ImageWindowAction action)
             break;
         }
 
-        case ImageWindowAction::View_PrevImage: {
-            const auto& range = impl->viewer->imageList().selectedRange();
-            impl->viewer->imageList().advanceCurrentSelection (-range.indices.size());
+        case ImageWindowAction::Kind::View_PrevImage: {
+            impl->runAfterCheckingPendingChanges ([this]() {
+                const auto& range = impl->viewer->imageList().selectedRange();
+                impl->viewer->imageList().advanceCurrentSelection (-range.indices.size());
+            });
             break;
         }
 
-        case ImageWindowAction::Edit_Undo: {
+        case ImageWindowAction::Kind::View_SelectImage: {
+            impl->runAfterCheckingPendingChanges ([this, action]() {
+                impl->viewer->imageList().setSelectionStart (action.paramsPtr->intParams[0]);
+            });
+            break;
+        }
+
+        case ImageWindowAction::Kind::Edit_Undo: {
             for (auto& it : impl->currentImages)
             {
                 if (it.get() && it->hasValidData())
@@ -1337,12 +1332,12 @@ void ImageWindow::runAction (ImageWindowAction action)
             break;
         }
 
-        case ImageWindowAction::Edit_PasteImageFromClipboard: {
+        case ImageWindowAction::Kind::Edit_PasteImageFromClipboard: {
             impl->viewer->addPastedImage ();
             break;
         }
 
-        case ImageWindowAction::Edit_CopyImageToClipboard: {
+        case ImageWindowAction::Kind::Edit_CopyImageToClipboard: {
             for (int i = 0; i < impl->currentImages.size(); ++i)
             {
                 if (impl->currentImages[i] && impl->currentImages[i]->hasValidData())
@@ -1354,7 +1349,7 @@ void ImageWindow::runAction (ImageWindowAction action)
             break;
         }
 
-        case ImageWindowAction::Edit_CopyCursorInfoToClipboard: { 
+        case ImageWindowAction::Kind::Edit_CopyCursorInfoToClipboard: { 
             if (!impl->cursorOverlayInfo.valid())
                 break;
             
@@ -1388,15 +1383,15 @@ void ImageWindow::runAction (ImageWindowAction action)
             break;
         }
 
-        case ImageWindowAction::Modify_Rotate90:
-        case ImageWindowAction::Modify_Rotate180:
-        case ImageWindowAction::Modify_Rotate270: {
+        case ImageWindowAction::Kind::Modify_Rotate90:
+        case ImageWindowAction::Kind::Modify_Rotate180:
+        case ImageWindowAction::Kind::Modify_Rotate270: {
             RotateImageModifier::Angle angle;
-            switch (action)
+            switch (action.kind)
             {
-                case ImageWindowAction::Modify_Rotate90: angle = RotateImageModifier::Angle::Angle_90; break;
-                case ImageWindowAction::Modify_Rotate180: angle = RotateImageModifier::Angle::Angle_180; break;
-                case ImageWindowAction::Modify_Rotate270: angle = RotateImageModifier::Angle::Angle_270; break;
+                case ImageWindowAction::Kind::Modify_Rotate90: angle = RotateImageModifier::Angle::Angle_90; break;
+                case ImageWindowAction::Kind::Modify_Rotate180: angle = RotateImageModifier::Angle::Angle_180; break;
+                case ImageWindowAction::Kind::Modify_Rotate270: angle = RotateImageModifier::Angle::Angle_270; break;
                 default: zv_assert(false, "invalid action"); break;
             }
 
@@ -1404,24 +1399,24 @@ void ImageWindow::runAction (ImageWindowAction action)
             break;
         }
             
-        case ImageWindowAction::ApplyCurrentTool: {
+        case ImageWindowAction::Kind::ApplyCurrentTool: {
             impl->applyCurrentTool ();
             break;
         }
 
-        case ImageWindowAction::CancelCurrentTool: {
+        case ImageWindowAction::Kind::CancelCurrentTool: {
             setActiveTool (ActiveToolState::Kind::None);
             break;
         }
     }
 }
 
-void ImageWindow::enqueueAction (ImageWindowAction action)
+void ImageWindow::enqueueAction (const ImageWindowAction& action)
 {
     addCommand(actionCommand(action));
 }
 
-ImageWindow::Command ImageWindow::actionCommand (ImageWindowAction action)
+ImageWindow::Command ImageWindow::actionCommand (const ImageWindowAction& action)
 {
     return Command([action](ImageWindow& window) {
         window.runAction (action);
@@ -1431,11 +1426,13 @@ ImageWindow::Command ImageWindow::actionCommand (ImageWindowAction action)
 ImageWindow::Command ImageWindow::layoutCommand(int numRows, int numCols)
 {
     return Command([numRows,numCols](ImageWindow &window) {
-        LayoutConfig config;
-        config.numCols = numCols;
-        config.numRows = numRows;
-        window.impl->mutableState.layoutConfig = config; 
-        window.impl->viewer->imageList().setSelectionCount(config.numImages());
+        window.impl->runAfterCheckingPendingChanges([numRows,numCols,&window]() {
+            LayoutConfig config;
+            config.numCols = numCols;
+            config.numRows = numRows;
+            window.impl->mutableState.layoutConfig = config; 
+            window.impl->viewer->imageList().setSelectionCount(config.numImages());
+        });
     });
 }
 

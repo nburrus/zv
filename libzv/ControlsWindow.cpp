@@ -77,10 +77,9 @@ struct ControlsWindow::Impl
     void maybeRenderSaveImage ();
     void maybeRenderConfirmPendingChanges ();
     
-    void renderActiveTool (const ModifiedImagePtr& firstModIm, InteractiveTool::Kind acceptedKind);
+    void renderActiveTool (const ModifiedImagePtr& firstModIm);
     void renderImageList (float cursorOverlayHeight);
-    void renderTransformTab (float cursorOverlayHeight);
-    void renderAnnotateTab (float cursorOverlayHeight);
+    void renderModifiersTab (float cursorOverlayHeight);
     void renderCursorInfo (const CursorOverlayInfo& cursorOverlayInfo, float overlayHeight);
 };
 
@@ -187,7 +186,7 @@ void ControlsWindow::Impl::maybeRenderConfirmPendingChanges ()
     }
 }
 
-void ControlsWindow::Impl::renderActiveTool (const ModifiedImagePtr& firstModIm, InteractiveTool::Kind acceptedKind)
+void ControlsWindow::Impl::renderActiveTool (const ModifiedImagePtr& firstModIm)
 {    
     const auto& firstIm = *(firstModIm->data()->cpuData);
 
@@ -199,9 +198,6 @@ void ControlsWindow::Impl::renderActiveTool (const ModifiedImagePtr& firstModIm,
 
     InteractiveTool* activeTool = state.activeToolState.activeTool();
 
-    if (activeTool->kind() != acceptedKind)
-        return;    
-
     if (state.activeToolState.kind != ActiveToolState::Kind::None)
     {
         ImGui::Spacing();
@@ -211,17 +207,17 @@ void ControlsWindow::Impl::renderActiveTool (const ModifiedImagePtr& firstModIm,
 
         if (ImGui::Button("Apply"))
         {
-            imageWindow->addCommand(ImageWindow::actionCommand(ImageWindowAction::ApplyCurrentTool));
+            imageWindow->addCommand(ImageWindow::actionCommand(ImageWindowAction::Kind::ApplyCurrentTool));
         }
         ImGui::SameLine();
         if (ImGui::Button("Cancel"))
         {
-            imageWindow->addCommand(ImageWindow::actionCommand(ImageWindowAction::CancelCurrentTool));
+            imageWindow->addCommand(ImageWindow::actionCommand(ImageWindowAction::Kind::CancelCurrentTool));
         }
     }
 }
 
-void ControlsWindow::Impl::renderTransformTab (float cursorOverlayHeight)
+void ControlsWindow::Impl::renderModifiersTab (float cursorOverlayHeight)
 {
     auto* imageWindow = this->viewer->imageWindow();
     ModifiedImagePtr firstModIm = imageWindow->getFirstValidImage(false /* not only modified */);
@@ -231,13 +227,13 @@ void ControlsWindow::Impl::renderTransformTab (float cursorOverlayHeight)
     ImGui::Spacing();
 
     if (ImGui::Button(ICON_ROTATE_LEFT))
-        imageWindow->addCommand (ImageWindow::actionCommand(ImageWindowAction::Modify_Rotate270));
+        imageWindow->addCommand (ImageWindow::actionCommand(ImageWindowAction::Kind::Modify_Rotate270));
     helpMarker ("Rotate Left (-90º)", contentSize.x * 0.8, false /* no extra question mark */);
 
     ImGui::SameLine();
 
     if (ImGui::Button(ICON_ROTATE_RIGHT))
-        imageWindow->addCommand (ImageWindow::actionCommand(ImageWindowAction::Modify_Rotate90));
+        imageWindow->addCommand (ImageWindow::actionCommand(ImageWindowAction::Kind::Modify_Rotate90));
     helpMarker ("Rotate Right (+90º)", contentSize.x * 0.8, false /* no extra question mark */);
 
     ImGui::SameLine();
@@ -246,31 +242,39 @@ void ControlsWindow::Impl::renderTransformTab (float cursorOverlayHeight)
         imageWindow->setActiveTool (ActiveToolState::Kind::Transform_Crop);
     helpMarker ("Crop", contentSize.x * 0.8, false /* no extra question mark */);
     
-    if (!firstModIm->hasValidData())
-        return;
-    
-    renderActiveTool (firstModIm, InteractiveTool::Kind::Modifier);
-}
+    ImGui::SameLine();
 
-void ControlsWindow::Impl::renderAnnotateTab (float cursorOverlayHeight)
-{
-    ImVec2 contentSize = ImGui::GetContentRegionAvail();
-    auto* imageWindow = this->viewer->imageWindow();
-    auto& state = imageWindow->mutableState();
-    ModifiedImagePtr firstModIm = imageWindow->getFirstValidImage(false /* not only modified */);
-
-    if (ImGui::Button(ICON_RECTANGLE))
+    if (ImGui::Button(ICON_FLOW_LINE))
         imageWindow->setActiveTool (ActiveToolState::Kind::Annotate_Line);
     helpMarker ("Add Line", contentSize.x * 0.8, false /* no extra question mark */);
 
+    ImGui::SameLine();
+
+    if (ImGui::Button(ICON_RECTANGLE))
+        imageWindow->setActiveTool (ActiveToolState::Kind::Annotate_Line);
+    helpMarker ("Add Rectangle", contentSize.x * 0.8, false /* no extra question mark */);
+
+    ImGui::SameLine();
+
+    if (ImGui::Button(ICON_CIRCLE))
+        imageWindow->setActiveTool (ActiveToolState::Kind::Annotate_Line);
+    helpMarker ("Add Circle", contentSize.x * 0.8, false /* no extra question mark */);
+
+    ImGui::SameLine();
+
+    if (ImGui::Button(ICON_TEXT))
+        imageWindow->setActiveTool (ActiveToolState::Kind::Annotate_Line);
+    helpMarker ("Add Text", contentSize.x * 0.8, false /* no extra question mark */);
+
     if (!firstModIm->hasValidData())
         return;
     
-    renderActiveTool (firstModIm, InteractiveTool::Kind::Annotation);
+    renderActiveTool (firstModIm);
 }
 
 void ControlsWindow::Impl::renderImageList (float cursorOverlayHeight)
 {
+    auto* imageWindow = this->viewer->imageWindow();
     ImageList& imageList = this->viewer->imageList();
         
     static ImGuiTextFilter filter;
@@ -319,7 +323,9 @@ void ControlsWindow::Impl::renderImageList (float cursorOverlayHeight)
             {
                 // Always trigger this since the global index might change if the current filter
                 // limited the options.
-                imageList.setSelectionStart (idx);
+                auto paramsPtr = std::make_shared<ImageWindowAction::Params>();
+                paramsPtr->intParams[0] = idx;
+                imageWindow->addCommand (ImageWindow::actionCommand(ImageWindowAction::Kind::View_SelectImage, paramsPtr));
                 this->lastSelectedIdx = idx;
             }
             ImGui::PopID();
@@ -402,7 +408,7 @@ void ControlsWindow::Impl::renderMenu ()
         {
             if (ImGui::MenuItem("Undo", CtrlOrCmd_Str "+z", false, imageWindow->canUndo()))
             {
-                imageWindow->addCommand(ImageWindow::actionCommand(ImageWindowAction::Edit_Undo));
+                imageWindow->addCommand(ImageWindow::actionCommand(ImageWindowAction::Kind::Edit_Undo));
             }
             if (ImGui::MenuItem("Copy to clipboard", CtrlOrCmd_Str "+c", false))
             {
@@ -421,15 +427,15 @@ void ControlsWindow::Impl::renderMenu ()
             {
                 if (ImGui::MenuItem("Rotate Left (-90)", "", false))
                 {
-                    imageWindow->addCommand (ImageWindow::actionCommand(ImageWindowAction::Modify_Rotate270));
+                    imageWindow->addCommand (ImageWindow::actionCommand(ImageWindowAction::Kind::Modify_Rotate270));
                 }
                 if (ImGui::MenuItem("Rotate Right (+90)", "", false))
                 {
-                    imageWindow->addCommand (ImageWindow::actionCommand(ImageWindowAction::Modify_Rotate90));
+                    imageWindow->addCommand (ImageWindow::actionCommand(ImageWindowAction::Kind::Modify_Rotate90));
                 }
                 if (ImGui::MenuItem("Rotate UpsideDown (180)", "", false))
                 {
-                    imageWindow->addCommand (ImageWindow::actionCommand(ImageWindowAction::Modify_Rotate180));
+                    imageWindow->addCommand (ImageWindow::actionCommand(ImageWindowAction::Kind::Modify_Rotate180));
                 }
                 if (ImGui::MenuItem("Crop Image", "", false))
                 {
@@ -723,21 +729,16 @@ void ControlsWindow::renderFrame ()
         }
 
         ImGuiTabBarFlags tab_bar_flags = ImGuiTabBarFlags_None;
-        if (ImGui::BeginTabBar("MyTabBar", tab_bar_flags))
+        if (ImGui::BeginTabBar("TabBar", tab_bar_flags))
         {
             if (ImGui::BeginTabItem("Image List"))
             {
                 impl->renderImageList (cursorOverlayHeight);
                 ImGui::EndTabItem();
             }
-            if (ImGui::BeginTabItem("Transform"))
+            if (ImGui::BeginTabItem("Modifiers"))
             {
-                impl->renderTransformTab (cursorOverlayHeight);
-                ImGui::EndTabItem();
-            }
-            if (ImGui::BeginTabItem("Annotate"))
-            {
-                impl->renderAnnotateTab (cursorOverlayHeight);
+                impl->renderModifiersTab (cursorOverlayHeight);
                 ImGui::EndTabItem();
             }
             ImGui::EndTabBar();

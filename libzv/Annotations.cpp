@@ -4,7 +4,7 @@
 // of the BSD license.  See the LICENSE file for details.
 //
 
-#include "Modifiers.h"
+#include "Annotations.h"
 
 #include <libzv/ImguiUtils.h>
 #include <libzv/Utils.h>
@@ -67,7 +67,7 @@ void AnnotationRenderer::disableContext ()
     impl->_prevContext = nullptr;
 }
 
-void AnnotationRenderer::beginRendering (ImageItemData& input)
+void AnnotationRenderer::beginRendering (const ImageItemData& input)
 {
     const int inW = input.cpuData->width();
     const int inH = input.cpuData->height();
@@ -87,7 +87,7 @@ void AnnotationRenderer::beginRendering (ImageItemData& input)
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0);
     ImGui::Begin("#empty", nullptr, windowFlagsWithoutAnything());
     ImGui::Image(reinterpret_cast<void*>(input.textureData->textureId()), ImVec2(inW, inH));
-    ImGui::GetWindowDrawList()->AddRectFilled(ImVec2(10, 10), ImVec2(64, 64), IM_COL32(0, 0, 255, 255));
+    // ImGui::GetWindowDrawList()->AddRectFilled(ImVec2(10, 10), ImVec2(64, 64), IM_COL32(0, 0, 255, 255));
 }
 
 void AnnotationRenderer::endRendering (ImageItemData& output)
@@ -133,7 +133,17 @@ void AnnotationRenderer::endRendering (ImageItemData& output)
     output.status = ImageItemData::Status::Ready;
 }
 
-void LineAnnotation::render (int imageWidth, int imageHeight)
+void AnnotationModifier::apply (const ImageItemData& inputData, ImageItemData& outputData, AnnotationRenderer& annotationRenderer)
+{   
+    const int w = inputData.cpuData->width();
+    const int h = inputData.cpuData->height();
+
+    annotationRenderer.beginRendering (inputData);
+    renderAnnotation (w, h);
+    annotationRenderer.endRendering (outputData);
+}
+
+void LineAnnotation::renderAnnotation (int imageWidth, int imageHeight)
 {
     Line imageLine = _params.validImageLineForSize (imageWidth, imageHeight);
     ImGui::GetWindowDrawList()->AddLine(imVec2(imageLine.p1), imVec2(imageLine.p2), _params.color, _params.lineWidth);

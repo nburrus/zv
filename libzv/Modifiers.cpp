@@ -18,7 +18,7 @@ void ModifiedImage::discardChanges ()
     if (_modifiers.empty ())
         return;
     _modifiers.clear ();
-    _modifiersOrAnnotationsChangedSinceLastUpdate = true;
+    _modifiersChangedSinceLastUpdate = true;
 }
 
 bool ModifiedImage::update ()
@@ -28,7 +28,7 @@ bool ModifiedImage::update ()
     
     bool originalChanged = _originalData->update();
 
-    if (!originalChanged && !_modifiersOrAnnotationsChangedSinceLastUpdate)
+    if (!originalChanged && !_modifiersChangedSinceLastUpdate)
     {
         return false;
     }
@@ -39,15 +39,13 @@ bool ModifiedImage::update ()
         ImageItemDataPtr input = _originalData;
         for (auto& modifier : _modifiers)
         {
-            modifier->apply (input);
+            modifier->apply (input, _annotationRenderer);
             input = modifier->output ();
         }
-
-        renderAnnotations ();
     }
     
     clearIntermediateModifiersData ();
-    _modifiersOrAnnotationsChangedSinceLastUpdate = false;
+    _modifiersChangedSinceLastUpdate = false;
 
     const ImageItemDataPtr& currentData = data();
     if (currentData->cpuData->hasData())
@@ -61,31 +59,15 @@ bool ModifiedImage::update ()
 
 void ModifiedImage::addModifier (std::unique_ptr<ImageModifier> modifier)
 {
-    bool applyNow = hasValidData();
-    if (applyNow)
+    if (hasValidData())
     {
-        modifier->apply (dataWithoutAnnotations());
+        modifier->apply (data(), _annotationRenderer);
     }
     _modifiers.push_back (std::move(modifier));
-    _modifiersOrAnnotationsChangedSinceLastUpdate = true;
+    _modifiersChangedSinceLastUpdate = true;
     
     _actions.push_back(ImageAction([this]() {
         removeLastModifier();
-    }));
-    
-    if (applyNow)
-    {
-        renderAnnotations();
-    }
-}
-
-void ModifiedImage::addAnnotation (std::unique_ptr<ImageAnnotation> annotation)
-{
-    _annotations.push_back (std::move(annotation));
-    renderAnnotations ();
-    _modifiersOrAnnotationsChangedSinceLastUpdate = true;
-    _actions.push_back(ImageAction([this]() {
-        removeLastAnnotation();
     }));
 }
 
@@ -94,17 +76,7 @@ void ModifiedImage::removeLastModifier()
     if (_modifiers.empty())
         return;
     _modifiers.pop_back();
-    renderAnnotations ();
-    _modifiersOrAnnotationsChangedSinceLastUpdate = true;
-}
-
-void ModifiedImage::removeLastAnnotation()
-{
-    if (_annotations.empty())
-        return;
-    _annotations.pop_back();
-    _modifiersOrAnnotationsChangedSinceLastUpdate = true;
-    renderAnnotations ();
+    _modifiersChangedSinceLastUpdate = true;
 }
 
 void ModifiedImage::undoLastChange ()
@@ -128,37 +100,12 @@ void ModifiedImage::clearIntermediateModifiersData ()
     }
 }
 
-void ModifiedImage::renderAnnotations ()
-{
-    if (_annotations.empty())
-    {
-        _annotatedData = nullptr;
-        return;
-    }
-
-    if (!_annotatedData)
-        _annotatedData = std::make_shared<ImageItemData>();
-    
-    ImageItemDataPtr inputData = dataWithoutAnnotations();
-    if (inputData->status != ImageItemData::Status::Ready)
-        return;
-
-    const int w = inputData->cpuData->width();
-    const int h = inputData->cpuData->height();
-
-    _annotationRenderer.beginRendering (*inputData);
-    for (auto& it: _annotations)
-        it->render (w, h);
-    _annotationRenderer.endRendering (*_annotatedData);
-    _modifiersOrAnnotationsChangedSinceLastUpdate = true;
-}
-
 } // zv
 
 namespace zv
 {
 
-void RotateImageModifier::apply (const ImageItemData& input, ImageItemData& output)
+void RotateImageModifier::apply (const ImageItemData& input, ImageItemData& output, AnnotationRenderer&)
 {
     const auto& inIm = (*input.cpuData);
     const int inW = inIm.width();
@@ -217,7 +164,7 @@ void RotateImageModifier::apply (const ImageItemData& input, ImageItemData& outp
     output.status = ImageItemData::Status::Ready;
 }
 
-void CropImageModifier::apply (const ImageItemData& input, ImageItemData& output)
+void CropImageModifier::apply (const ImageItemData& input, ImageItemData& output, AnnotationRenderer&)
 {
     const auto& inIm = (*input.cpuData);
     const int inW = inIm.width();

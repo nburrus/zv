@@ -8,6 +8,8 @@
 
 #include <libzv/ImageList.h>
 #include <libzv/ImguiUtils.h>
+#include <libzv/Modifiers.h>
+
 
 namespace zv
 {
@@ -22,7 +24,7 @@ public:
     void initializeFromCurrentContext ();
     void shutdown ();
 
-    void beginRendering (ImageItemData& inputData);
+    void beginRendering (const ImageItemData& inputData);
     void endRendering (ImageItemData& outputData);
 
 private:
@@ -34,16 +36,16 @@ private:
     std::unique_ptr<Impl> impl;
 };
 
-class ImageAnnotation
+class AnnotationModifier : public ImageModifier
 {
 public:
-    virtual ~ImageAnnotation () = default;
+    virtual void apply (const ImageItemData& input, ImageItemData& output, AnnotationRenderer& annotationRenderer) override;
 
-public:
-    virtual void render (int imageWidth, int imageHeight) = 0;
+protected:
+    virtual void renderAnnotation (int imageWidth, int imageHeight) = 0;
 };
 
-class LineAnnotation : public ImageAnnotation
+class LineAnnotation : public AnnotationModifier
 {
 public:
     struct Params
@@ -64,7 +66,7 @@ public:
     
 public:
     LineAnnotation (const Params& params) : _params (params) {}
-    virtual void render (int imageWidth, int imageHeight) override;
+    virtual void renderAnnotation (int imageWidth, int imageHeight) override;
 
 private:
     Params _params;

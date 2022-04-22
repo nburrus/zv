@@ -59,7 +59,7 @@ public:
     
     // Force a move semantic to avoid copies of the embedded std::function.
     void addCommand (Command&& command);
-    void enqueueAction (ImageWindowAction action);
+    void enqueueAction (const ImageWindowAction& action);
 
     bool canUndo() const;
 
@@ -76,7 +76,11 @@ public:
     ModifiedImagePtr getFirstValidImage(bool modifiedOnly);
 
 public:
-    static Command actionCommand (ImageWindowAction action);
+    static Command actionCommand (ImageWindowAction::Kind actionKind, ImageWindowAction::ParamsPtr params = nullptr)
+    { return actionCommand(ImageWindowAction(actionKind, params));}
+
+    static Command actionCommand (const ImageWindowAction& action);
+
     static Command layoutCommand(int nrows, int ncols);
 
 public:
@@ -85,7 +89,7 @@ public:
     
 private:
     // Public accessors can use actionCommand
-    void runAction (ImageWindowAction action);
+    void runAction (const ImageWindowAction& action);
 
 private:
     struct Impl;

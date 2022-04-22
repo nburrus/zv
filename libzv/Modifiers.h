@@ -8,12 +8,13 @@
 
 #include <libzv/ImageList.h>
 #include <libzv/MathUtils.h>
-#include <libzv/Annotations.h>
 
 #include <deque>
 
 namespace zv
 {
+
+class AnnotationRenderer;
 
 class ImageModifier
 {
@@ -21,10 +22,10 @@ public:
     virtual ~ImageModifier () {}
 
 public:
-    void apply (const ImageItemDataPtr& input)
+    void apply (const ImageItemDataPtr& input, AnnotationRenderer& annotationRenderer)
     {
         _outputData = std::make_shared<ImageItemData>();
-        apply (*input, *_outputData);
+        apply (*input, *_outputData, annotationRenderer);
     }
 
     const ImageItemDataPtr& output () const
@@ -38,62 +39,11 @@ public:
     }
 
 protected:
-    virtual void apply (const ImageItemData& input, ImageItemData& output) = 0;
+    virtual void apply (const ImageItemData& input, ImageItemData& output, AnnotationRenderer& annotationRenderer) = 0;
 
 private:
     ImageItemDataPtr _outputData;
 };
-
-class RotateImageModifier : public ImageModifier
-{
-public:
-    enum Angle {
-        Angle_90,
-        Angle_180,
-        Angle_270,
-    };
-
-    RotateImageModifier (Angle angle) : _angle (angle)
-    {}
-
-public:
-    virtual void apply (const ImageItemData& input, ImageItemData& output) override;
-
-private:
-    Angle _angle = Angle::Angle_90;
-};
-
-class CropImageModifier : public ImageModifier
-{
-public:
-    struct Params
-    {
-        // All these values are ratio.
-        // This makes it easy to apply to multiples images
-        // with different original sizes.
-        Rect textureRect = Rect::from_x_y_w_h(0.1, 0.1, 0.8, 0.8);
-
-        Rect imageAlignedTextureRect (int width, int height) const;
-        Rect validImageRectForSize(int width, int height) const;    
-
-        int numControlPoints () const { return 4; }
-        void updateControlPoint (int idx, const Point& p, int imageWidth, int imageHeight);
-
-        static Point controlPointPos (int idx, const Rect& imageAlignedTextureRect);
-    };
-
-    CropImageModifier (const Params& params) : _params (params)
-    {}
-
-    const Params& params () const { return _params; }
-
-public:
-    virtual void apply (const ImageItemData& input, ImageItemData& output) override;
-
-private:
-    Params _params;
-};
-using CropImageModifierPtr = std::shared_ptr<CropImageModifier>;
 
 class ImageAction
 {
@@ -136,18 +86,11 @@ struct ModifiedImage
 
     bool hasValidData() const { return data() && data()->status == ImageItemData::Status::Ready; }
     
-    bool hasPendingChanges () const { return _annotatedData || !_modifiers.empty(); }
+    bool hasPendingChanges () const { return !_modifiers.empty(); }
 
     bool canUndo () const { return !_actions.empty(); }
 
     const ImageItemDataPtr& data() const 
-    { 
-        if (_annotatedData) 
-            return _annotatedData;
-        return dataWithoutAnnotations();
-    }
-
-    const ImageItemDataPtr& dataWithoutAnnotations() const 
     {
         if (!_modifiers.empty()) 
             return _modifiers.back()->output();
@@ -162,26 +105,71 @@ struct ModifiedImage
     void addModifier (std::unique_ptr<ImageModifier> modifier);
     void removeLastModifier();
 
-    void addAnnotation (std::unique_ptr<ImageAnnotation> annotation);
-    void removeLastAnnotation();
-
     void discardChanges ();
     void undoLastChange ();
 
 private:
-    void renderAnnotations ();
     void clearIntermediateModifiersData ();
 
 private:
     ImageItemPtr _item;
     ImageItemDataPtr _originalData;
     AnnotationRenderer& _annotationRenderer;
-    ImageItemDataPtr _annotatedData;
     std::deque<std::unique_ptr<ImageModifier>> _modifiers;
-    std::deque<std::unique_ptr<ImageAnnotation>> _annotations;
     std::deque<ImageAction> _actions;
-    bool _modifiersOrAnnotationsChangedSinceLastUpdate = false;    
+    bool _modifiersChangedSinceLastUpdate = false;
 };
 using ModifiedImagePtr = std::shared_ptr<ModifiedImage>;
+
+class RotateImageModifier : public ImageModifier
+{
+public:
+    enum Angle {
+        Angle_90,
+        Angle_180,
+        Angle_270,
+    };
+
+    RotateImageModifier (Angle angle) : _angle (angle)
+    {}
+
+public:
+    virtual void apply (const ImageItemData& input, ImageItemData& output, AnnotationRenderer&) override;
+
+private:
+    Angle _angle = Angle::Angle_90;
+};
+
+class CropImageModifier : public ImageModifier
+{
+public:
+    struct Params
+    {
+        // All these values are ratio.
+        // This makes it easy to apply to multiples images
+        // with different original sizes.
+        Rect textureRect = Rect::from_x_y_w_h(0.1, 0.1, 0.8, 0.8);
+
+        Rect imageAlignedTextureRect (int width, int height) const;
+        Rect validImageRectForSize(int width, int height) const;    
+
+        int numControlPoints () const { return 4; }
+        void updateControlPoint (int idx, const Point& p, int imageWidth, int imageHeight);
+
+        static Point controlPointPos (int idx, const Rect& imageAlignedTextureRect);
+    };
+
+    CropImageModifier (const Params& params) : _params (params)
+    {}
+
+    const Params& params () const { return _params; }
+
+public:
+    virtual void apply (const ImageItemData& input, ImageItemData& output, AnnotationRenderer&) override;
+
+private:
+    Params _params;
+};
+using CropImageModifierPtr = std::shared_ptr<CropImageModifier>;
 
 } // zv

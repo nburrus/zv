@@ -160,18 +160,18 @@ void register_Viewer (py::module& m)
         .def("setLayout", &Viewer::setLayout)
         .def("runAction", &Viewer::runAction);
 
-    py::enum_<ImageWindowAction>(m, "ImageWindowAction")
-        .value ("Zoom_Normal", ImageWindowAction::Zoom_Normal)
-        .value ("Zoom_RestoreAspectRatio", ImageWindowAction::Zoom_RestoreAspectRatio)
-        .value ("Zoom_x2", ImageWindowAction::Zoom_x2)
-        .value ("Zoom_div2", ImageWindowAction::Zoom_div2)
-        .value ("Zoom_Inc10p", ImageWindowAction::Zoom_Inc10p)
-        .value ("Zoom_Dec10p", ImageWindowAction::Zoom_Dec10p)
-        .value ("Zoom_Maxspect", ImageWindowAction::Zoom_Maxspect)        
-        .value ("File_OpenImage", ImageWindowAction::File_OpenImage)
-        .value ("View_ToggleOverlay", ImageWindowAction::View_ToggleOverlay)
-        .value ("View_NextImage", ImageWindowAction::View_NextImage)
-        .value ("View_PrevImage", ImageWindowAction::View_PrevImage);
+    py::enum_<ImageWindowAction::Kind>(m, "ImageWindowAction")
+        .value ("Zoom_Normal", ImageWindowAction::Kind::Zoom_Normal)
+        .value ("Zoom_RestoreAspectRatio", ImageWindowAction::Kind::Zoom_RestoreAspectRatio)
+        .value ("Zoom_x2", ImageWindowAction::Kind::Zoom_x2)
+        .value ("Zoom_div2", ImageWindowAction::Kind::Zoom_div2)
+        .value ("Zoom_Inc10p", ImageWindowAction::Kind::Zoom_Inc10p)
+        .value ("Zoom_Dec10p", ImageWindowAction::Kind::Zoom_Dec10p)
+        .value ("Zoom_Maxspect", ImageWindowAction::Kind::Zoom_Maxspect)        
+        .value ("File_OpenImage", ImageWindowAction::Kind::File_OpenImage)
+        .value ("View_ToggleOverlay", ImageWindowAction::Kind::View_ToggleOverlay)
+        .value ("View_NextImage", ImageWindowAction::Kind::View_NextImage)
+        .value ("View_PrevImage", ImageWindowAction::Kind::View_PrevImage);
 }
 
 void register_ImGui (py::module& zv_module)

@@ -77,7 +77,7 @@ public:
 
     virtual void addToImage(ModifiedImage& image) override
     {
-        image.addAnnotation(std::make_unique<LineAnnotation>(_params));
+        image.addModifier(std::make_unique<LineAnnotation>(_params));
     }
 
 private:
