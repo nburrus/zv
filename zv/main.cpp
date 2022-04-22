@@ -17,7 +17,10 @@ int main (int argc, char* argv[])
     zv::Profiler p("main");
     
     zv::App app;
-    app.initialize (argc, argv);
+    if (!app.initialize (argc, argv))
+    {
+        return 1;
+    }
     p.lap ("init");
     
     app.run ();    
