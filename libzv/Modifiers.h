@@ -105,6 +105,7 @@ struct ModifiedImage
     void addModifier (std::unique_ptr<ImageModifier> modifier);
     void removeLastModifier();
 
+    bool saveChanges (const std::string& outputPath);
     void discardChanges ();
     void undoLastChange ();
 

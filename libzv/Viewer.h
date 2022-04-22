@@ -83,7 +83,7 @@ protected:
         Discard,
         Cancel
     };
-    void onPendingChangedConfirmed(Confirmation result);
+    void onSavePendingChangesConfirmed(Confirmation result, bool forcePathSelectionOnSave);
 
     void onAllChangesSaved (bool cancelled);
 

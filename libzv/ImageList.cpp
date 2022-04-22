@@ -23,6 +23,13 @@ int64_t UniqueId::newId()
     return lastId++;
 }
 
+void ImageItem::fillFromFilePath (const std::string& imagePath)
+{
+    source = ImageItem::Source::FilePath;
+    sourceImagePath = imagePath;
+    prettyName = fs::path(imagePath).filename();
+}
+
 std::unique_ptr<ImageItem> imageItemFromData (const ImageSRGBA& im, const std::string& name)
 {
     auto entry = std::make_unique<ImageItem>();
@@ -37,9 +44,7 @@ std::unique_ptr<ImageItem> imageItemFromPath (const std::string& imagePath)
 {
     auto entry = std::make_unique<ImageItem>();
     entry->uniqueId = UniqueId::newId();
-    entry->source = ImageItem::Source::FilePath;
-    entry->sourceImagePath = imagePath;
-    entry->prettyName = fs::path(entry->sourceImagePath).filename();
+    entry->fillFromFilePath (imagePath);
     return entry;
 }
 

@@ -69,7 +69,9 @@ struct ControlsWindow::Impl
     bool saveAllChanges = false;
     bool askToConfirmPendingChanges = false;
 
-    ModifiedImagePtr modImToSave = nullptr;
+    std::deque<ModifiedImagePtr> modImagesToSave;
+    ModifiedImagePtr currentModImageToSave;
+    bool forcePathSelectionOnSave = false;
     void saveNextModifiedImage ();
 
     void renderMenu ();
@@ -85,21 +87,34 @@ struct ControlsWindow::Impl
 
 void ControlsWindow::Impl::saveNextModifiedImage ()
 {
-    auto* imageWindow = viewer->imageWindow();
-    modImToSave = imageWindow->getFirstValidImage(true /* modified only */);
-    if (!modImToSave)
+    auto* imageWindow = viewer->imageWindow();    
+    if (this->modImagesToSave.empty())
     {
+        this->currentModImageToSave = nullptr;
         viewer->onAllChangesSaved (false /* not cancelled */);
         return;
     }
 
-    ImGuiFileDialog::Instance()->OpenModal("SaveImageDlgKey",
-                                           "Save Image",
-                                           ".png,.bmp,.gif,.jpg,.jpeg,.pnm,.pgm",
-                                           modImToSave->item()->sourceImagePath.empty() ? "new_image.png" : modImToSave->item()->sourceImagePath,
-                                           1, /* vCountSelectionMax */
-                                           nullptr,
-                                           ImGuiFileDialogFlags_ConfirmOverwrite);
+    this->currentModImageToSave = this->modImagesToSave.front();
+    this->modImagesToSave.pop_front();
+
+    // If we already saved it before, just save it to the current filepath.
+    if (!forcePathSelectionOnSave && this->currentModImageToSave->item()->alreadyModifiedAndSaved)
+    {
+        zv_assert (this->currentModImageToSave->item()->source == ImageItem::Source::FilePath, "Expected filepath source since it was already saved.");
+        this->currentModImageToSave->saveChanges (this->currentModImageToSave->item()->sourceImagePath);
+        this->saveNextModifiedImage ();
+    }
+    else
+    {
+        ImGuiFileDialog::Instance()->OpenModal("SaveImageDlgKey",
+                                               "Save Image",
+                                               ".png,.bmp,.gif,.jpg,.jpeg,.pnm,.pgm",
+                                               this->currentModImageToSave->item()->sourceImagePath.empty() ? "new_image.png" : this->currentModImageToSave->item()->sourceImagePath,
+                                               1, /* vCountSelectionMax */
+                                               nullptr,
+                                               ImGuiFileDialogFlags_ConfirmOverwrite);
+    }    
 }
 
 void ControlsWindow::Impl::maybeRenderOpenImage ()
@@ -132,15 +147,15 @@ void ControlsWindow::Impl::maybeRenderSaveImage ()
         {
             std::string outputPath = ImGuiFileDialog::Instance()->GetFilePathName();
             zv_dbg ("outputPath: %s", outputPath.c_str());
-            // this->modImToSave->saveChanges (outputPath);
-            // FIXME: TEMP TEMP!
-            this->modImToSave->discardChanges();
+            this->currentModImageToSave->saveChanges(outputPath);
             ImGuiFileDialog::Instance()->Close();
             this->saveNextModifiedImage ();
         }
         else
         {
             ImGuiFileDialog::Instance()->Close();
+            this->currentModImageToSave = nullptr;
+            this->modImagesToSave.clear ();
             this->viewer->onAllChangesSaved (true /* cancelled */);
         }
     }
@@ -161,7 +176,7 @@ void ControlsWindow::Impl::maybeRenderConfirmPendingChanges ()
             if (ImGui::Button("OK", ImVec2(120, 0)))
             {
                 this->askToConfirmPendingChanges = false;
-                this->viewer->onPendingChangedConfirmed(Viewer::Confirmation::Ok);
+                this->viewer->onSavePendingChangesConfirmed(Viewer::Confirmation::Ok, false);
                 ImGui::CloseCurrentPopup();
             }
             ImGui::SetItemDefaultFocus();
@@ -170,7 +185,7 @@ void ControlsWindow::Impl::maybeRenderConfirmPendingChanges ()
             if (ImGui::Button("Discard", ImVec2(120, 0)))
             {
                 this->askToConfirmPendingChanges = false;
-                this->viewer->onPendingChangedConfirmed(Viewer::Confirmation::Discard);
+                this->viewer->onSavePendingChangesConfirmed(Viewer::Confirmation::Discard, false);
                 ImGui::CloseCurrentPopup();
             }
 
@@ -178,7 +193,7 @@ void ControlsWindow::Impl::maybeRenderConfirmPendingChanges ()
             if (ImGui::Button("Cancel Action", ImVec2(120, 0)))
             {
                 this->askToConfirmPendingChanges = false;
-                this->viewer->onPendingChangedConfirmed(Viewer::Confirmation::Cancel);
+                this->viewer->onSavePendingChangesConfirmed(Viewer::Confirmation::Cancel, false);
                 ImGui::CloseCurrentPopup();
             }
             ImGui::EndPopup();
@@ -382,6 +397,8 @@ void ControlsWindow::Impl::renderMenu ()
     auto* imageWindow = this->viewer->imageWindow();
     auto& imageWindowState = imageWindow->mutableState();
 
+    const bool hasChanges = imageWindow->getFirstValidImage(true /* modified only */) != nullptr;
+
     if (ImGui::BeginMenuBar())
     {
         if (ImGui::BeginMenu("File"))
@@ -393,7 +410,17 @@ void ControlsWindow::Impl::renderMenu ()
 
             if (ImGui::MenuItem("Open Image", CtrlOrCmd_Str "+o", false))
             {
-                this->viewer->onOpenImage();
+                imageWindow->addCommand(ImageWindow::actionCommand(ImageWindowAction::Kind::File_OpenImage));
+            }
+
+            if (ImGui::MenuItem("Save Image", CtrlOrCmd_Str "+s", false, hasChanges))
+            {
+                imageWindow->addCommand(ImageWindow::actionCommand(ImageWindowAction::Kind::File_SaveImage));
+            }
+
+            if (ImGui::MenuItem("Save Image As...", CtrlOrCmd_Str "+s", false))
+            {
+                imageWindow->addCommand(ImageWindow::actionCommand(ImageWindowAction::Kind::File_SaveImageAs));
             }
 
             if (ImGui::MenuItem("Close", "q", false))
@@ -409,6 +436,10 @@ void ControlsWindow::Impl::renderMenu ()
             if (ImGui::MenuItem("Undo", CtrlOrCmd_Str "+z", false, imageWindow->canUndo()))
             {
                 imageWindow->addCommand(ImageWindow::actionCommand(ImageWindowAction::Kind::Edit_Undo));
+            }
+            if (ImGui::MenuItem("Revert to Original", "", false, hasChanges))
+            {
+                imageWindow->addCommand(ImageWindow::actionCommand(ImageWindowAction::Kind::Edit_RevertToOriginal));
             }
             if (ImGui::MenuItem("Copy to clipboard", CtrlOrCmd_Str "+c", false))
             {
@@ -655,8 +686,14 @@ void ControlsWindow::openImage ()
                                            10000 /* vCountSelectionMax */);
 }
 
-void ControlsWindow::saveAllChanges ()
+void ControlsWindow::saveAllChanges (bool forcePathSelectionOnSave)
 {
+    impl->forcePathSelectionOnSave = forcePathSelectionOnSave;
+    const bool modifiedOnly = !forcePathSelectionOnSave;
+    impl->modImagesToSave.clear ();
+    impl->viewer->imageWindow()->applyOverValidImages(modifiedOnly, [this](const ModifiedImagePtr& modIm) {
+        impl->modImagesToSave.push_back (modIm);
+    });
     impl->saveNextModifiedImage ();
 }
 

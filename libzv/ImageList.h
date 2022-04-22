@@ -80,7 +80,7 @@ struct ImageItem
     std::string prettyName;
     std::string viewerName = "default";
     std::shared_ptr<ImageSRGBA> sourceData;
-    std::function<ImageItemDataUniquePtr()> loadDataCallback;    
+    std::function<ImageItemDataUniquePtr()> loadDataCallback;
 
     using EventCallbackType = std::function<void(ImageId, float, float, void* userData)>;
     EventCallbackType eventCallback = nullptr;
@@ -91,8 +91,14 @@ struct ImageItem
     // Disabled by the name filter?
     bool disabled = false;
 
+    // Whether it was already modified and saved at least once.
+    // In that case we won't ask for confirmation to save it again.
+    bool alreadyModifiedAndSaved = false;
+
     // Could add thumbnail, etc.
     // Everything should be lazy though.
+
+    void fillFromFilePath (const std::string& path);
 };
 using ImageItemPtr = std::shared_ptr<ImageItem>;
 using ImageItemUniquePtr = std::unique_ptr<ImageItem>;

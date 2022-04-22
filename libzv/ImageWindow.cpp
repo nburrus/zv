@@ -598,22 +598,22 @@ void ImageWindow::processKeyEvent (int keycode)
             break;
         }
 
-        case GLFW_KEY_S:
-        {
-            // No image saving for now.
-            // if (io.KeyCtrl)
-            // {
-            //     saveCurrentImage();
-            // }
-            break;
-        }
-
         case GLFW_KEY_O:
         {
             // No image saving for now.
             if (CtrlOrCmd(io))
             {
                 enqueueAction (ImageWindowAction::Kind::File_OpenImage);
+            }
+            break;
+        }
+
+        case GLFW_KEY_S:
+        {
+            // No image saving for now.
+            if (CtrlOrCmd(io))
+            {
+                enqueueAction (ImageWindowAction::Kind::File_SaveImage);
             }
             break;
         }
@@ -1281,6 +1281,16 @@ void ImageWindow::runAction (const ImageWindowAction& action)
             break;
         }
 
+        case ImageWindowAction::Kind::File_SaveImage: {
+            impl->viewer->onSavePendingChangesConfirmed(Viewer::Confirmation::Ok, false /* don't force path selection */);
+            break;
+        }
+
+        case ImageWindowAction::Kind::File_SaveImageAs: {
+            impl->viewer->onSavePendingChangesConfirmed(Viewer::Confirmation::Ok, true /* force path selection */);
+            break;
+        }
+
         case ImageWindowAction::Kind::View_ToggleOverlay: {
             impl->mutableState.infoOverlayEnabled = !impl->mutableState.infoOverlayEnabled;
             break;
@@ -1328,6 +1338,12 @@ void ImageWindow::runAction (const ImageWindowAction& action)
                 if (it.get() && it->hasValidData())
                     it->undoLastChange ();
             }
+            impl->cursorOverlayInfo.clear();
+            break;
+        }
+
+        case ImageWindowAction::Kind::Edit_RevertToOriginal: {
+            discardAllChanges ();
             impl->cursorOverlayInfo.clear();
             break;
         }
@@ -1447,13 +1463,22 @@ void ImageWindow::discardAllChanges ()
 
 ModifiedImagePtr ImageWindow::getFirstValidImage(bool modifiedOnly)
 {
-    for (auto& it : impl->currentImages)
+    for (auto& imPtr : impl->currentImages)
     {
-        if (it && (!modifiedOnly || it->hasPendingChanges()))
-            return it;
+        if (imPtr && (!modifiedOnly || imPtr->hasPendingChanges()))
+            return imPtr;
     }
 
     return nullptr;
+}
+
+void ImageWindow::applyOverValidImages(bool modifiedOnly, const std::function<void(const ModifiedImagePtr&)>& onImage)
+{
+    for (auto& imPtr : impl->currentImages)
+    {
+        if (imPtr && (!modifiedOnly || imPtr->hasPendingChanges()))
+            onImage(imPtr);
+    }
 }
 
 bool ImageWindow::canUndo() const

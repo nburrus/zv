@@ -74,6 +74,8 @@ public:
     void setActiveTool (ActiveToolState::Kind kind);
 
     ModifiedImagePtr getFirstValidImage(bool modifiedOnly);
+    
+    void applyOverValidImages(bool modifiedOnly, const std::function<void(const ModifiedImagePtr&)>& onImage);
 
 public:
     static Command actionCommand (ImageWindowAction::Kind actionKind, ImageWindowAction::ParamsPtr params = nullptr)

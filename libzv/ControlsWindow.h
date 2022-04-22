@@ -44,7 +44,7 @@ public:
     void bringToFront ();
     
     void openImage ();
-    void saveAllChanges ();
+    void saveAllChanges (bool forcePathSelectionOnSave);
     void confirmPendingChanges ();
     
 private:

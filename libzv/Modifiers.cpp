@@ -13,6 +13,25 @@
 namespace zv
 {
 
+bool ModifiedImage::saveChanges (const std::string& outputPath)
+{
+    ImageItemDataPtr maybeModifiedData = data();
+    
+    if (!writePngImage (outputPath, *(maybeModifiedData->cpuData)))
+        return false;
+
+    _item->fillFromFilePath (outputPath);
+    _item->alreadyModifiedAndSaved = true;
+
+    if (maybeModifiedData != _originalData)
+    {
+        *_originalData = *maybeModifiedData;
+        _modifiers.clear ();
+    }
+
+    return true;
+}
+
 void ModifiedImage::discardChanges ()
 {
     if (_modifiers.empty ())

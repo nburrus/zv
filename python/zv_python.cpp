@@ -169,6 +169,7 @@ void register_Viewer (py::module& m)
         .value ("Zoom_Dec10p", ImageWindowAction::Kind::Zoom_Dec10p)
         .value ("Zoom_Maxspect", ImageWindowAction::Kind::Zoom_Maxspect)        
         .value ("File_OpenImage", ImageWindowAction::Kind::File_OpenImage)
+        .value ("File_SaveImage", ImageWindowAction::Kind::File_SaveImage)
         .value ("View_ToggleOverlay", ImageWindowAction::Kind::View_ToggleOverlay)
         .value ("View_NextImage", ImageWindowAction::Kind::View_NextImage)
         .value ("View_PrevImage", ImageWindowAction::Kind::View_PrevImage);

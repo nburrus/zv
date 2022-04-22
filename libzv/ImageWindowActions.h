@@ -33,11 +33,14 @@ struct ImageWindowAction
         Zoom_Maxspect,
 
         File_OpenImage,
+        File_SaveImage,
+        File_SaveImageAs,
 
         Edit_CopyCursorInfoToClipboard,
         Edit_CopyImageToClipboard,
         Edit_PasteImageFromClipboard,
         Edit_Undo,
+        Edit_RevertToOriginal,
 
         View_ToggleOverlay,
         View_NextImage,

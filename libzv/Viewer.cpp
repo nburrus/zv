@@ -235,11 +235,11 @@ void Viewer::onImageWindowGeometryUpdated (const Rect& geometry)
     impl->controlsWindow.repositionAfterNextRendering (geometry, true /* show by default */);
 }
 
-void Viewer::onPendingChangedConfirmed(Confirmation result)
+void Viewer::onSavePendingChangesConfirmed(Confirmation result, bool forcePathSelectionOnSave)
 {
     if (result == Confirmation::Ok)
     {
-        impl->controlsWindow.saveAllChanges ();
+        impl->controlsWindow.saveAllChanges (forcePathSelectionOnSave);
     }
     else if (result == Confirmation::Discard)
     {
