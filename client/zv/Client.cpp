@@ -10,6 +10,8 @@
 
 #include "Message.h"
 
+#include "subprocess.h"
+
 #include <thread>
 #include <mutex>
 #include <condition_variable>
@@ -102,6 +104,7 @@ public:
 
     bool start(const std::string& hostname, int port)
     {
+        _shouldDisconnect = false;
         _status = Status::Connecting;
         _thread = std::thread([this, hostname, port]() { runMainLoop(hostname, port); });
         
@@ -114,7 +117,9 @@ public:
         }
 
         if (connectionStatus != Status::Connected && _thread.joinable())
+        {
             _thread.join();
+        }
 
         return connectionStatus == Status::Connected;
     }
@@ -456,7 +461,99 @@ uint64_t Client::nextUniqueId ()
     return nextId++;
 }
 
-bool connect (const std::string& hostname, int port)
+class Server
+{
+public:
+    static Server& instance()
+    {
+        static Server server;
+        return server;
+    }
+
+    int findValidPort () const
+    {
+        zn::EventLoopPtr eventLoop = std::make_shared<zn::EventLoop>();
+        bool ok = eventLoop->initialize ();
+        if (!ok)
+            return -1;
+
+        auto accept = std::make_shared<zn::TcpAccept>();
+        ok = accept->initialize (eventLoop);
+        if (!ok)
+            return false;
+
+        int validPort = -1;
+        for (int port = 4208; port < 4220; ++port)
+        {
+            if (accept->openAccept ("127.0.0.1", port))
+            {
+                validPort = port;
+                accept.reset ();
+                break;
+            }
+        }
+
+        return validPort;
+    }
+
+    // Return the port where it could start.
+    int start ()
+    {
+        // FIXME: this is all quite fragile. A better way would be to start the zv binary
+        // until it's happy. But to detect that it's happy we'd need it to write some
+        // formatted text and read it here. So for now we just assume that if a port is free,
+        // then the zv server will start successfully.
+        int validPort = findValidPort ();
+        if (validPort < -1)
+            return -1;
+
+        std::string port_str = std::to_string(validPort);
+        const char *const commandLine[] = {"zv", "--port", port_str.c_str(), "--require-server", NULL};
+        int result = subprocess_create(commandLine, subprocess_option_inherit_environment | subprocess_option_search_user_path, &subprocess);
+        if (result != 0)
+            return -1;
+        return validPort;
+    }
+
+    void stop ()
+    {
+        subprocess_terminate(&subprocess);
+        int return_code = 0;
+        subprocess_join(&subprocess, &return_code);
+        subprocess_destroy(&subprocess);
+    }
+
+private:
+    ~Server ()
+    {
+        stop ();
+    }
+
+private:
+    struct subprocess_s subprocess;
+};
+
+bool launchServer ()
+{
+    int validPort = Server::instance().start ();
+    if (validPort < 0)
+        return false;
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    Client& client = Client::instance();
+    for (int i = 0; i < 10; ++i)
+    {
+        if (client.connect ("127.0.0.1", validPort))
+        {
+            return true;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    }
+
+    return false;
+}
+
+bool connectToExistingServer (const std::string& hostname, int port)
 {
     Client& client = Client::instance();
     return client.connect (hostname, port);

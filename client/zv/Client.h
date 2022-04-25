@@ -15,6 +15,12 @@
 namespace zv
 {
 
+// Simple public API for quick logging.
+bool launchServer ();
+bool connectToExistingServer (const std::string& hostname = "127.0.0.1", int port = 4207);
+void logImageRGBA (const std::string& name, void* pixels_RGBA32, int width, int height, int bytesPerRow = 0);
+void waitUntilDisconnected ();
+
 // View of an existing buffer, no ownership will be taken and no reference
 // will get stored.
 struct ClientImageBuffer
@@ -94,9 +100,5 @@ private:
     struct Impl;
     std::unique_ptr<Impl> impl;
 };
-
-bool connect (const std::string& hostname = "127.0.0.1", int port = 4207);
-void logImageRGBA (const std::string& name, void* pixels_RGBA32, int width, int height, int bytesPerRow = 0);
-void waitUntilDisconnected ();
 
 } // zv
