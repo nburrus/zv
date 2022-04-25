@@ -613,7 +613,10 @@ void ImageWindow::processKeyEvent (int keycode)
             // No image saving for now.
             if (CtrlOrCmd(io))
             {
-                enqueueAction (ImageWindowAction::Kind::File_SaveImage);
+                if (io.KeyShift)
+                    enqueueAction (ImageWindowAction::Kind::File_SaveImageAs);
+                else
+                    enqueueAction (ImageWindowAction::Kind::File_SaveImage);
             }
             break;
         }

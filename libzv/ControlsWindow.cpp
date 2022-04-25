@@ -418,7 +418,7 @@ void ControlsWindow::Impl::renderMenu ()
                 imageWindow->addCommand(ImageWindow::actionCommand(ImageWindowAction::Kind::File_SaveImage));
             }
 
-            if (ImGui::MenuItem("Save Image As...", CtrlOrCmd_Str "+s", false))
+            if (ImGui::MenuItem("Save Image As...", CtrlOrCmd_Str "+Shift+s", false))
             {
                 imageWindow->addCommand(ImageWindow::actionCommand(ImageWindowAction::Kind::File_SaveImageAs));
             }
