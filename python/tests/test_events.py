@@ -11,7 +11,11 @@ def callback(image_id, x, y, user_data):
         viewer.runAction (zv.ImageWindowAction.Zoom_Normal)
     elif zv.imgui.IsMouseClicked(zv.imgui.MouseButton.Right, False):
         print (f"Right button clicked {x} {y}!")
-        viewer.runAction (zv.ImageWindowAction.Zoom_Inc10p)
+        viewer.runAction (zv.ImageWindowAction.Zoom_Inc10p)    
+    if zv.imgui.IsKeyPressed(zv.imgui.Key.K, False):
+        print ("K was pressed!")
+    elif zv.imgui.IsKeyPressed(zv.imgui.Key.D, False):
+        print ("D was pressed!")
 
 app = zv.App()
 app.initialize(sys.argv)

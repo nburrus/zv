@@ -158,7 +158,9 @@ void register_Viewer (py::module& m)
         .def("setEventCallback", &Viewer::setEventCallback)
 
         .def("setLayout", &Viewer::setLayout)
-        .def("runAction", &Viewer::runAction);
+        .def("runAction", [](Viewer& viewer, ImageWindowAction::Kind kind) { 
+            viewer.runAction (ImageWindowAction(kind));
+        });
 
     py::enum_<ImageWindowAction::Kind>(m, "ImageWindowAction")
         .value ("Zoom_Normal", ImageWindowAction::Kind::Zoom_Normal)
@@ -187,6 +189,7 @@ void register_ImGui (py::module& zv_module)
     m.def ("IsMouseDown", &ImGui::IsMouseDown);
     m.def ("IsMouseClicked", &ImGui::IsMouseClicked);
     m.def ("IsKeyDown", &ImGui::IsKeyDown);
+    m.def ("IsKeyPressed", &ImGui::IsKeyPressed);
 
     py::enum_<ImGuiKey_>(m, "Key")
         .value("Tab", ImGuiKey_Tab)
