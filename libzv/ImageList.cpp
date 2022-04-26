@@ -23,6 +23,11 @@ int64_t UniqueId::newId()
     return lastId++;
 }
 
+ImageItem::~ImageItem ()
+{
+    // fprintf (stderr, "ImageItem destructor, sourceImagePath=%s\n", sourceImagePath.c_str());
+}
+
 void ImageItem::fillFromFilePath (const std::string& imagePath)
 {
     source = ImageItem::Source::FilePath;

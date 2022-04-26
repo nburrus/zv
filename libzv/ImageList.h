@@ -99,6 +99,8 @@ struct ImageItem
     // Everything should be lazy though.
 
     void fillFromFilePath (const std::string& path);
+
+    ~ImageItem ();
 };
 using ImageItemPtr = std::shared_ptr<ImageItem>;
 using ImageItemUniquePtr = std::unique_ptr<ImageItem>;

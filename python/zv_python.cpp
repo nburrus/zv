@@ -1,6 +1,7 @@
 #include <libzv/App.h>
 #include <libzv/Viewer.h>
 #include <libzv/ColorConversion.h>
+#include <libzv/ImageList.h>
 
 #include <client/zv/Client.h>
 
@@ -141,6 +142,10 @@ ImageSRGBA imageFromPythonArray (py::array buffer)
 
 void register_Viewer (py::module& m)
 {
+    py::class_<ImageItem, ImageItemPtr>(m, "ImageItem")
+        .def_readonly("sourceImagePath", &ImageItem::sourceImagePath)
+        .def_readonly("prettyName", &ImageItem::prettyName);
+    
     py::class_<Viewer>(m, "Viewer")
         .def_property_readonly("selectedImage", &Viewer::selectedImage)
         
@@ -153,9 +158,12 @@ void register_Viewer (py::module& m)
             return int64_t(-1);
         }, py::arg("name"), py::arg("buffer"), py::arg("position") = -1, py::arg("replace") = true)
 
+        .def("getImageItem", &Viewer::getImageItem)
+
         // using EventCallbackType = std::function<void(ImageId, float, float, void* userData)>;
         // void setEventCallback (ImageId imageId, EventCallbackType callback, void* userData);
         .def("setEventCallback", &Viewer::setEventCallback)
+        .def("setGlobalEventCallback", &Viewer::setGlobalEventCallback)
 
         .def("setLayout", &Viewer::setLayout)
         .def("runAction", [](Viewer& viewer, ImageWindowAction::Kind kind) { 

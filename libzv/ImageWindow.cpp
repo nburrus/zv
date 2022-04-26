@@ -152,9 +152,9 @@ struct ImageWindow::Impl
     std::deque<Command> pendingCommands;
 
     struct {
-        bool requested = false;
-        std::string outPath;
-    } saveToFile;
+        GlobalEventCallbackType callback;
+        void* userData;
+    } globalCallback;
 
     struct {
         bool inProgress = false;
@@ -239,6 +239,13 @@ struct ImageWindow::Impl
     
     using CreateModifierFunc = std::function<std::unique_ptr<ImageModifier>(void)>;
     void addModifier (const CreateModifierFunc& createModifier);
+
+    ImageWidgetRoi renderImageItem(const ModifiedImagePtr &modImagePtr,
+                                   const ImVec2 &imageWidgetTopLeft,
+                                   const ImVec2 &imageWidgetSize,
+                                   ZoomInfo &zoom,
+                                   bool imageSmallerThanNormal,
+                                   CursorOverlayInfo *overlayInfo);
 };
 
 bool ImageWindow::Impl::runAfterCheckingPendingChanges (std::function<void(void)>&& func)
@@ -532,6 +539,11 @@ void ImageWindow::checkImguiGlobalImageKeyEvents ()
     // These key events are valid also in the control window.
     auto& io = ImGui::GetIO();
 
+    if (impl->globalCallback.callback)
+    {
+        impl->globalCallback.callback(impl->globalCallback.userData);
+    }
+
     if (io.WantCaptureKeyboard)
         return;
 
@@ -723,12 +735,12 @@ const CursorOverlayInfo& ImageWindow::cursorOverlayInfo() const
 //     updatedWindowGeometry = impl->updateAfterContentSwitch.targetWindowGeometry;
 // }
 
-ImageWidgetRoi renderImageItem (const ModifiedImagePtr& modImagePtr,
-                          const ImVec2& imageWidgetTopLeft,
-                          const ImVec2& imageWidgetSize,
-                          ZoomInfo& zoom,
-                          bool imageSmallerThanNormal,
-                          CursorOverlayInfo* overlayInfo)
+ImageWidgetRoi ImageWindow::Impl::renderImageItem(const ModifiedImagePtr &modImagePtr,
+                                                  const ImVec2 &imageWidgetTopLeft,
+                                                  const ImVec2 &imageWidgetSize,
+                                                  ZoomInfo &zoom,
+                                                  bool imageSmallerThanNormal,
+                                                  CursorOverlayInfo *overlayInfo)
 {
     auto& io = ImGui::GetIO();
     
@@ -1052,13 +1064,13 @@ void ImageWindow::renderFrame ()
             }
             else
             {
-                ImageWidgetRoi uvRoi = renderImageItem(impl->currentImages[idx],
-                                                       imPos(widgetGeometries[idx]),
-                                                       imSize(widgetGeometries[idx]),
-                                                       impl->zoom,
-                                                       imageSmallerThanNormal,
-                                                       &impl->cursorOverlayInfo);
-                
+                ImageWidgetRoi uvRoi = impl->renderImageItem(impl->currentImages[idx],
+                                                             imPos(widgetGeometries[idx]),
+                                                             imSize(widgetGeometries[idx]),
+                                                             impl->zoom,
+                                                             imageSmallerThanNormal,
+                                                             &impl->cursorOverlayInfo);
+
                 WidgetToImageTransform transform(uvRoi, widgetGeometries[idx]);
                 
                 if (impl->mutableState.activeToolState.kind != ActiveToolState::Kind::None)
@@ -1500,6 +1512,12 @@ void ImageWindow::setActiveTool (ActiveToolState::Kind kind)
         return;
 
     impl->mutableState.activeToolState.kind = kind;
+}
+
+void ImageWindow::setGlobalEventCallback (const GlobalEventCallbackType& callback, void* userData)
+{
+    impl->globalCallback.callback = callback;
+    impl->globalCallback.userData = userData;
 }
 
 } // zv

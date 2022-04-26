@@ -59,15 +59,20 @@ public:
     ImageId selectedImage () const;
     void selectImageIndex (int index);
 
+    ImageItemPtr getImageItem (ImageId imageId) const;
+
     ImageId addImageItem (ImageItemUniquePtr imageItem, int insertPos, bool replaceExisting = true);
 
     using EventCallbackType = std::function<void(ImageId, float, float, void* userData)>;
     void setEventCallback (ImageId imageId, EventCallbackType callback, void* userData);
+    
+    using GlobalEventCallbackType = std::function<void(void*)>;
+    void setGlobalEventCallback (const GlobalEventCallbackType& callback, void* userData);
 
     void setLayout (int nrows, int ncols);
     void runAction (ImageWindowAction action);
 
-    void refreshPrettyFileNames ();
+    void refreshPrettyFileNames ();    
         
 protected:
     // Controller-like global methods that member windows can call.

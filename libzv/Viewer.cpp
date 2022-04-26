@@ -284,8 +284,11 @@ ImageList& Viewer::imageList()
 
 ImageId Viewer::selectedImage () const
 {
-    int firstValidSelection = std::max(0, impl->imageList.selectedRange().firstValidIndex());
-    return impl->imageList.imageItemFromIndex(firstValidSelection)->uniqueId;
+    const SelectionRange& range = impl->imageList.selectedRange();
+    const int firstValidIndex = range.firstValidIndex();
+    if (firstValidIndex < 0)
+        return -1;
+    return impl->imageList.imageItemFromIndex(range.indices[firstValidIndex])->uniqueId;
 }
 
 void Viewer::selectImageIndex (int index)
@@ -306,6 +309,11 @@ ImageId Viewer::addImageData (const ImageSRGBA& image, const std::string& imageN
 ImageId Viewer::addImageItem (ImageItemUniquePtr imageItem, int insertPos, bool replaceExisting)
 {
     return impl->imageList.addImage (std::move(imageItem), insertPos, replaceExisting);
+}
+
+ImageItemPtr Viewer::getImageItem (ImageId imageId) const
+{
+    return impl->imageList.imageItemFromId (imageId);
 }
 
 void Viewer::refreshPrettyFileNames ()
@@ -412,6 +420,11 @@ ImageId Viewer::addPastedImage ()
     }
 
         return -1;
+}
+
+void Viewer::setGlobalEventCallback (const GlobalEventCallbackType& callback, void* userData)
+{
+    impl->imageWindow.setGlobalEventCallback (callback, userData);
 }
 
 void Viewer::setEventCallback (ImageId imageId, EventCallbackType callback, void* userData)

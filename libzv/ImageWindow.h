@@ -61,6 +61,9 @@ public:
     void addCommand (Command&& command);
     void enqueueAction (const ImageWindowAction& action);
 
+    using GlobalEventCallbackType = std::function<void(void*)>;
+    void setGlobalEventCallback (const GlobalEventCallbackType& callback, void* userData);
+
     bool canUndo() const;
 
     zv::Rect geometry () const;
