@@ -71,7 +71,6 @@ public:
     void processKeyEvent (int keycode);
     void checkImguiGlobalImageKeyEvents ();
     void checkImguiGlobalImageMouseEvents ();
-    void saveCurrentImage ();
     void discardAllChanges ();
 
     void setActiveTool (ActiveToolState::Kind kind);

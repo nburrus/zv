@@ -664,34 +664,6 @@ void ImageWindow::processKeyEvent (int keycode)
     }
 }
 
-void ImageWindow::saveCurrentImage ()
-{
-#if !PLATFORM_LINUX
-    nfdchar_t *outPath = NULL;
-    std::string default_name = formatted("daltonlens_%s.png", viewerModeFileName(impl->mutableState.activeMode).c_str());
-    nfdfilteritem_t filterItems[] = { { "Images", "png" } };
-    nfdresult_t result = NFD_SaveDialogU8 (&outPath, filterItems, 1, nullptr, default_name.c_str());
-
-    if ( result == NFD_OKAY )
-    {
-        zv_dbg ("Saving to %s", outPath);
-        impl->saveToFile.requested = true;
-        impl->saveToFile.outPath = outPath;
-        NFD_FreePathU8(outPath);
-    }
-    else if ( result == NFD_CANCEL ) 
-    {
-        zv_dbg ("Save image cancelled");
-    }
-    else 
-    {
-        fprintf(stderr, "Error: %s\n", NFD_GetError() );
-    }
-#else
-    // FIXME: implement with the ImGui file dialog.
-#endif
-}
-
 zv::Rect ImageWindow::geometry () const
 {
     return impl->imguiGlfwWindow.geometry();

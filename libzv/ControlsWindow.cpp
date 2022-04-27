@@ -403,11 +403,6 @@ void ControlsWindow::Impl::renderMenu ()
     {
         if (ImGui::BeginMenu("File"))
         {
-            // if (ImGui::MenuItem("Save Image", "Ctrl + s", false))
-            // {
-            //     imageWindow->saveCurrentImage ();
-            // }
-
             if (ImGui::MenuItem("Open Image", CtrlOrCmd_Str "+o", false))
             {
                 imageWindow->addCommand(ImageWindow::actionCommand(ImageWindowAction::Kind::File_OpenImage));
