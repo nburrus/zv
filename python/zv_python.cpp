@@ -45,6 +45,8 @@ void register_App (py::module& m)
         .def("createViewer", &App::createViewer, 
             py::return_value_policy::reference_internal)
 
+        .def("removeViewer", &App::removeViewer)
+
         .def("updateOnce", [](App& app, double minDuration) {
             app.updateOnce(minDuration);
         }, py::arg("minDuration") = 0.0);

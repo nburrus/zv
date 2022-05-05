@@ -560,18 +560,14 @@ ZN_API void zn_close(zn_State *S) {
 
 ZN_API int zn_run(zn_State *S, int mode) {
     int err;
-    // Never block if there are still pending results to process.
-    // This can happen e.g if we send a ton of stuff in a row, 
-    // hitting the ZN_MAX_RESULT_LOOPS limit.
-    int maybe_force_check_only = znQ_empty(&S->result_queue) ? 0 : 1;
     switch (mode) {
     case ZN_RUN_CHECK:
         return znS_poll(S, 1);
     case ZN_RUN_ONCE:
-        return znS_poll(S, maybe_force_check_only);
+        return znS_poll(S, 0);
     case ZN_RUN_LOOP:
-        while ((err = znS_poll(S, maybe_force_check_only)) > 0)
-            maybe_force_check_only = znQ_empty(&S->result_queue) ? 0 : 1;
+        while ((err = znS_poll(S, 0)) > 0)
+            ;
         return err;
     }
     return -ZN_ERROR;
@@ -2763,6 +2759,8 @@ static int znP_poll(zn_State *S, zn_Time timeout) {
         ms.tv_nsec = (timeout % 1000) * 1000000;
         pms = &ms;
     }
+    if (znR_process(S, 0))
+        return 1;
     ret = kevent(S->kqueue, NULL, 0, S->events, ZN_MAX_EVENTS, pms);
     if (ret < 0) /* error out */
         return 0;
