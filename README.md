@@ -1,3 +1,5 @@
+[![CMake Build and Test](https://github.com/nburrus/zv/actions/workflows/cmake_build_and_test.yml/badge.svg)](https://github.com/nburrus/zv/actions/workflows/cmake_build_and_test.yml)
+
 # zv
 
 **This project is an early work in progress, NOT READY FOR WIDE SHARING yet.**
@@ -42,7 +44,7 @@ It also has a standalone C and Python API to be used as an alternative to OpenCV
 
 - Become a fully-featured image manipulation program ([GIMP](https://www.gimp.org/)).
 
-- Become a fully-features scientific image viewer ([ImageJ](https://imagej.nih.gov/ij/), [napari](https://napari.org/))
+- Become a fully-featured scientific image viewer ([ImageJ](https://imagej.nih.gov/ij/), [napari](https://napari.org/))
 
 ## Demo
 
@@ -102,10 +104,7 @@ A similar logging API is available in C/C++, without external dependencies, but 
 Standard cmake. No external dependency should be required as everything is included in the repo. Example command line:
 
 ```
-mkdir build
-cd build
-cmake ..
-make
+mkdir build && cd build && cmake .. && make
 ```
 
 ## Dependencies
@@ -114,10 +113,11 @@ There are no external dependencies to install as they are all snapshotted in the
 
 - [GLFW](https://www.glfw.org/): desktop windows and GL context creation.
 - [Dear ImGui](https://github.com/ocornut/imgui): immediate mode GUI.
+- [stb_image](https://github.com/nothings/stb): image loading and saving.
 - [Clip](https://github.com/dacap/clip): copy/paste images from clipboard.
 - [cppuserprefs](https://github.com/nburrus/cppuserprefs): storage of user preferences.
 - [gl3w](https://github.com/skaslev/gl3w): tiny OpenGL loader.
-- [ImGuiFileDialog](https://github.com/aiekick/ImGuiFileDialog): portable File Dialog for ImGui.
+- [ImGuiFileDialog](https://github.com/aiekick/ImGuiFileDialog): pure ImGui file dialogs.
 - [pybind11](https://github.com/pybind/pybind11): generate Python bindings.
 
 A lot of the visualization code was adapted from [DaltonLens](https://github.com/DaltonLens/DaltonLens).

@@ -1,0 +1,69 @@
+name: CMake Build and Test
+
+on:
+  push:
+    branches: [ main, dev, github-actions ]
+  pull_request:
+    branches: [ main, dev, github-actions ]
+
+env:
+  # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
+  BUILD_TYPE: Release
+
+jobs:
+  build:
+    # The CMake configure and build commands are platform agnostic and should work equally
+    # well on Windows or Mac.  You can convert this to a matrix build if you need
+    # cross-platform coverage.
+    # See: https://docs.github.com/en/free-pro-team@latest/actions/learn-github-actions/managing-complex-workflows#using-a-build-matrix
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+          # - os: windows-latest # Windows not yet ready.
+          - os: macos-latest
+
+    env:
+      DISPLAY: :99
+      # Avoid apt-get questions
+      DEBIAN_FRONTEND: noninteractive
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v2
+      with:
+        lfs: true
+
+    - name: Install Ninja
+      id: ninja
+      uses: turtlesec-no/get-ninja@main
+
+    - name: Ninja version
+      run: echo "${{ steps.ninja.outputs.version }}"
+
+    # Only for act
+    - name: <ACT> Install sudo package
+      if: env.ACT=='true' && matrix.os == 'ubuntu-latest'
+      run: apt update && apt install sudo
+
+    - name: <Linux> Install dependencies for zv
+      if: matrix.os == 'ubuntu-latest'
+      run: sudo --preserve-env=DEBIAN_FRONTEND apt-get install -y cmake libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libgl-dev libxcb1-dev
+
+    - name: <Windows> Setup devcmd
+      if: matrix.os == 'windows-latest'
+      uses: ilammy/msvc-dev-cmd@v1
+
+    - name: Configure CMake
+      # Configure CMake in a 'build' subdirectory. `CMAKE_BUILD_TYPE` is only required if you are using a single-configuration generator such as make.
+      # See https://cmake.org/cmake/help/latest/variable/CMAKE_BUILD_TYPE.html?highlight=cmake_build_type
+      run: cmake -G Ninja -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
+
+    - name: Build
+      # Build your program with the given configuration
+      run: |
+        # FIXME: I don't understand why the external projects dependencies are not properly handled sometimes.
+        cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}} --target glfw-deps clip-deps
+        cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}} --target all
