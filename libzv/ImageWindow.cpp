@@ -1277,6 +1277,34 @@ void ImageWindow::runAction (const ImageWindowAction& action)
             impl->viewer->onSavePendingChangesConfirmed(Viewer::Confirmation::Ok, true /* force path selection */);
             break;
         }
+        
+        case ImageWindowAction::Kind::File_DeleteImageOnDisk: {
+            auto& imageList = impl->viewer->imageList();
+            int idx = imageList.firstSelectedAndEnabledIndex();
+            if (idx >= 0)
+            {
+                imageList.removeImage (idx);
+                if (imageList.numImages() == 0)
+                {
+                    imageList.addImage(defaultImageItem(), 0, false);
+                }
+            }
+            break;
+        }
+
+        case ImageWindowAction::Kind::File_CloseImage: {
+            auto& imageList = impl->viewer->imageList();
+            int idx = imageList.firstSelectedAndEnabledIndex();
+            if (idx >= 0)
+            {
+                imageList.removeImage (idx);
+                if (imageList.numImages() == 0)
+                {
+                    imageList.addImage(defaultImageItem(), 0, false);
+                }
+            }
+            break;
+        }
 
         case ImageWindowAction::Kind::View_ToggleOverlay: {
             impl->mutableState.infoOverlayEnabled = !impl->mutableState.infoOverlayEnabled;

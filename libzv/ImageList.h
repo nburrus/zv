@@ -108,6 +108,8 @@ using ImageItemUniquePtr = std::unique_ptr<ImageItem>;
 std::unique_ptr<ImageItem> imageItemFromPath (const std::string& imagePath);
 std::unique_ptr<ImageItem> imageItemFromData (const ImageSRGBA& im, const std::string& name);
 
+std::unique_ptr<ImageItem> defaultImageItem ();
+
 struct SelectionRange
 {
     bool isSelected (int idx) const
@@ -146,7 +148,9 @@ public:
     void setSelectionStart (int startIndex);
     void setSelectionCount (int count);
 
-    const ImageItemPtr& imageItemFromIndex (int index);
+    int firstSelectedAndEnabledIndex () const;
+
+    const ImageItemPtr& imageItemFromIndex (int index) const;
     ImageItemPtr imageItemFromId (ImageId imageId);
 
     void swapItems (int idx1, int idx2);

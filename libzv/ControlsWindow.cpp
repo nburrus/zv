@@ -445,6 +445,16 @@ void ControlsWindow::Impl::renderMenu ()
                 imageWindow->addCommand(ImageWindow::actionCommand(ImageWindowAction::Kind::File_SaveImageAs));
             }
 
+            if (ImGui::MenuItem("Close Image", "DEL", false))
+            {
+                imageWindow->addCommand(ImageWindow::actionCommand(ImageWindowAction::Kind::File_CloseImage));
+            }
+
+            if (ImGui::MenuItem("Delete Image on Disk", "Shift+DEL", false))
+            {
+                imageWindow->addCommand(ImageWindow::actionCommand(ImageWindowAction::Kind::File_DeleteImageOnDisk));
+            }
+
             if (ImGui::MenuItem("Close", "q", false))
             {
                 this->viewer->onDismissRequested();

@@ -395,6 +395,23 @@ void ImageList::refreshPrettyFileNames ()
     }
 }
 
+int ImageList::firstSelectedAndEnabledIndex () const
+{
+    for (int idx = 0; idx < numImages(); ++idx)
+    {
+        const ImageItemPtr& itemPtr = imageItemFromIndex(idx);
+        if (itemPtr->disabled) // from the filter.
+            continue;
+
+        bool selected = impl->selection.isSelected(idx);
+        if (selected)
+        {
+            return idx;
+        }
+    }
+    return -1;
+}
+
 // Takes ownership.
 ImageId ImageList::addImage (std::unique_ptr<ImageItem> image, int insertPosition, bool replaceExisting)
 {
@@ -447,7 +464,7 @@ ImageItemDataPtr ImageList::getData (ImageItem* entry)
     return impl->cache.getData (entry);
 }
 
-const ImageItemPtr& ImageList::imageItemFromIndex (int index)
+const ImageItemPtr& ImageList::imageItemFromIndex (int index) const
 {
     zv_assert (index < impl->entries.size(), "Image index out of bounds");
     return impl->entries[index];

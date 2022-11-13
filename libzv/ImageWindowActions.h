@@ -35,6 +35,8 @@ struct ImageWindowAction
         File_OpenImage,
         File_SaveImage,
         File_SaveImageAs,
+        File_DeleteImageOnDisk,
+        File_CloseImage,
 
         Edit_CopyCursorInfoToClipboard,
         Edit_CopyImageToClipboard,
