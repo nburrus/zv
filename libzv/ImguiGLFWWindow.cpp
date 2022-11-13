@@ -381,6 +381,7 @@ bool ImguiGLFWWindow::initialize (GLFWwindow* parentWindow,
     // Setup Dear ImGui context
     IMGUI_CHECKVERSION();
     impl->imGuiContext = ImGui::CreateContext(); // FIXME: use a shared font atlas.
+    impl->imGuiContext->IO.IniFilename = nullptr;
     ImGuiContextTracker::instance()->addContext(impl->imGuiContext);
     ImGui::SetCurrentContext(impl->imGuiContext);
 

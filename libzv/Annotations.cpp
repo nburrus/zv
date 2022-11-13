@@ -43,6 +43,7 @@ void AnnotationRenderer::initializeFromCurrentContext ()
         // FIXME: use a shared font atlas.
         impl->_sharedImguiContext = ImGui::CreateContext(prevContext->IO.Fonts);
         impl->_sharedImguiContext->IO.BackendRendererUserData = prevContext->IO.BackendRendererUserData;
+        impl->_sharedImguiContext->IO.IniFilename = nullptr;
     }
 }
 
