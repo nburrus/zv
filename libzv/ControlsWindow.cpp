@@ -314,6 +314,8 @@ void ControlsWindow::Impl::renderImageList (float cursorOverlayHeight)
         ImGui::TableSetupColumn("Size", ImGuiTableColumnFlags_WidthFixed);
         ImGui::TableHeadersRow();
 
+        std::pair<int,int> dragAndDropped { -1, -1 };
+
         for (int idx = 0; idx < imageList.numImages(); ++idx)
         {
             const ImageItemPtr& itemPtr = imageList.imageItemFromIndex(idx);
@@ -329,7 +331,7 @@ void ControlsWindow::Impl::renderImageList (float cursorOverlayHeight)
             {
                 ImGui::SetScrollHereY();
                 this->lastSelectedIdx = idx;
-            }
+            }                      
 
             ImGui::TableNextRow();
             ImGui::TableNextColumn();
@@ -343,6 +345,26 @@ void ControlsWindow::Impl::renderImageList (float cursorOverlayHeight)
                 imageWindow->addCommand (ImageWindow::actionCommand(ImageWindowAction::Kind::View_SelectImage, paramsPtr));
                 this->lastSelectedIdx = idx;
             }
+
+            if (ImGui::BeginDragDropSource())
+            {
+                ImGui::SetDragDropPayload("_IMAGE_ITEM", reinterpret_cast<void*>(&idx), sizeof(int));
+                ImGui::Text("%s", name.c_str());
+                ImGui::EndDragDropSource();
+            }
+
+            if (ImGui::BeginDragDropTarget())
+            {
+                if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("_IMAGE_ITEM"))
+                {
+                    IM_ASSERT(payload->DataSize == sizeof(int));
+                    int sourceIndex = *reinterpret_cast<int*>(payload->Data);
+                    dragAndDropped.first = sourceIndex;
+                    dragAndDropped.second = idx;
+                }
+                ImGui::EndDragDropTarget();
+            }
+
             ImGui::PopID();
 
             if (!itemPtr->sourceImagePath.empty()
@@ -363,7 +385,12 @@ void ControlsWindow::Impl::renderImageList (float cursorOverlayHeight)
             else
             {
                 ImGui::Text("(?x?)");
-            }
+            }            
+        }
+
+        if (dragAndDropped.first >= 0)
+        {
+            imageList.swapItems (dragAndDropped.first, dragAndDropped.second);
         }
         ImGui::EndTable();
     }

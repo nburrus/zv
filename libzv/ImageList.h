@@ -149,6 +149,8 @@ public:
     const ImageItemPtr& imageItemFromIndex (int index);
     ImageItemPtr imageItemFromId (ImageId imageId);
 
+    void swapItems (int idx1, int idx2);
+
     // Takes ownership.
     ImageId addImage (std::unique_ptr<ImageItem> image, int position, bool replaceExisting);
     void removeImage (int index);

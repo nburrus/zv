@@ -461,4 +461,9 @@ ImageItemPtr ImageList::imageItemFromId (ImageId imageId)
     return ImageItemPtr();
 }
 
+void ImageList::swapItems (int idx1, int idx2)
+{
+    std::swap (impl->entries[idx1], impl->entries[idx2]);
+}
+
 } // zv
