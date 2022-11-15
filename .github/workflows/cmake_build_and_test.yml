@@ -38,10 +38,10 @@ jobs:
 
     - name: Install Ninja
       id: ninja
-      uses: turtlesec-no/get-ninja@main
+      uses: seanmiddleditch/gha-setup-ninja@master
 
     - name: Ninja version
-      run: echo "${{ steps.ninja.outputs.version }}"
+      run: ninja --version
 
     # Only for act
     - name: <ACT> Install sudo package
