@@ -32,6 +32,7 @@ struct ViewerState
     bool toggleControlsRequested = false;
     bool dismissRequested = false;
     bool openImageRequested = false;
+    bool controlsRequestedForConfirmation = false;
     
     bool pendingChangesConfirmationRequested = false;
     std::function<void(void)> funcIfChangesConfirmed;
@@ -81,13 +82,8 @@ protected:
     void onToggleControls ();
     void onImageWindowGeometryUpdated (const Rect& geometry);
     void onOpenImage ();
+    void onControlsRequestedForConfirmation();
 
-    // confirm 1 discard 2 cancel 3
-    enum Confirmation {
-        Ok,
-        Discard,
-        Cancel
-    };
     void onSavePendingChangesConfirmed(Confirmation result, bool forcePathSelectionOnSave);
 
     void onAllChangesSaved (bool cancelled);

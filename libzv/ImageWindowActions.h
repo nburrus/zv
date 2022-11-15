@@ -36,6 +36,7 @@ struct ImageWindowAction
         File_SaveImage,
         File_SaveImageAs,
         File_DeleteImageOnDisk,
+        File_DeleteImageOnDisk_Confirmed,
         File_CloseImage,
 
         Edit_CopyCursorInfoToClipboard,
@@ -64,6 +65,13 @@ struct ImageWindowAction
     {}
 
     ParamsPtr paramsPtr = nullptr;
+};
+
+// confirm 1 discard 2 cancel 3
+enum Confirmation {
+    Ok,
+    Discard,
+    Cancel
 };
 
 } // zv

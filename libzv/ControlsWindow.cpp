@@ -69,6 +69,8 @@ struct ControlsWindow::Impl
     bool saveAllChanges = false;
     bool askToConfirmPendingChanges = false;
 
+    ActionToConfirm currentActionToConfirm;
+
     std::deque<ModifiedImagePtr> modImagesToSave;
     ModifiedImagePtr currentModImageToSave;
     bool forcePathSelectionOnSave = false;
@@ -176,7 +178,7 @@ void ControlsWindow::Impl::maybeRenderConfirmPendingChanges ()
             if (ImGui::Button("OK", ImVec2(120, 0)))
             {
                 this->askToConfirmPendingChanges = false;
-                this->viewer->onSavePendingChangesConfirmed(Viewer::Confirmation::Ok, false);
+                this->viewer->onSavePendingChangesConfirmed(Confirmation::Ok, false);
                 ImGui::CloseCurrentPopup();
             }
             ImGui::SetItemDefaultFocus();
@@ -185,7 +187,7 @@ void ControlsWindow::Impl::maybeRenderConfirmPendingChanges ()
             if (ImGui::Button("Discard", ImVec2(120, 0)))
             {
                 this->askToConfirmPendingChanges = false;
-                this->viewer->onSavePendingChangesConfirmed(Viewer::Confirmation::Discard, false);
+                this->viewer->onSavePendingChangesConfirmed(Confirmation::Discard, false);
                 ImGui::CloseCurrentPopup();
             }
 
@@ -193,7 +195,7 @@ void ControlsWindow::Impl::maybeRenderConfirmPendingChanges ()
             if (ImGui::Button("Cancel Action", ImVec2(120, 0)))
             {
                 this->askToConfirmPendingChanges = false;
-                this->viewer->onSavePendingChangesConfirmed(Viewer::Confirmation::Cancel, false);
+                this->viewer->onSavePendingChangesConfirmed(Confirmation::Cancel, false);
                 ImGui::CloseCurrentPopup();
             }
             ImGui::EndPopup();
@@ -734,6 +736,12 @@ void ControlsWindow::confirmPendingChanges ()
     impl->askToConfirmPendingChanges = true;
 }
 
+void ControlsWindow::setCurrentActionToConfirm (const ActionToConfirm& actionToConfirm)
+{
+    zv_assert (!impl-> currentActionToConfirm.isActive(), "Already an active confirmation!");
+    impl->currentActionToConfirm = actionToConfirm;    
+}
+
 void ControlsWindow::renderFrame ()
 {
     const auto frameInfo = impl->imguiGlfwWindow.beginFrame ();
@@ -788,6 +796,47 @@ void ControlsWindow::renderFrame ()
         impl->maybeRenderOpenImage ();
         impl->maybeRenderSaveImage ();
         impl->maybeRenderConfirmPendingChanges ();        
+
+        if (impl->currentActionToConfirm.isActive())
+        {
+            ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+            ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+            ImGui::SetNextWindowSize(ImVec2(frameInfo.windowContentWidth, frameInfo.windowContentHeight)*0.8, ImGuiCond_Appearing);
+            ImGui::OpenPopup(impl->currentActionToConfirm.title.c_str());
+            if (ImGui::BeginPopupModal(impl->currentActionToConfirm.title.c_str(), nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+            {
+                Confirmation confirmation;
+                if (impl->currentActionToConfirm.renderDialog(confirmation))
+                {
+                    switch (confirmation)
+                    {
+                        case Confirmation::Cancel: {
+                            if (impl->currentActionToConfirm.onCancelled)
+                                impl->currentActionToConfirm.onCancelled();
+                            break;
+                        }
+
+                        case Confirmation::Ok: {
+                            if (impl->currentActionToConfirm.onOk)
+                                impl->currentActionToConfirm.onOk();
+                            break;
+                        }
+
+                        case Confirmation::Discard: {
+                            if (impl->currentActionToConfirm.onDiscard)
+                                impl->currentActionToConfirm.onDiscard();
+                            break;
+                        }
+
+                        default:
+                            zv_assert (false, "Invalid confirmation");
+                    }
+                    ImGui::CloseCurrentPopup();
+                    impl->currentActionToConfirm = {};
+                }
+                ImGui::EndPopup();
+            }
+        }
 
         const auto& cursorOverlayInfo = imageWindow->cursorOverlayInfo();
         const bool showCursorOverlay = cursorOverlayInfo.valid();

@@ -44,6 +44,9 @@
 
 #include <deque>
 #include <cstdio>
+#include <filesystem>
+
+namespace fs = std::filesystem;
 
 namespace zv
 {
@@ -246,6 +249,8 @@ struct ImageWindow::Impl
                                    ZoomInfo &zoom,
                                    bool imageSmallerThanNormal,
                                    CursorOverlayInfo *overlayInfo);
+
+    void removeCurrentImageOnDisk ();
 };
 
 bool ImageWindow::Impl::runAfterCheckingPendingChanges (std::function<void(void)>&& func)
@@ -553,7 +558,7 @@ void ImageWindow::checkImguiGlobalImageKeyEvents ()
             GLFW_KEY_O, GLFW_KEY_S, GLFW_KEY_W, 
             GLFW_KEY_N, GLFW_KEY_A, GLFW_KEY_V, GLFW_KEY_PERIOD, GLFW_KEY_COMMA, GLFW_KEY_M,
             GLFW_KEY_C, GLFW_KEY_Z,            
-            GLFW_KEY_SPACE, GLFW_KEY_BACKSPACE,
+            GLFW_KEY_SPACE, GLFW_KEY_BACKSPACE, GLFW_KEY_DELETE,
             GLFW_KEY_ESCAPE, GLFW_KEY_ENTER,
         })
     {
@@ -589,6 +594,14 @@ void ImageWindow::processKeyEvent (int keycode)
         
         case GLFW_KEY_UP:
         case GLFW_KEY_BACKSPACE: enqueueAction(ImageWindowAction::Kind::View_PrevImage); break;
+
+        case GLFW_KEY_DELETE: {
+            if (io.KeyShift) 
+                enqueueAction(ImageWindowAction::Kind::File_DeleteImageOnDisk);
+            else 
+                enqueueAction(ImageWindowAction::Kind::File_CloseImage);
+            break;
+        }
 
         case GLFW_KEY_PAGE_DOWN: enqueueAction(ImageWindowAction::Kind::View_NextPageOfImage); break;
         case GLFW_KEY_PAGE_UP: enqueueAction(ImageWindowAction::Kind::View_PrevPageOfImage); break;
@@ -1269,25 +1282,46 @@ void ImageWindow::runAction (const ImageWindowAction& action)
         }
 
         case ImageWindowAction::Kind::File_SaveImage: {
-            impl->viewer->onSavePendingChangesConfirmed(Viewer::Confirmation::Ok, false /* don't force path selection */);
+            impl->viewer->onSavePendingChangesConfirmed(Confirmation::Ok, false /* don't force path selection */);
             break;
         }
 
         case ImageWindowAction::Kind::File_SaveImageAs: {
-            impl->viewer->onSavePendingChangesConfirmed(Viewer::Confirmation::Ok, true /* force path selection */);
+            impl->viewer->onSavePendingChangesConfirmed(Confirmation::Ok, true /* force path selection */);
             break;
         }
         
         case ImageWindowAction::Kind::File_DeleteImageOnDisk: {
+            impl->removeCurrentImageOnDisk ();
+            break;
+        }
+
+        case ImageWindowAction::Kind::File_DeleteImageOnDisk_Confirmed: {
             auto& imageList = impl->viewer->imageList();
             int idx = imageList.firstSelectedAndEnabledIndex();
-            if (idx >= 0)
+            if (idx < 0)
             {
-                imageList.removeImage (idx);
-                if (imageList.numImages() == 0)
-                {
-                    imageList.addImage(defaultImageItem(), 0, false);
-                }
+                zv_dbg ("No selected image.");
+                break;
+            }
+
+            const ImageItemPtr& itemPtr = imageList.imageItemFromIndex (idx);
+            if (itemPtr->sourceImagePath.empty())
+            {
+                zv_dbg ("No image path.");
+                break;
+            }
+
+            if (!fs::remove(itemPtr->sourceImagePath))
+            {
+                zv_dbg ("Failed to remove %s", itemPtr->sourceImagePath.c_str());
+                break;
+            }
+
+            imageList.removeImage (idx);
+            if (imageList.numImages() == 0)
+            {
+                imageList.addImage(defaultImageItem(), 0, false);
             }
             break;
         }
@@ -1518,6 +1552,55 @@ void ImageWindow::setGlobalEventCallback (const GlobalEventCallbackType& callbac
 {
     impl->globalCallback.callback = callback;
     impl->globalCallback.userData = userData;
+}
+
+void ImageWindow::Impl::removeCurrentImageOnDisk ()
+{
+    auto& imageList = viewer->imageList();
+    int idx = imageList.firstSelectedAndEnabledIndex();
+    if (idx < 0)
+    {
+        return;
+    }
+
+    const ImageItemPtr& itemPtr = imageList.imageItemFromIndex (idx);
+    if (itemPtr->sourceImagePath.empty())
+    {
+        return;
+    }
+
+    const std::string& imagePath = itemPtr->sourceImagePath;
+
+    ActionToConfirm actionToConfirm;
+    actionToConfirm.title = "Delete Image on Disk?";            
+    actionToConfirm.renderDialog = [imagePath](Confirmation& confirmation) -> bool {
+        ImGui::TextWrapped("%s will be deleted.\nThis operation cannot be undone!\n\n", imagePath.c_str());
+        ImGui::Separator();
+
+        bool gotAnswer = false;
+
+        if (ImGui::Button("OK", ImVec2(120, 0)) || ImGui::IsKeyPressed(ImGuiKey_Enter))
+        { 
+            confirmation = Confirmation::Ok;
+            gotAnswer = true;
+        }
+
+        ImGui::SetItemDefaultFocus();
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel", ImVec2(120, 0)) || ImGui::IsKeyPressed(ImGuiKey_Escape)) 
+        { 
+            confirmation = Confirmation::Cancel;
+            gotAnswer = true;
+        }
+
+        return gotAnswer;
+    };
+    actionToConfirm.onOk = [this]() {
+        that.enqueueAction (ImageWindowAction::Kind::File_DeleteImageOnDisk_Confirmed);
+    };
+    
+    viewer->controlsWindow()->setCurrentActionToConfirm (actionToConfirm);
+    viewer->onControlsRequestedForConfirmation ();
 }
 
 } // zv

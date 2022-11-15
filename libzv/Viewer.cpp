@@ -81,6 +81,7 @@ struct Viewer::Impl
         bool activateControls = state.toggleControlsRequested && !controlsWindow.isEnabled();
         activateControls |= state.openImageRequested;
         activateControls |= state.pendingChangesConfirmationRequested;
+        activateControls |= state.controlsRequestedForConfirmation;
 
         if (activateControls)
         {
@@ -116,6 +117,11 @@ struct Viewer::Impl
             {
                 controlsWindow.confirmPendingChanges ();
                 state.pendingChangesConfirmationRequested = false;
+            }
+
+            if (state.controlsRequestedForConfirmation)
+            {
+                state.controlsRequestedForConfirmation = false;
             }
 
             controlsWindow.renderFrame();
@@ -213,6 +219,11 @@ void Viewer::shutdown ()
 void Viewer::onOpenImage ()
 {
     impl->state.openImageRequested = true;
+}
+
+void Viewer::onControlsRequestedForConfirmation()
+{
+    impl->state.controlsRequestedForConfirmation = true;
 }
 
 void Viewer::onDismissRequested ()

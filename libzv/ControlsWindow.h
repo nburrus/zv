@@ -7,9 +7,11 @@
 #pragma once
 
 #include <libzv/ImguiGLFWWindow.h>
+#include <libzv/ImageWindowActions.h>
 
 #include <memory>
 #include <functional>
+#include <string>
 
 namespace zv
 {
@@ -20,6 +22,17 @@ class Viewer;
 struct ControlsWindowInputState
 {
     bool shiftIsPressed = false;
+};
+
+struct ActionToConfirm
+{
+    std::string title;
+    std::function<bool(Confirmation&)>  renderDialog;
+    std::function<void(void)> onOk;
+    std::function<void(void)> onCancelled;
+    std::function<void(void)> onDiscard;
+
+    bool isActive() const { return !title.empty(); }
 };
 
 class ControlsWindow
@@ -46,6 +59,7 @@ public:
     void openImage ();
     void saveAllChanges (bool forcePathSelectionOnSave);
     void confirmPendingChanges ();
+    void setCurrentActionToConfirm (const ActionToConfirm& actionToConfirm);
     
 private:
     struct Impl;
