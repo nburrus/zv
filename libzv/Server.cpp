@@ -358,6 +358,8 @@ public:
 
     bool start (const std::string& hostname, int port)
     {
+        zn_initialize ();
+
         _eventLoop = std::make_shared<zn::EventLoop>();
         bool ok = _eventLoop->initialize ();
         if (!ok)

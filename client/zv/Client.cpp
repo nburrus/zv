@@ -283,6 +283,8 @@ private:
     // The write loop will keep writing.
     void runMainLoop (const std::string &hostname, int port)
     {        
+        zn_initialize ();
+        
         _eventLoop = std::make_shared<zn::EventLoop>();
         _eventLoop->initialize ();
         _socket = std::make_shared<zn::TcpSocket>();

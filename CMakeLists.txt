@@ -125,7 +125,7 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/deps/other)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/deps/stb)
 
 if (WIN32)
-  add_definitions(-D_USE_MATH_DEFINES)
+  add_definitions(-D_USE_MATH_DEFINES -DZN_STATIC_API)
 endif()
 
 add_subdirectory(libzv)
