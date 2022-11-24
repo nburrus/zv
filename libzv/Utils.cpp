@@ -209,7 +209,7 @@ namespace zv
             for (int i = 0; i < pathIterators.size(); ++i)
             {
                 const int pathIdx = pathIndices[i];
-                names[pathIdx] = *pathIterators[i];
+                names[pathIdx] = pathIterators[i]->string();
             }
 
             for (auto& edge: edges)
@@ -281,7 +281,7 @@ namespace zv
                     continue;
                 }
 
-                const std::string& word = *wordIt;
+                const std::string& word = wordIt->string();
                 auto edge_it = edges.find (word);
                 if (edge_it == edges.end())
                 {

@@ -11,6 +11,7 @@
 #include <string>
 #include <stdexcept>
 #include <cassert>
+#include <iterator>
 
 namespace zv
 {

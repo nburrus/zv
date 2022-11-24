@@ -133,8 +133,11 @@ add_subdirectory(zv)
 add_subdirectory(zv-client)
 add_subdirectory(client)
 
-add_subdirectory(deps/pybind11)
-add_subdirectory(python)
+set (ENABLE_PYTHON OFF)
+if (ENABLE_PYTHON)
+  add_subdirectory(deps/pybind11)
+  add_subdirectory(python)
+endif()
 
 
 # enable_testing()

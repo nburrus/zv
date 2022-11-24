@@ -66,6 +66,7 @@ private:
 #endif
 
 #if CPPUSERPREFS_WINDOWS
+# define NOMINMAX
 # include <windows.h>
 # include <shlobj.h>
 #endif

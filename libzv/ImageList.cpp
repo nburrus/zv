@@ -32,7 +32,7 @@ void ImageItem::fillFromFilePath (const std::string& imagePath)
 {
     source = ImageItem::Source::FilePath;
     sourceImagePath = imagePath;
-    prettyName = fs::path(imagePath).filename();
+    prettyName = fs::path(imagePath).filename().string();
 }
 
 std::unique_ptr<ImageItem> imageItemFromData (const ImageSRGBA& im, const std::string& name)
@@ -369,7 +369,7 @@ void ImageList::refreshPrettyFileNames ()
         const auto& entry = impl->entries[idx];
         if (!entry->sourceImagePath.empty())
         {
-            groupedNames[fs::path(entry->sourceImagePath).filename()].push_back(idx);
+            groupedNames[fs::path(entry->sourceImagePath).filename().string()].push_back(idx);
         }
     }
     

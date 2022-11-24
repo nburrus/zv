@@ -4,11 +4,13 @@
 // of the BSD license.  See the LICENSE file for details.
 //
 
-# define NOMINMAX
-
 #include "PlatformSpecific.h"
 
 #include "GeneratedConfig.h"
+
+#define NOMINMAX
+#include <windows.h>
+#include <shellapi.h>
 
 namespace zv
 {

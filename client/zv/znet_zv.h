@@ -6,6 +6,7 @@
 
 #pragma once
 
+#define NOMINMAX
 #include "znet.hpp"
 
 #include "Message.h"

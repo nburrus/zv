@@ -11,6 +11,8 @@
 
 #include <imgui.h>
 
+#include <functional>
+
 namespace zv
 {
 
