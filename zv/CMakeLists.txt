@@ -1,10 +1,15 @@
-
 if (WIN32)
     set (zvbin_RESOURCES zv.rc zv_windows.manifest)
-    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /SUBSYSTEM:WINDOWS /ENTRY:mainCRTStartup")
 endif()
 
 add_executable(zvbin WIN32 main.cpp ${zvbin_RESOURCES})
+
+if (WIN32)
+    target_link_options(zvbin PRIVATE 
+        "/SUBSYSTEM:WINDOWS"
+        "/ENTRY:mainCRTStartup"
+    )
+endif()
 
 # add_executable(binary_to_compressed "${DEPS_DIR}/imgui/misc/fonts/binary_to_compressed_c.cpp")
 

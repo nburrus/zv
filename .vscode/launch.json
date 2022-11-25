@@ -8,14 +8,15 @@
             "name": "(Windows) zv",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/build/zv/Debug/zv.exe",
+            "program": "${workspaceFolder}/build/zv/${command:cmake.buildType}/zv.exe",
             "args": [
                 "--require-server"
             ],
             "stopAtEntry": false,
             "cwd": "${fileDirname}",
             "environment": [],
-            "console": "externalTerminal"
+            "console": "externalTerminal",
+            "preLaunchTask": "CMake: build-zv"
         },
         {
             "name": "Python: Current File",

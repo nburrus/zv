@@ -23,9 +23,6 @@
 #include <atomic>
 #include <filesystem>
 
-#include <netdb.h>
-#include <arpa/inet.h>
-
 namespace fs = std::filesystem;
 namespace zn = zsummer::network;
 
@@ -448,7 +445,7 @@ void Client::addImageFromFile (uint64_t imageId, const std::string& imPath)
         return true;
     };
 
-    addImage (imageId, fs::path(imPath).filename(), imPath, std::move(cb), true);
+    addImage (imageId, fs::path(imPath).filename().string(), imPath, std::move(cb), true);
 }
 
 Client& Client::instance()
