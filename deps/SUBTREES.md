@@ -22,3 +22,11 @@ git subtree add --prefix deps/cppuserprefs git@github.com:nburrus/cppuserprefs.g
 
 # pybind11
 git subtree add --prefix deps/pybind11 git@github.com:pybind/pybind11.git stable --squash
+
+# libjpeg-turbo
+
+Imported from https://github.com/libjpeg-turbo/libjpeg-turbo.git 
+
+Copied and removed the testimages + unused simd architectures.
+
+Last update: Nov 23, 2022 commit 74d5b168f7a00250c1dc0001527d10175e00b779 .
