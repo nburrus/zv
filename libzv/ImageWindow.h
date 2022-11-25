@@ -67,6 +67,7 @@ public:
     bool canUndo() const;
 
     zv::Rect geometry () const;
+    zv::Rect imageWidgetGeometry () const;
 
     void processKeyEvent (int keycode);
     void checkImguiGlobalImageKeyEvents ();

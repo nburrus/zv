@@ -764,6 +764,11 @@ zv::Rect ImageWindow::geometry () const
     return impl->imguiGlfwWindow.geometry();
 }
 
+zv::Rect ImageWindow::imageWidgetGeometry () const
+{
+    return impl->imageWidgetRect.current;
+}
+
 const CursorOverlayInfo& ImageWindow::cursorOverlayInfo() const
 {
     return impl->cursorOverlayInfo;

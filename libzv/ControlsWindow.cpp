@@ -84,7 +84,7 @@ struct ControlsWindow::Impl
     void renderActiveTool (const ModifiedImagePtr& firstModIm);
     void renderImageList (float cursorOverlayHeight);
     void renderModifiersTab (float cursorOverlayHeight);
-    void renderCursorInfo (const CursorOverlayInfo& cursorOverlayInfo, float overlayHeight);
+    void renderCursorInfo (const CursorOverlayInfo& cursorOverlayInfo, float footerHeight, float overlayHeight);
 };
 
 void ControlsWindow::Impl::saveNextModifiedImage ()
@@ -399,6 +399,7 @@ void ControlsWindow::Impl::renderImageList (float cursorOverlayHeight)
 }
 
 void ControlsWindow::Impl::renderCursorInfo (const CursorOverlayInfo& cursorOverlayInfo, 
+                                             float footerHeight,
                                              float overlayHeight)
 {
     auto& io = ImGui::GetIO();
@@ -409,7 +410,7 @@ void ControlsWindow::Impl::renderCursorInfo (const CursorOverlayInfo& cursorOver
         ImVec2 contentSize = ImGui::GetContentRegionAvail();
         const float padding = monoFontSize*0.25;
         const float overlayWidth = monoFontSize*21;
-        ImGui::SetCursorPosY (ImGui::GetWindowHeight() - overlayHeight - padding);
+        ImGui::SetCursorPosY (ImGui::GetWindowHeight() - footerHeight - padding);
         ImGui::SetCursorPosX ((contentSize.x - overlayWidth)/2.f);
         // ImGui::Spacing(); ImGui::Separator(); ImGui::Spacing();
         ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0, 0, 0, 0.85));
@@ -840,10 +841,14 @@ void ControlsWindow::renderFrame ()
 
         const auto& cursorOverlayInfo = imageWindow->cursorOverlayInfo();
         const bool showCursorOverlay = cursorOverlayInfo.valid();
-        float cursorOverlayHeight = 0.f;
+
+        const float windowSizeWidgetsHeight = monoFontSize*1.75;
+        float footerHeight = windowSizeWidgetsHeight;
+        const float cursorOverlayHeight = monoFontSize*13.5;
+
         if (showCursorOverlay)
         {
-            cursorOverlayHeight = monoFontSize*13.5;
+            footerHeight += cursorOverlayHeight;
         }
 
         ImGuiTabBarFlags tab_bar_flags = ImGuiTabBarFlags_None;
@@ -851,19 +856,39 @@ void ControlsWindow::renderFrame ()
         {
             if (ImGui::BeginTabItem("Image List"))
             {
-                impl->renderImageList (cursorOverlayHeight);
+                impl->renderImageList (footerHeight);
                 ImGui::EndTabItem();
             }
             if (ImGui::BeginTabItem("Modifiers"))
             {
-                impl->renderModifiersTab (cursorOverlayHeight);
+                impl->renderModifiersTab (footerHeight);
                 ImGui::EndTabItem();
             }
             ImGui::EndTabBar();
         }        
                         
         if (showCursorOverlay)
-            impl->renderCursorInfo (cursorOverlayInfo, cursorOverlayHeight);
+            impl->renderCursorInfo (cursorOverlayInfo, footerHeight, cursorOverlayHeight);
+
+        // FIXME: add tooltips. Add commands when the size is actually changed.
+
+        ImGui::SetCursorPosY (ImGui::GetWindowHeight() - windowSizeWidgetsHeight);
+        Rect imageRect = imageWindow->imageWidgetGeometry();
+        int width = imageRect.size.x;
+        int height = imageRect.size.y;
+        ImGui::SetNextItemWidth (monoFontSize * 3);
+        if (ImGui::InputInt ("##Window width", &width, -1, -1))
+        {
+
+        }
+        ImGui::SameLine ();
+        static bool lockRatio = true;
+        ImGui::Checkbox ("##LockRatio", &lockRatio); 
+        ImGui::SameLine (); ImGui::SetNextItemWidth (monoFontSize * 3);
+        if (ImGui::InputInt ("##Window height", &height, -1, -1))
+        {
+
+        }
         
         imageWindow->checkImguiGlobalImageKeyEvents ();
         imageWindow->checkImguiGlobalImageMouseEvents ();
