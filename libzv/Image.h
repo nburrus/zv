@@ -367,11 +367,11 @@ namespace zv
     using ImageXYZ = Image<PixelXYZ>;
     using ImageLMS = Image<PixelLMS>;
     
-    bool readPngImage (const std::string& inputFileName,
-                       ImageSRGBA& outputImage);
+    bool readImageFile (const std::string& inputFileName, ImageSRGBA& outputImage);
     
-    bool writePngImage (const std::string& filePath,
-                        const ImageSRGBA& image);
+    bool readJpegFile (const std::string& inputFilename, ImageSRGBA& outputImage);
+
+    bool writeImageFile (const std::string& filePath, const ImageSRGBA& image);
 
     template <class T>
     Image<T> crop (const Image<T>& input, const zv::Rect& rawRoi)

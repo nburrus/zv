@@ -124,6 +124,7 @@ endif()
 target_link_libraries(zv
     glfw3
     clip
+    libjpeg-turbo
 )
 
 if (APPLE)

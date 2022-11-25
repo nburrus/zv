@@ -109,12 +109,14 @@ std::unique_ptr<ImageItemData> loadImageData(ImageItem& input)
             staticData->status = ImageItemData::Status::Ready;
             staticData->cpuData = std::make_shared<ImageSRGBA>();
 
-            bool couldLoad = readPngImage (input.sourceImagePath, *staticData->cpuData);
+            Profiler tc (formatted("Load %s", input.sourceImagePath.c_str()).c_str());
+            bool couldLoad = readImageFile (input.sourceImagePath, *staticData->cpuData);
             if (!couldLoad)
             {
                 zv_dbg("Could not load %s", input.sourceImagePath.c_str());
                 staticData->status = ImageItemData::Status::FailedToLoad;
             }
+            tc.stop ();
 
             output.reset (staticData);
             break;

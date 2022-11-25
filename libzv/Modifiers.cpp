@@ -17,7 +17,7 @@ bool ModifiedImage::saveChanges (const std::string& outputPath)
 {
     ImageItemDataPtr maybeModifiedData = data();
     
-    if (!writePngImage (outputPath, *(maybeModifiedData->cpuData)))
+    if (!writeImageFile (outputPath, *(maybeModifiedData->cpuData)))
         return false;
 
     _item->fillFromFilePath (outputPath);

@@ -90,6 +90,26 @@ if (WIN32)
   target_link_libraries(clip INTERFACE Shlwapi)
 endif()
 
+# Specify a default value, for some reason libjpeg-turbo can't find it in the PATH.
+if (WIN32 AND NOT CMAKE_ASM_NASM_COMPILER)
+  set (CMAKE_ASM_NASM_COMPILER "C:/Program Files/NASM/nasm.exe")
+endif()
+
+ExternalProject_Add(libjpeg-turbo-deps
+  LIST_SEPARATOR "${semicolon_smuggle}"
+  PREFIX glfw
+  SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/deps/libjpeg-turbo"
+  CMAKE_ARGS
+        -DCMAKE_BUILD_TYPE=${CMAKE_DEPS_CONFIG}
+        -DCMAKE_OSX_ARCHITECTURES=${cmake_osx_archs_special_separator}
+        -DCMAKE_INSTALL_PREFIX:PATH=${PRECOMPILED_FOLDER}/libjpeg-turbo
+        -DCMAKE_ASM_NASM_COMPILER=${CMAKE_ASM_NASM_COMPILER}
+)
+set(TURBOJPEG_LIBRARY_FILENAME "${CMAKE_STATIC_LIBRARY_PREFIX}turbojpeg-static${CMAKE_STATIC_LIBRARY_SUFFIX}")
+add_library(libjpeg-turbo STATIC IMPORTED)
+set_target_properties(libjpeg-turbo PROPERTIES IMPORTED_LOCATION ${PRECOMPILED_FOLDER}/libjpeg-turbo/lib/${TURBOJPEG_LIBRARY_FILENAME})
+target_include_directories(libjpeg-turbo INTERFACE ${PRECOMPILED_FOLDER}/libjpeg-turbo/include)
+
 set(CMAKE_CXX_STANDARD 17)
 
 # Add DebugFast settings since image processing is typically too slow to happen
@@ -125,7 +145,7 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/deps/other)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/deps/stb)
 
 if (WIN32)
-  add_definitions(-D_USE_MATH_DEFINES -DZN_STATIC_API)
+  add_definitions(-D_USE_MATH_DEFINES -DZN_STATIC_API -DNOMINMAX)
 endif()
 
 add_subdirectory(libzv)

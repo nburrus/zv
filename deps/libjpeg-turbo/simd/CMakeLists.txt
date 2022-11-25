@@ -50,6 +50,10 @@ if(NOT REQUIRE_SIMD)
   endif()
 endif()
 enable_language(ASM_NASM)
+# FIXME: why is this step removing the nasm.exe suffix???
+if (WIN32)
+  set (CMAKE_ASM_NASM_COMPILER "${CMAKE_ASM_NASM_COMPILER}/nasm.exe")
+endif()
 message(STATUS "CMAKE_ASM_NASM_COMPILER = ${CMAKE_ASM_NASM_COMPILER}")
 
 if(CMAKE_ASM_NASM_OBJECT_FORMAT MATCHES "^macho")
