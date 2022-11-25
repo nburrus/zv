@@ -22,7 +22,7 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-          # - os: windows-latest # Windows not yet ready.
+          - os: windows-latest # Windows not yet ready.
           - os: macos-latest
 
     env:
