@@ -17,7 +17,7 @@
       },
       {
         "label": "CMake: build-zv",
-        "command": "cmake --build ${workspaceFolder}/build --target zv",
+        "command": "cmake --build ${workspaceFolder}/build --target zvbin --config ${command:cmake.buildType}",
         "type": "shell",
         "group": "build"
       }

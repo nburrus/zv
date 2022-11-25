@@ -171,8 +171,10 @@ struct ImageWindow::Impl
     } updateAfterContentSwitch;
         
     ImVec2 monitorSize = ImVec2(-1,-1);
+    Rect monitorWorkArea;
+    Rect monitorAreaForImageWidget;
     
-    const int windowBorderSize = 0;
+    const int windowBorderSize = 0;    
     bool shouldUpdateWindowSize = false;
     const int gridPadding = 1;
     
@@ -211,6 +213,78 @@ struct ImageWindow::Impl
     }
 
     void adjustForNewSelection ();
+
+    void moveWindowIfCannotFit()
+    {
+        bool hadToMove = false;
+        double dx = (this->imageWidgetRect.current.size.x + this->imageWidgetRect.current.origin.x) - (this->monitorAreaForImageWidget.origin.x + this->monitorAreaForImageWidget.size.x);
+        if (dx > 0.f)
+        {
+            this->imageWidgetRect.current.origin.x -= dx;
+            hadToMove = true;
+        }
+
+        double dy = (this->imageWidgetRect.current.size.y + this->imageWidgetRect.current.origin.y) - (this->monitorAreaForImageWidget.origin.y + this->monitorAreaForImageWidget.size.y);
+        if (dy > 0.f)
+        {
+            this->imageWidgetRect.current.origin.y -= dy;
+            hadToMove = true;
+        }
+
+        if (hadToMove)
+            adjustWindowGeometryToImageWidget();
+    }
+
+    void fitWidgetRectInScreen (bool keepAspectRatio)
+    {
+        bool imageLargerThanScreen = false;        
+
+        if (this->imageWidgetRect.current.size.x > this->monitorAreaForImageWidget.size.x)
+        {
+            this->imageWidgetRect.current.size.x = this->monitorAreaForImageWidget.size.x;
+            if (keepAspectRatio)
+            {
+                float sx = (float)this->monitorAreaForImageWidget.size.x / this->imageWidgetRect.normal.size.x;
+                this->imageWidgetRect.current.size.y = int(this->imageWidgetRect.normal.size.y * sx + 0.5f);
+            }
+            imageLargerThanScreen = true;
+        }
+
+        if (this->imageWidgetRect.current.size.y > this->monitorAreaForImageWidget.size.y)
+        {
+            this->imageWidgetRect.current.size.y = this->monitorAreaForImageWidget.size.y;
+            if (keepAspectRatio)
+            {
+                float sy = (float)this->monitorAreaForImageWidget.size.y / this->imageWidgetRect.normal.size.y;
+                this->imageWidgetRect.current.size.x = int(this->imageWidgetRect.normal.size.x * sy + 0.5f);
+            }
+            imageLargerThanScreen = true;
+        }
+
+        zv_assert (this->monitorAreaForImageWidget.size.x >= this->imageWidgetRect.current.size.x, "Widget width should be smaller than monitor.");
+        zv_assert (this->monitorAreaForImageWidget.size.y >= this->imageWidgetRect.current.size.y, "Widget height should be smaller than monitor.");
+
+        this->imageWidgetRect.current.origin.x = (this->monitorAreaForImageWidget.size.x - this->imageWidgetRect.current.size.x)*0.5f + this->monitorAreaForImageWidget.origin.x;
+        this->imageWidgetRect.current.origin.y = (this->monitorAreaForImageWidget.size.y - this->imageWidgetRect.current.size.y)*0.5f + this->monitorAreaForImageWidget.origin.y;
+        
+        this->imageWidgetRect.normal.origin = this->imageWidgetRect.current.origin;
+        
+        if (imageLargerThanScreen)
+        {
+            this->lastGeometryMode = Impl::WindowGeometryMode::Maxspect;
+        }
+    }
+
+    void adjustWindowGeometryToImageWidget ()
+    {
+        this->updateAfterContentSwitch.inProgress = true;
+        this->updateAfterContentSwitch.numAlreadyRenderedFrames = 0;
+        this->updateAfterContentSwitch.targetWindowGeometry.origin.x = this->imageWidgetRect.current.origin.x - this->windowBorderSize;
+        this->updateAfterContentSwitch.targetWindowGeometry.origin.y = this->imageWidgetRect.current.origin.y - this->windowBorderSize;
+        this->updateAfterContentSwitch.targetWindowGeometry.size.x = this->imageWidgetRect.current.size.x + 2 * this->windowBorderSize;
+        this->updateAfterContentSwitch.targetWindowGeometry.size.y = this->imageWidgetRect.current.size.y + 2 * this->windowBorderSize;
+        this->updateAfterContentSwitch.screenToImageScale = 1.0;
+    }
 
     void adjustAspectRatio ()
     {
@@ -384,16 +458,11 @@ void ImageWindow::Impl::adjustForNewSelection ()
     if (!this->imageWidgetRect.current.origin.isValid())
     {
         this->imageWidgetRect.current = this->imageWidgetRect.normal;
+        fitWidgetRectInScreen (/*keepAspectRatio=*/ true);
+
         // Don't show it now, but tell it to show the window after
         // updating the content, otherwise we can get annoying flicker.
-        this->updateAfterContentSwitch.inProgress = true;
-        this->updateAfterContentSwitch.needToResize = true;
-        this->updateAfterContentSwitch.numAlreadyRenderedFrames = 0;
-        this->updateAfterContentSwitch.targetWindowGeometry.origin.x = this->imageWidgetRect.normal.origin.x - this->windowBorderSize;
-        this->updateAfterContentSwitch.targetWindowGeometry.origin.y = this->imageWidgetRect.normal.origin.y - this->windowBorderSize;
-        this->updateAfterContentSwitch.targetWindowGeometry.size.x = this->imageWidgetRect.normal.size.x + 2 * this->windowBorderSize;
-        this->updateAfterContentSwitch.targetWindowGeometry.size.y = this->imageWidgetRect.normal.size.y + 2 * this->windowBorderSize;
-        this->updateAfterContentSwitch.screenToImageScale = 1.0;
+        adjustWindowGeometryToImageWidget ();
         this->viewer->onImageWindowGeometryUpdated(this->updateAfterContentSwitch.targetWindowGeometry);
     }
 
@@ -483,19 +552,32 @@ bool ImageWindow::initialize (GLFWwindow* parentWindow, Viewer* viewer)
     GLFWmonitor* monitor = glfwGetPrimaryMonitor();
     const GLFWvidmode* mode = glfwGetVideoMode(monitor);
     impl->monitorSize = ImVec2(mode->width, mode->height);
-    zv_dbg ("Primary monitor size = %f x %f", impl->monitorSize.x, impl->monitorSize.y);
+    zv_dbg ("Primary monitor size = %f x %f", impl->monitorSize.x, impl->monitorSize.y);    
 
     // Create window with graphics context.
     // glfwWindowHint(GLFW_RESIZABLE, false); // fixed size.
 
     zv::Rect windowGeometry;
-    windowGeometry.origin.x = 0;
-    windowGeometry.origin.y = 0;
+    windowGeometry.origin.x = 64;
+    windowGeometry.origin.y = 64;
     windowGeometry.size.x = 640;
     windowGeometry.size.y = 480;
     
-    if (!impl->imguiGlfwWindow.initialize (parentWindow, "Dalton Lens Image Viewer", windowGeometry, false /* viewports */))
+    if (!impl->imguiGlfwWindow.initialize (parentWindow, "ZV Image Viewer", windowGeometry, false /* viewports */))
         return false;
+
+    {
+        int xpos, ypos, width, height;
+        glfwGetMonitorWorkarea(monitor, &xpos, &ypos, &width, &height);
+        impl->monitorWorkArea = Rect::from_x_y_w_h (xpos, ypos, width, height);
+        
+        Padding decSize = impl->imguiGlfwWindow.decorationSize();
+        impl->monitorAreaForImageWidget = impl->monitorWorkArea;
+        impl->monitorAreaForImageWidget.origin.x += decSize.left;
+        impl->monitorAreaForImageWidget.size.x -= decSize.left + decSize.right;
+        impl->monitorAreaForImageWidget.origin.y += decSize.top;
+        impl->monitorAreaForImageWidget.size.y -= decSize.top + decSize.bottom;
+    }
 
     impl->annotationRenderer.initializeFromCurrentContext();
     
@@ -901,15 +983,15 @@ void ImageWindow::renderFrame ()
         impl->adjustForNewSelection ();
     }
 
-    if (impl->updateAfterContentSwitch.needToResize)
-    {
-        impl->imguiGlfwWindow.enableContexts();
+    // if (impl->updateAfterContentSwitch.needToResize)
+    // {
+    //     impl->imguiGlfwWindow.enableContexts();
 
-        impl->imguiGlfwWindow.setWindowSize (impl->updateAfterContentSwitch.targetWindowGeometry.size.x, 
-                                             impl->updateAfterContentSwitch.targetWindowGeometry.size.y);        
+    //     impl->imguiGlfwWindow.setWindowSize (impl->updateAfterContentSwitch.targetWindowGeometry.size.x, 
+    //                                          impl->updateAfterContentSwitch.targetWindowGeometry.size.y);
 
-        impl->updateAfterContentSwitch.needToResize = false;
-    }
+    //     impl->updateAfterContentSwitch.needToResize = false;
+    // }
 
     const auto frameInfo = impl->imguiGlfwWindow.beginFrame ();
     const auto& controlsWindowState = impl->viewer->controlsWindow()->inputState();
@@ -952,6 +1034,8 @@ void ImageWindow::renderFrame ()
     }
     
     zv::Rect platformWindowGeometry = impl->imguiGlfwWindow.geometry();
+    impl->imageWidgetRect.current.origin.x = platformWindowGeometry.origin.x + impl->windowBorderSize*2;
+    impl->imageWidgetRect.current.origin.y = platformWindowGeometry.origin.y + impl->windowBorderSize*2;
 
     ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_Always);
     ImGui::SetNextWindowSize(ImVec2(frameInfo.windowContentWidth, frameInfo.windowContentHeight), ImGuiCond_Always);
@@ -1175,7 +1259,9 @@ void ImageWindow::renderFrame ()
             glfwFocusWindow(impl->imguiGlfwWindow.glfwWindow());
             impl->imguiGlfwWindow.setWindowPos(impl->updateAfterContentSwitch.targetWindowGeometry.origin.x,
                                                impl->updateAfterContentSwitch.targetWindowGeometry.origin.y);
-            impl->updateAfterContentSwitch.setCompleted(); // not really needed, just to be explicit.
+            impl->imguiGlfwWindow.setWindowSize (impl->updateAfterContentSwitch.targetWindowGeometry.size.x, 
+                                                 impl->updateAfterContentSwitch.targetWindowGeometry.size.y);
+            impl->updateAfterContentSwitch.setCompleted();
         }
     }
     
@@ -1227,8 +1313,17 @@ void ImageWindow::runAction (const ImageWindowAction& action)
         }
 
         case ImageWindowAction::Kind::Zoom_x2: {
+            if (impl->imageWidgetRect.current.size.x * 2.f > impl->monitorAreaForImageWidget.size.x)
+                return;
+
+            if (impl->imageWidgetRect.current.size.y * 2.f > impl->monitorAreaForImageWidget.size.y)
+                return;
+            
             impl->imageWidgetRect.current.size.x *= 2.f;
             impl->imageWidgetRect.current.size.y *= 2.f;
+
+            impl->moveWindowIfCannotFit ();
+
             impl->shouldUpdateWindowSize = true;
             if (impl->lastGeometryMode != Impl::WindowGeometryMode::UserDefined)
                 impl->lastGeometryMode = Impl::WindowGeometryMode::ScaleSpect;
@@ -1236,7 +1331,7 @@ void ImageWindow::runAction (const ImageWindowAction& action)
         }
 
         case ImageWindowAction::Kind::Zoom_div2: {
-            if (impl->imageWidgetRect.current.size.x > 64 && impl->imageWidgetRect.current.size.y > 64)
+            if (impl->imageWidgetRect.current.size.x > 96 && impl->imageWidgetRect.current.size.y > 96)
             {
                 impl->imageWidgetRect.current.size.x *= 0.5f;
                 impl->imageWidgetRect.current.size.y *= 0.5f;
@@ -1248,8 +1343,18 @@ void ImageWindow::runAction (const ImageWindowAction& action)
         }
 
         case ImageWindowAction::Kind::Zoom_Inc10p: {
-            impl->imageWidgetRect.current.size.x *= 1.1f;
-            impl->imageWidgetRect.current.size.y *= 1.1f;
+            const float scale = 1.1f;
+            if (impl->imageWidgetRect.current.size.x * scale > impl->monitorAreaForImageWidget.size.x)
+                return;
+
+            if (impl->imageWidgetRect.current.size.y * scale > impl->monitorAreaForImageWidget.size.y)
+                return;
+
+            impl->imageWidgetRect.current.size.x *= scale;
+            impl->imageWidgetRect.current.size.y *= scale;
+
+            impl->moveWindowIfCannotFit ();
+
             impl->shouldUpdateWindowSize = true;
             if (impl->lastGeometryMode != Impl::WindowGeometryMode::UserDefined)
                 impl->lastGeometryMode = Impl::WindowGeometryMode::ScaleSpect;
@@ -1269,10 +1374,11 @@ void ImageWindow::runAction (const ImageWindowAction& action)
         }
 
         case ImageWindowAction::Kind::Zoom_Maxspect: {
-            impl->imageWidgetRect.current.size.x = impl->monitorSize.x;
-            impl->imageWidgetRect.current.size.y = impl->monitorSize.y;
-            impl->adjustAspectRatio ();
-            impl->lastGeometryMode = Impl::WindowGeometryMode::Maxspect;
+            impl->imageWidgetRect.current = impl->monitorAreaForImageWidget;
+            // Make it too big on purpose, then fitWidgetRectInScreen will do the hard job for us.
+            impl->imageWidgetRect.current.size *= 2.f;
+            impl->fitWidgetRectInScreen (/* keepAspectRatio=*/ true);
+            impl->adjustWindowGeometryToImageWidget ();
             break;
         }
 

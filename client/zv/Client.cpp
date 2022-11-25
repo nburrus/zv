@@ -23,6 +23,11 @@
 #include <atomic>
 #include <filesystem>
 
+#if !defined(_WIN32)
+# include <netdb.h>
+# include <arpa/inet.h>
+#endif
+
 namespace fs = std::filesystem;
 namespace zn = zsummer::network;
 

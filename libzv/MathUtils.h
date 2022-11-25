@@ -154,6 +154,13 @@ namespace zv
             y += rhs.y;
             return *this;
         }
+
+        inline Point& operator*=(double scale)
+        {
+            x *= scale;
+            y *= scale;
+            return *this;
+        }
         
         bool isValid() const { return !std::isnan(x) && !std::isnan(y); }
 
@@ -277,6 +284,14 @@ namespace zv
             size.y *= s;
             return *this;
         }
+    };
+
+    struct Padding
+    {
+        double left = NAN;
+        double right = NAN;
+        double top = NAN;
+        double bottom = NAN;
     };
 
     struct Line

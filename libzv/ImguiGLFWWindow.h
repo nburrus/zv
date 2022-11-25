@@ -64,6 +64,8 @@ public:
     using WindowSizeChangedCb = std::function<void(int,int,bool /* from user interaction */)>;
     void setWindowSizeChangedCallback (WindowSizeChangedCb&& callback);
 
+    zv::Padding decorationSize () const;
+
 public:
     bool closeRequested () const;
     void cancelCloseRequest ();

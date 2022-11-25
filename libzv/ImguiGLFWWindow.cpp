@@ -55,6 +55,8 @@ struct ImguiGLFWWindow::Impl
 
     ImguiGLFWWindow::WindowSizeChangedCb windowSizeChangedCb;
     int lastSizeRequest;
+
+    zv::Padding decorationSize;
 };
 
 class ImGuiScopedContext
@@ -226,12 +228,15 @@ void ImguiGLFWWindow::setWindowSizeChangedCallback (WindowSizeChangedCb&& callba
 
 void ImguiGLFWWindow::setWindowPos (int x, int y)
 {
+    glfwRestoreWindow (impl->window);
     glfwSetWindowPos (impl->window, x, y);
 }
 
 void ImguiGLFWWindow::setWindowSize (int width, int height)
 {
     impl->lastSizeRequest = ImGui::GetFrameCount();
+    // Some window managers might maximize automatically
+    glfwRestoreWindow (impl->window);
     glfwSetWindowSize (impl->window, width, height);
 }
 
@@ -342,6 +347,14 @@ bool ImguiGLFWWindow::initialize (GLFWwindow* parentWindow,
     if (impl->window == NULL)
         return false;
 
+    int frameLeft, frameRight, frameTop, frameBottom;
+    glfwGetWindowFrameSize (impl->window, &frameLeft, &frameTop, &frameRight, &frameBottom);
+    // No decorations reported on X11.
+    impl->decorationSize.left = std::max(frameLeft, 8);
+    impl->decorationSize.right = std::max(frameRight, 8);
+    impl->decorationSize.top = std::max(frameTop, 32);
+    impl->decorationSize.bottom = std::max(frameBottom, 8);
+   
     // Won't do anything on macOS, we don't even load the file.
     GLFWimage glfwImage;
     glfwImage.pixels = const_cast<unsigned char*>(Icon::instance().rgba32x32());
@@ -479,6 +492,11 @@ bool ImguiGLFWWindow::initialize (GLFWwindow* parentWindow,
     glfwSwapInterval(1); // Enable vsync
 
     return true;
+}
+
+zv::Padding ImguiGLFWWindow::decorationSize () const
+{
+    return impl->decorationSize;
 }
 
 static void AddUnderLine( ImColor col_ )

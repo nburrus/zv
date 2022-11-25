@@ -132,7 +132,7 @@ namespace zv
             return;
         double now = currentDateInSeconds();
         double elapsed = now - _startTime;
-        std::cerr << formatted("[PROFILER] [%s] %.1fms%s", _label.c_str(), elapsed*1e3, _laps.c_str()) << std::endl;
+        consoleMessage ("[PROFILER] [%s] %.1fms%s\n", _label.c_str(), elapsed*1e3, _laps.c_str());
         _startTime = -1.0;
     }
 
