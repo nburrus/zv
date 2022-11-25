@@ -411,6 +411,21 @@ void ImageWindow::Impl::adjustForNewSelection ()
     int firstImHeight = firstIm.height() > 0 ? firstIm.height() : 256;
     this->imageWidgetRect.normal.size = this->currentLayout.widgetRectForImageSize(Point(firstImWidth, firstImHeight), gridPadding);
 
+    this->mutableState.activeMode = ViewerMode::Original;
+
+    // Special case when it's the first time, don't try to restore anything.
+    if (!this->imageWidgetRect.current.origin.isValid())
+    {
+        this->imageWidgetRect.current = this->imageWidgetRect.normal;
+        fitWidgetRectInScreen (/*keepAspectRatio=*/ true);
+
+        // Don't show it now, but tell it to show the window after
+        // updating the content, otherwise we can get annoying flicker.
+        adjustWindowGeometryToImageWidget ();
+        this->viewer->onImageWindowGeometryUpdated(this->updateAfterContentSwitch.targetWindowGeometry);
+        return;
+    }
+
     // Maintain the size of the first image after changing the layout.
     if (layoutChanged)
     {
@@ -454,19 +469,6 @@ void ImageWindow::Impl::adjustForNewSelection ()
         }
     }
 
-    // Keep the current geometry if it was already set before.
-    if (!this->imageWidgetRect.current.origin.isValid())
-    {
-        this->imageWidgetRect.current = this->imageWidgetRect.normal;
-        fitWidgetRectInScreen (/*keepAspectRatio=*/ true);
-
-        // Don't show it now, but tell it to show the window after
-        // updating the content, otherwise we can get annoying flicker.
-        adjustWindowGeometryToImageWidget ();
-        this->viewer->onImageWindowGeometryUpdated(this->updateAfterContentSwitch.targetWindowGeometry);
-    }
-
-    this->mutableState.activeMode = ViewerMode::Original;
 }
 
 void ImageWindow::Impl::addModifier(const CreateModifierFunc& createModifier)

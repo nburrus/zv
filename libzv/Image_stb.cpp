@@ -84,6 +84,8 @@ namespace zv
             zv_dbg ("Failed to decompress");
             return false;
         }
+
+        return true;
     }
     
     bool writeImageFile (const std::string& filePath, const ImageSRGBA& image)

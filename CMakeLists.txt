@@ -105,10 +105,14 @@ ExternalProject_Add(libjpeg-turbo-deps
         -DCMAKE_INSTALL_PREFIX:PATH=${PRECOMPILED_FOLDER}/libjpeg-turbo
         -DCMAKE_ASM_NASM_COMPILER=${CMAKE_ASM_NASM_COMPILER}
 )
-set(TURBOJPEG_LIBRARY_FILENAME "${CMAKE_STATIC_LIBRARY_PREFIX}turbojpeg-static${CMAKE_STATIC_LIBRARY_SUFFIX}")
+if (WIN32)
+  set(TURBOJPEG_LIBRARY_FILENAME "${CMAKE_STATIC_LIBRARY_PREFIX}turbojpeg-static${CMAKE_STATIC_LIBRARY_SUFFIX}")
+else()
+  set(TURBOJPEG_LIBRARY_FILENAME "${CMAKE_STATIC_LIBRARY_PREFIX}turbojpeg${CMAKE_STATIC_LIBRARY_SUFFIX}")
+endif()
 add_library(libjpeg-turbo STATIC IMPORTED)
 set_target_properties(libjpeg-turbo PROPERTIES IMPORTED_LOCATION ${PRECOMPILED_FOLDER}/libjpeg-turbo/lib/${TURBOJPEG_LIBRARY_FILENAME})
-target_include_directories(libjpeg-turbo INTERFACE ${PRECOMPILED_FOLDER}/libjpeg-turbo/include)
+include_directories(libjpeg-turbo PROPERTIES IMPORTED_LOCATION ${PRECOMPILED_FOLDER}/libjpeg-turbo/include)
 
 set(CMAKE_CXX_STANDARD 17)
 
