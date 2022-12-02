@@ -91,13 +91,19 @@ if (WIN32)
 endif()
 
 # Specify a default value, for some reason libjpeg-turbo can't find it in the PATH.
-if (WIN32 AND NOT CMAKE_ASM_NASM_COMPILER)
-  set (CMAKE_ASM_NASM_COMPILER "C:/Program Files/NASM/nasm.exe")
+if (NOT CMAKE_ASM_NASM_COMPILER)
+  if (WIN32)
+    set (CMAKE_ASM_NASM_COMPILER "C:/Program Files/NASM/nasm.exe")
+  elseif (APPLE)
+    set (CMAKE_ASM_NASM_COMPILER "/usr/bin/nasm")
+  else()
+    set (CMAKE_ASM_NASM_COMPILER "/usr/bin/nasm")
+  endif()
 endif()
 
 ExternalProject_Add(libjpeg-turbo-deps
   LIST_SEPARATOR "${semicolon_smuggle}"
-  PREFIX glfw
+  PREFIX libjpeg-turbo
   SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/deps/libjpeg-turbo"
   CMAKE_ARGS
         -DCMAKE_BUILD_TYPE=${CMAKE_DEPS_CONFIG}
@@ -112,7 +118,7 @@ else()
 endif()
 add_library(libjpeg-turbo STATIC IMPORTED)
 set_target_properties(libjpeg-turbo PROPERTIES IMPORTED_LOCATION ${PRECOMPILED_FOLDER}/libjpeg-turbo/lib/${TURBOJPEG_LIBRARY_FILENAME})
-include_directories(libjpeg-turbo PROPERTIES IMPORTED_LOCATION ${PRECOMPILED_FOLDER}/libjpeg-turbo/include)
+target_include_directories(libjpeg-turbo INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/deps/libjpeg-turbo)
 
 set(CMAKE_CXX_STANDARD 17)
 

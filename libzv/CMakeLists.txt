@@ -107,7 +107,7 @@ add_library(zv
     ${zv_platform_specific_sources}
 )
 
-add_dependencies(zv glfw-deps clip-deps)
+add_dependencies(zv glfw-deps clip-deps libjpeg-turbo-deps)
 
 target_include_directories(zv PUBLIC
     ${DEPS_DIR}/fonts
