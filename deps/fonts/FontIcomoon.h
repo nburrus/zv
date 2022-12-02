@@ -6,7 +6,8 @@
 // Used https://www.coderstool.com/unicode-text-converter to convert.
 // Type e.g. \ue900 in the UTF-16 section and grab the hex UTF-8 sequence.
 #define ICON_MIN 0xe900
-#define ICON_MAX 0xe907
+#define ICON_MAX 0xe909
+
 #define ICON_ROTATE_LEFT  "\xee\xa4\x80" // \ue900
 #define ICON_ROTATE_RIGHT "\xee\xa4\x81" // \ue901
 #define ICON_CROP         "\xee\xa4\x82" // \ue902
@@ -15,3 +16,5 @@
 #define ICON_FLOW_LINE    "\xee\xa4\x85" // \ue905
 #define ICON_TEXT         "\xee\xa4\x86" // \ue906
 #define ICON_CIRCLE       "\xee\xa4\x87" // \ue907
+#define ICON_RESIZE       "\xee\xa4\x88" // \ue908
+#define ICON_RESIZE2      "\xee\xa4\x89" // \ue909

@@ -68,6 +68,7 @@ public:
 
     zv::Rect geometry () const;
     zv::Rect imageWidgetGeometry () const;
+    bool imageWidgetHasExactImageSize () const;
 
     void processKeyEvent (int keycode);
     void checkImguiGlobalImageKeyEvents ();

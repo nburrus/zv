@@ -590,7 +590,6 @@ bool ImageWindow::initialize (GLFWwindow* parentWindow, Viewer* viewer)
     impl->imguiGlfwWindow.setWindowSizeChangedCallback([this](int width, int height, bool fromUser) {
         if (fromUser)
         {
-            zv_dbg ("Window size was adjusted by the user.");
             impl->lastGeometryMode = Impl::WindowGeometryMode::UserDefined;
         }
     });
@@ -773,6 +772,11 @@ zv::Rect ImageWindow::geometry () const
 zv::Rect ImageWindow::imageWidgetGeometry () const
 {
     return impl->imageWidgetRect.current;
+}
+
+bool ImageWindow::imageWidgetHasExactImageSize () const
+{
+    return impl->imageWidgetRect.current.size.intEqualsTo (impl->imageWidgetRect.normal.size);
 }
 
 const CursorOverlayInfo& ImageWindow::cursorOverlayInfo() const
@@ -1576,6 +1580,21 @@ void ImageWindow::runAction (const ImageWindowAction& action)
             // glfwSetClipboardString(nullptr, clipboardText.c_str());
             clip::set_text(clipboardText.c_str());
             impl->cursorOverlayInfo.timeOfLastCopyToClipboard = currentDateInSeconds();
+            break;
+        }
+
+        case ImageWindowAction::Kind::Modify_ResizeImageToWindow: { 
+            const Point targetSize = impl->imageWidgetRect.current.size;
+            
+            if (targetSize.intEqualsTo (impl->imageWidgetRect.normal.size))
+            {
+                zv_dbg ("Image size didn't change, nothing to do.");
+                break;
+            }
+            
+            impl->addModifier ([targetSize]() { 
+                return std::make_unique<ResizeImageModifier>((int)targetSize.x, (int)targetSize.y); 
+            });
             break;
         }
 

@@ -161,6 +161,8 @@ namespace zv
             y *= scale;
             return *this;
         }
+
+        bool intEqualsTo (const Point& rhs) const { return int(x) == int(rhs.x) && int(y) == int(rhs.y); }
         
         bool isValid() const { return !std::isnan(x) && !std::isnan(y); }
 

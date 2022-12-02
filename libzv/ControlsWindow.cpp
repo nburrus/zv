@@ -259,6 +259,22 @@ void ControlsWindow::Impl::renderModifiersTab (float cursorOverlayHeight)
     ImVec2 contentSize = ImGui::GetContentRegionAvail();
     ImGui::Spacing();
 
+    if (imageWindow->imageWidgetHasExactImageSize())
+        ImGui::BeginDisabled ();
+    if (ImGui::Button(ICON_RESIZE))
+        imageWindow->addCommand (ImageWindow::actionCommand(ImageWindowAction::Kind::Modify_ResizeImageToWindow));
+    helpMarker ("Resize Image to Window Size", contentSize.x * 0.8, false /* no extra question mark */);
+    if (imageWindow->imageWidgetHasExactImageSize())
+        ImGui::EndDisabled ();
+
+    ImGui::SameLine();
+
+    if (ImGui::Button(ICON_CROP))
+        imageWindow->setActiveTool (ActiveToolState::Kind::Transform_Crop);
+    helpMarker ("Crop", contentSize.x * 0.8, false /* no extra question mark */);
+    
+    ImGui::SameLine();
+
     if (ImGui::Button(ICON_ROTATE_LEFT))
         imageWindow->addCommand (ImageWindow::actionCommand(ImageWindowAction::Kind::Modify_Rotate270));
     helpMarker ("Rotate Left (-90º)", contentSize.x * 0.8, false /* no extra question mark */);
@@ -269,12 +285,6 @@ void ControlsWindow::Impl::renderModifiersTab (float cursorOverlayHeight)
         imageWindow->addCommand (ImageWindow::actionCommand(ImageWindowAction::Kind::Modify_Rotate90));
     helpMarker ("Rotate Right (+90º)", contentSize.x * 0.8, false /* no extra question mark */);
 
-    ImGui::SameLine();
-
-    if (ImGui::Button(ICON_CROP))
-        imageWindow->setActiveTool (ActiveToolState::Kind::Transform_Crop);
-    helpMarker ("Crop", contentSize.x * 0.8, false /* no extra question mark */);
-    
     ImGui::SameLine();
 
     if (ImGui::Button(ICON_FLOW_LINE))
@@ -522,6 +532,10 @@ void ControlsWindow::Impl::renderMenu ()
                 if (ImGui::MenuItem("Crop Image", "", false))
                 {
                     imageWindowState.activeToolState.kind = ActiveToolState::Kind::Transform_Crop;
+                }
+                if (ImGui::MenuItem("Resize Image to Window", "", false, !imageWindow->imageWidgetHasExactImageSize()))
+                {
+                    imageWindow->addCommand (ImageWindow::actionCommand(ImageWindowAction::Kind::Modify_ResizeImageToWindow));
                 }
                 ImGui::EndMenu();
             }

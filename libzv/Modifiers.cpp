@@ -10,6 +10,8 @@
 #include <libzv/Utils.h>
 #include <libzv/MathUtils.h>
 
+#include <stb_image_resize.h>
+
 namespace zv
 {
 
@@ -251,6 +253,26 @@ void CropImageModifier::Params::updateControlPoint (int idx, const Point& p, int
     }
 
     // makeValid (imageWidth, imageHeight);
+}
+
+void ResizeImageModifier::apply (const ImageItemData& input, ImageItemData& output, AnnotationRenderer&)
+{
+    const auto& inIm = (*input.cpuData);
+    const int inW = inIm.width();
+    const int inH = inIm.height();
+
+    output.cpuData = std::make_shared<ImageSRGBA>(_params.targetWidth, _params.targetHeight);
+    auto& outIm = *output.cpuData;
+    const int outW = outIm.width();
+    const int outH = outIm.height();
+
+    // Resize the image using stb
+    stbir_resize_uint8_srgb((const unsigned char*)inIm.rawBytes(), inW, inH, inIm.bytesPerRow(),
+                            (unsigned char*)outIm.data(), outW, outH, outIm.bytesPerRow(),
+                            4, 3, 0);
+
+    output.textureData = {};
+    output.status = ImageItemData::Status::Ready;
 }
 
 } // zv

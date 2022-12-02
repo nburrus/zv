@@ -46,6 +46,7 @@ struct ImageWindowAction
         Edit_PasteImageFromClipboard,
         Edit_Undo,
         Edit_RevertToOriginal,
+        Modify_ResizeImageToWindow,
 
         View_ToggleOverlay,
         View_NextImage,

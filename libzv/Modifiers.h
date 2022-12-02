@@ -173,4 +173,26 @@ private:
 };
 using CropImageModifierPtr = std::shared_ptr<CropImageModifier>;
 
+class ResizeImageModifier : public ImageModifier
+{
+public:
+    struct Params
+    {
+        int targetWidth = -1;
+        int targetHeight = -1;
+    };
+
+    ResizeImageModifier (int targetWidth, int targetHeight) : _params ({targetWidth, targetHeight})
+    {}
+
+    const Params& params () const { return _params; }
+
+public:
+    virtual void apply (const ImageItemData& input, ImageItemData& output, AnnotationRenderer&) override;
+
+private:
+    Params _params;
+};
+using ResizeImageModifierPtr = std::shared_ptr<ResizeImageModifier>;
+
 } // zv
