@@ -264,8 +264,12 @@ struct ImageWindow::Impl
         zv_assert (this->monitorAreaForImageWidget.size.x >= this->imageWidgetRect.current.size.x, "Widget width should be smaller than monitor.");
         zv_assert (this->monitorAreaForImageWidget.size.y >= this->imageWidgetRect.current.size.y, "Widget height should be smaller than monitor.");
 
-        this->imageWidgetRect.current.origin.x = (this->monitorAreaForImageWidget.size.x - this->imageWidgetRect.current.size.x)*0.5f + this->monitorAreaForImageWidget.origin.x;
-        this->imageWidgetRect.current.origin.y = (this->monitorAreaForImageWidget.size.y - this->imageWidgetRect.current.size.y)*0.5f + this->monitorAreaForImageWidget.origin.y;
+        // Move the window if we had to maximize the size.
+        if (imageLargerThanScreen)
+        {
+            this->imageWidgetRect.current.origin.x = (this->monitorAreaForImageWidget.size.x - this->imageWidgetRect.current.size.x)*0.5f + this->monitorAreaForImageWidget.origin.x;
+            this->imageWidgetRect.current.origin.y = (this->monitorAreaForImageWidget.size.y - this->imageWidgetRect.current.size.y)*0.5f + this->monitorAreaForImageWidget.origin.y;
+        }
         
         this->imageWidgetRect.normal.origin = this->imageWidgetRect.current.origin;
         
@@ -1385,6 +1389,20 @@ void ImageWindow::runAction (const ImageWindowAction& action)
             // Make it too big on purpose, then fitWidgetRectInScreen will do the hard job for us.
             impl->imageWidgetRect.current.size *= 2.f;
             impl->fitWidgetRectInScreen (/* keepAspectRatio=*/ true);
+            impl->adjustWindowGeometryToImageWidget ();
+            break;
+        }
+
+        case ImageWindowAction::Kind::Zoom_Custom: {
+            bool lockRatio = action.paramsPtr->boolParams[0];
+            int w = action.paramsPtr->intParams[0];
+            int h = action.paramsPtr->intParams[1];
+
+            impl->imageWidgetRect.current.size.x = w;
+            impl->imageWidgetRect.current.size.y = h;
+            impl->fitWidgetRectInScreen (/* keepAspectRatio=*/ lockRatio);
+            if (!lockRatio)
+                impl->lastGeometryMode = Impl::WindowGeometryMode::UserDefined;
             impl->adjustWindowGeometryToImageWidget ();
             break;
         }

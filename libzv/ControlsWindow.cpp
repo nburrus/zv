@@ -66,6 +66,22 @@ struct ControlsWindow::Impl
     
     ImageCursorOverlay cursorOverlay;
 
+    struct {
+        int currentSize[2] = {0,0};
+        int sizeBeingEdited[2] = { false, false };
+        bool newSizeValidated = false;
+        bool lockRatio = true;
+
+        void maybeUpdateSizeFromLockRatio (int index, const Point& imageRectSize) 
+        {
+            int otherIndex = (index + 1) % 2;
+            if (!sizeBeingEdited[index] && sizeBeingEdited[otherIndex] && lockRatio)
+            {
+                currentSize[index] = int(currentSize[otherIndex] * imageRectSize[index] / imageRectSize[otherIndex] + 0.5f);
+            }
+        }
+    } windowSize;
+
     bool saveAllChanges = false;
     bool askToConfirmPendingChanges = false;
 
@@ -870,24 +886,47 @@ void ControlsWindow::renderFrame ()
         if (showCursorOverlay)
             impl->renderCursorInfo (cursorOverlayInfo, footerHeight, cursorOverlayHeight);
 
-        // FIXME: add tooltips. Add commands when the size is actually changed.
-
-        ImGui::SetCursorPosY (ImGui::GetWindowHeight() - windowSizeWidgetsHeight);
-        Rect imageRect = imageWindow->imageWidgetGeometry();
-        int width = imageRect.size.x;
-        int height = imageRect.size.y;
-        ImGui::SetNextItemWidth (monoFontSize * 3);
-        if (ImGui::InputInt ("##Window width", &width, -1, -1))
+        // Window size controls
         {
+            ImGui::SetCursorPosY (ImGui::GetWindowHeight() - windowSizeWidgetsHeight);
+            Rect imageRect = imageWindow->imageWidgetGeometry();
 
-        }
-        ImGui::SameLine ();
-        static bool lockRatio = true;
-        ImGui::Checkbox ("##LockRatio", &lockRatio); 
-        ImGui::SameLine (); ImGui::SetNextItemWidth (monoFontSize * 3);
-        if (ImGui::InputInt ("##Window height", &height, -1, -1))
-        {
+            impl->windowSize.maybeUpdateSizeFromLockRatio (0, imageRect.size);
+            impl->windowSize.maybeUpdateSizeFromLockRatio (1, imageRect.size);
 
+            if (!impl->windowSize.sizeBeingEdited[0] && !impl->windowSize.sizeBeingEdited[1])
+            {
+                impl->windowSize.currentSize[0] = int(imageRect.size.x + 0.5f);
+                impl->windowSize.currentSize[1] = int(imageRect.size.y + 0.5f);
+            }
+
+            ImGui::SetNextItemWidth (monoFontSize * 3);
+            if (ImGui::InputInt ("##Window width", &impl->windowSize.currentSize[0], -1, -1))
+            {
+                impl->windowSize.sizeBeingEdited[0] = true;
+            }
+            impl->windowSize.newSizeValidated = ImGui::IsItemDeactivatedAfterEdit();
+
+            ImGui::SameLine ();
+            ImGui::Checkbox ("##LockRatio", &impl->windowSize.lockRatio); 
+            ImGui::SameLine (); ImGui::SetNextItemWidth (monoFontSize * 3);
+            if (ImGui::InputInt ("##Window height", &impl->windowSize.currentSize[1], -1, -1))
+            {
+                impl->windowSize.sizeBeingEdited[1] = true;
+            }
+            impl->windowSize.newSizeValidated |= ImGui::IsItemDeactivatedAfterEdit();
+
+            if (impl->windowSize.newSizeValidated)
+            {
+                impl->windowSize.sizeBeingEdited[0] = false;
+                impl->windowSize.sizeBeingEdited[1] = false;
+                
+                auto params = std::make_shared<ImageWindowAction::Params>();
+                params->intParams[0] = impl->windowSize.currentSize[0];
+                params->intParams[1] = impl->windowSize.currentSize[1];
+                params->boolParams[0] = impl->windowSize.lockRatio;
+                imageWindow->addCommand(ImageWindow::actionCommand(ImageWindowAction::Kind::Zoom_Custom, params));                
+            }
         }
         
         imageWindow->checkImguiGlobalImageKeyEvents ();

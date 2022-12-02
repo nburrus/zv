@@ -138,7 +138,7 @@ namespace zv
     };
     struct Point
     {
-        Point() = default;
+        Point() { x = y = NAN; }
         Point (double x, double y) : x(x), y(y) {}
     
         inline Point& operator-=(const Point& rhs)
@@ -166,8 +166,12 @@ namespace zv
 
         double length() const { return std::sqrt(x*x + y*y); }
 
-        double x = NAN;
-        double y = NAN;
+        inline double operator[] (int i) const { return v[i]; }
+
+        union {
+            double v[2];
+            struct { double x, y; };
+        };
     };
 
     inline Point operator-(const Point& p1, const Point& p2)

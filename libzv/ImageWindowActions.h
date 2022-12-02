@@ -19,6 +19,7 @@ struct ImageWindowAction
         // always re-creating new Params type.
         int intParams[4];
         float floatParams[4];
+        bool boolParams[4];
     };
     using ParamsPtr = std::shared_ptr<Params>;
 
@@ -31,6 +32,7 @@ struct ImageWindowAction
         Zoom_Inc10p,
         Zoom_Dec10p,
         Zoom_Maxspect,
+        Zoom_Custom,
 
         File_OpenImage,
         File_SaveImage,
