@@ -784,39 +784,6 @@ const CursorOverlayInfo& ImageWindow::cursorOverlayInfo() const
     return impl->cursorOverlayInfo;
 }
 
-// void ImageWindow::showImage (const zv::ImageSRGBA& im, const std::string& imagePath, zv::Rect& updatedWindowGeometry)
-// {
-//     GLFWmonitor* monitor = glfwGetPrimaryMonitor();
-//     const GLFWvidmode* mode = glfwGetVideoMode(monitor);
-//     impl->monitorSize = ImVec2(mode->width, mode->height);
-
-//     impl->im = im;
-//     impl->imagePath = imagePath;
-
-//     impl->imguiGlfwWindow.enableContexts ();
-//     impl->gpuTexture.upload(impl->im);
-//     if (impl->imageWidgetRect.normal.origin.x < 0) impl->imageWidgetRect.normal.origin.x = impl->monitorSize.x * 0.10;
-//     if (impl->imageWidgetRect.normal.origin.y < 0) impl->imageWidgetRect.normal.origin.y = impl->monitorSize.y * 0.10;
-//     impl->imageWidgetRect.normal.size.x = currentIm.width();
-//     impl->imageWidgetRect.normal.size.y = currentIm.height();
-//     impl->imageWidgetRect.current = impl->imageWidgetRect.normal;
-
-//     impl->mutableState.activeMode = ViewerMode::Original;
-
-//     // Don't show it now, but tell it to show the window after
-//     // updating the content, otherwise we can get annoying flicker.
-//     impl->updateAfterContentSwitch.inProgress = true;
-//     impl->updateAfterContentSwitch.needToResize = true;
-//     impl->updateAfterContentSwitch.numAlreadyRenderedFrames = 0;
-//     impl->updateAfterContentSwitch.targetWindowGeometry.origin.x = impl->imageWidgetRect.normal.origin.x - impl->windowBorderSize;
-//     impl->updateAfterContentSwitch.targetWindowGeometry.origin.y = impl->imageWidgetRect.normal.origin.y - impl->windowBorderSize;
-//     impl->updateAfterContentSwitch.targetWindowGeometry.size.x = impl->imageWidgetRect.normal.size.x + 2 * impl->windowBorderSize;
-//     impl->updateAfterContentSwitch.targetWindowGeometry.size.y = impl->imageWidgetRect.normal.size.y + 2 * impl->windowBorderSize;
-//     impl->updateAfterContentSwitch.screenToImageScale = 1.0;
-
-//     updatedWindowGeometry = impl->updateAfterContentSwitch.targetWindowGeometry;
-// }
-
 ImageWidgetRoi ImageWindow::Impl::renderImageItem(const ModifiedImagePtr &modImagePtr,
                                                   const ImVec2 &imageWidgetTopLeft,
                                                   const ImVec2 &imageWidgetSize,
@@ -1405,8 +1372,16 @@ void ImageWindow::runAction (const ImageWindowAction& action)
             impl->imageWidgetRect.current.size.x = w;
             impl->imageWidgetRect.current.size.y = h;
             impl->fitWidgetRectInScreen (/* keepAspectRatio=*/ lockRatio);
-            if (!lockRatio)
+            // Make sure to adjust the aspect ratio source so that image size won't
+            // pop it back to the previous size.
+            if (lockRatio && impl->lastGeometryMode == Impl::WindowGeometryMode::AspectRatio)
+            {
+                impl->imageWidgetRect.sourceForAspectRatio.size = impl->imageWidgetRect.current.size;
+            }
+            else
+            {
                 impl->lastGeometryMode = Impl::WindowGeometryMode::UserDefined;
+            }
             impl->adjustWindowGeometryToImageWidget ();
             break;
         }
