@@ -149,6 +149,13 @@ struct WidgetToImageTransform
         
         return texturePos;
     }
+
+    ImVec2 pixelScale(int imageWidth, int imageHeight) const
+    {
+        double widgetPixelSx = widgetRect.size.x / (uvRoi.uv1.x - uvRoi.uv0.x);
+        double widgetPixelSy = widgetRect.size.y / (uvRoi.uv1.y - uvRoi.uv0.y);
+        return ImVec2(widgetPixelSx / imageWidth, widgetPixelSy / imageHeight);
+    }
     
     ImageWidgetRoi uvRoi;
     Rect widgetRect;

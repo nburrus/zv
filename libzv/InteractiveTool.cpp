@@ -82,10 +82,14 @@ void LineTool::renderAsActiveTool (const InteractiveToolRenderingContext& contex
     Line textureLine = _params.imageAlignedTextureLine(context.imageWidth, context.imageHeight);
     Line widgetLine = context.widgetToImageTransform.textureToWidget(textureLine);
 
+    // Need to take into account the current rendering size so the preview line
+    // looks like the line applied at the image resolution.
+    ImVec2 pixelScale = context.widgetToImageTransform.pixelScale (context.imageWidth, context.imageHeight);
+
     ImGui::GetWindowDrawList()->AddLine(imVec2(widgetLine.p1),
                                         imVec2(widgetLine.p2),
                                         _params.color,
-                                        _params.lineWidth);
+                                        _params.lineWidth * pixelScale.x);
 
     if (context.firstValidImageIndex)
     {
