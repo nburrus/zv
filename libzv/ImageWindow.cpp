@@ -1177,10 +1177,10 @@ void ImageWindow::renderFrame ()
 
                     PixelSRGBA sRgba = im(cInImage, rInImage);
                     const auto hsv = zv::convertToHSV(sRgba);
-                    std::string caption = formatted("%s\n%4d, %4d (sRGB %3d %3d %3d) (HSV %3d %3d %3d)",
+                    std::string caption = formatted("%s\n%4d, %4d (sRGBA %3d %3d %3d %3d) (HSV %3d %3d %3d)",
                                                     impl->currentImages[idx]->item()->prettyName.c_str(),
                                                     cInImage, rInImage,
-                                                    sRgba.r, sRgba.g, sRgba.b,
+                                                    sRgba.r, sRgba.g, sRgba.b, sRgba.a,
                                                     intRnd(hsv.x*360.f), intRnd(hsv.y*100.f), intRnd(hsv.z*100.f/255.f));
 
                     ImVec2 textStart, textAreaStart, textAreaEnd;
