@@ -10,7 +10,14 @@
 #include <libzv/Utils.h>
 #include <libzv/OpenGL_Shaders.h>
 
+#if PLATFORM_EMSCRIPTEN
+#include <emscripten.h>
+#define GL_GLEXT_PROTOTYPES
+#define EGL_EGLEXT_PROTOTYPES
+#else
 #include <gl3w/GL/gl3w.h>
+#endif
+
 #include <GLFW/glfw3.h>
 
 #include <vector>
@@ -32,6 +39,8 @@ const char* glslVersion()
 #if PLATFORM_MACOS
     // GL 3.2 + GLSL 150
     return "#version 150";
+#elif PLATFORM_EMSCRIPTEN
+    return "#version 300 es";
 #else
     // GL 3.0 + GLSL 130
     return "#version 130";
@@ -334,6 +343,8 @@ GLContext::GLContext(GLContext* parentContext)
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);  // 3.2+ only
     glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);            // Required on Mac
 #endif
+
+    zv_dbg ("Creating GL Context");
 
     GLFWwindow* parentWindow = parentContext ? parentContext->impl->window : nullptr;
     glfwWindowHint(GLFW_VISIBLE, false);

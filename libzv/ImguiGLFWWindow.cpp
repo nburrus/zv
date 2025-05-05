@@ -28,7 +28,14 @@
 #include "imgui_internal.h"
 #include <imgui/misc/freetype/imgui_freetype.h>
 
+#if PLATFORM_EMSCRIPTEN
+#include <emscripten.h>
+#define GL_GLEXT_PROTOTYPES
+#define EGL_EGLEXT_PROTOTYPES
+#else
 #include <GL/gl3w.h>
+#endif
+
 #include <GLFW/glfw3.h>
 
 #include "GLFWUtils.h"
@@ -337,6 +344,8 @@ bool ImguiGLFWWindow::initialize (GLFWwindow* parentWindow,
 {
     glfwSetErrorCallback (glfwErrorFunction);
     
+    zv_dbg ("Initializing window %s with geometry %f %f", title.c_str(), geometry.size.x, geometry.size.y);
+
     impl->title = title;
     impl->contentDpiScale = primaryMonitorContentDpiScale().x;
 
@@ -348,7 +357,14 @@ bool ImguiGLFWWindow::initialize (GLFWwindow* parentWindow,
         return false;
 
     int frameLeft, frameRight, frameTop, frameBottom;
+#if PLATFORM_EMSCRIPTEN
+    frameLeft = 0;
+    frameRight = geometry.size.x;
+    frameTop = 0;
+    frameBottom = geometry.size.y;
+#else    
     glfwGetWindowFrameSize (impl->window, &frameLeft, &frameTop, &frameRight, &frameBottom);
+#endif
     // No decorations reported on X11.
     impl->decorationSize.left = std::max(frameLeft, 8);
     impl->decorationSize.right = std::max(frameRight, 8);
@@ -383,6 +399,7 @@ bool ImguiGLFWWindow::initialize (GLFWwindow* parentWindow,
 
     glfwMakeContextCurrent(impl->window);
     
+#if !PLATFORM_EMSCRIPTEN
     // Make sure that gl3w is initialized.
     bool err = gl3wInit() != 0;
     if (err)
@@ -390,6 +407,7 @@ bool ImguiGLFWWindow::initialize (GLFWwindow* parentWindow,
         fprintf(stderr, "Failed to initialize OpenGL loader!\n");
         return false;
     }
+#endif
 
     // Setup Dear ImGui context
     IMGUI_CHECKVERSION();
@@ -483,13 +501,28 @@ bool ImguiGLFWWindow::initialize (GLFWwindow* parentWindow,
                                  false /* do NOT install callbacks,
                                         we'll forward manually to properly handle multiple contexts
                                         */);
+#ifdef __EMSCRIPTEN__
+    // ImGui_ImplGlfw_InstallEmscriptenCallbacks(impl->window, "#canvas");
+#endif
     ImGui_ImplOpenGL3_Init(glslVersion());
     
     
+#if !PLATFORM_EMSCRIPTEN
     // Important: do this only after creating the ImGuiContext. Otherwise we might
     // get some callbacks right away and get in trouble.
     // Start hidden. setEnabled will show it as needed.
     glfwSwapInterval(1); // Enable vsync
+#endif
+
+    // Prevent context menu on Ctrl+Click
+    EM_ASM({
+        const canvas = document.getElementById('canvas') || document.getElementsByTagName('canvas')[0];
+        if (canvas) {
+            canvas.addEventListener('contextmenu', function(e) {
+                e.preventDefault();
+            });
+        }
+    }, 0);
 
     return true;
 }

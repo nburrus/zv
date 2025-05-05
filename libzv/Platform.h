@@ -25,3 +25,7 @@
 #if PLATFORM_MACOS || PLATFORM_LINUX
 # define PLATFORM_UNIX 1
 #endif
+
+#if defined(__EMSCRIPTEN__)
+# define PLATFORM_EMSCRIPTEN 1
+#endif

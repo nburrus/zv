@@ -6,6 +6,7 @@
 
 #include "Viewer.h"
 
+#include <libzv/Platform.h>
 #include <libzv/PlatformSpecific.h>
 #include <libzv/Prefs.h>
 #include <libzv/Utils.h>
@@ -25,7 +26,14 @@
 #include "imgui_impl_opengl3.h"
 #include "imgui_internal.h"
 
+#if PLATFORM_EMSCRIPTEN
+#include <emscripten.h>
+#define GL_GLEXT_PROTOTYPES
+#define EGL_EGLEXT_PROTOTYPES
+#else
 #include <GL/gl3w.h>
+#endif
+
 #include <GLFW/glfw3.h>
 
 #include <iostream>
@@ -188,10 +196,12 @@ bool Viewer::initialize ()
     impl->imageWindow.initialize (nullptr, this);
     p.lap ("imageWindow");
     
+#if !PLATFORM_EMSCRIPTEN
     if (Prefs::showHelpOnStartup())
     {
         impl->state.helpRequested = true;
     }
+#endif
 
     return true;
 }

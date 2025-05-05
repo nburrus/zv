@@ -20,7 +20,7 @@
 // getpid
 # include <sys/types.h>
 # include <unistd.h>
-#else
+#elif PLATFORM_WINDOWS
 #ifndef NOMINMAX
 # define NOMINMAX
 #endif
@@ -87,11 +87,13 @@ namespace zv
     {
 #if PLATFORM_UNIX
         return std::to_string (getuid ());
-#else
+#elif PLATFORM_WINDOWS
         char buffer[256];
         DWORD n = 256;
         GetUserNameA (buffer, &n);
         return std::string (buffer, n);
+#else
+        return "unknown";
 #endif
     }
 

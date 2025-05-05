@@ -6,13 +6,21 @@
 
 #include "App.h"
 
+#include <libzv/Platform.h>
 #include <libzv/Viewer.h>
 #include <libzv/Utils.h>
 #include <libzv/Server.h>
 
 #include "GeneratedConfig.h"
 
+#if PLATFORM_EMSCRIPTEN
+#include <emscripten.h>
+#define GL_GLEXT_PROTOTYPES
+#define EGL_EGLEXT_PROTOTYPES
+#else
 #include <GL/gl3w.h>
+#endif
+
 #include <GLFW/glfw3.h>
 
 #include <argparse.hpp>
@@ -93,6 +101,7 @@ bool App::initialize(int argc, const char *const argv[])
 
 bool App::initialize (const std::vector<std::string>& args)
 {
+#if !PLATFORM_EMSCRIPTEN
    argparse::ArgumentParser argsParser ("zv", PROJECT_VERSION);
    argsParser.add_argument("images")
        .help("Images to visualize")
@@ -126,10 +135,12 @@ bool App::initialize (const std::vector<std::string>& args)
        std::cerr << argsParser;
        return false;
    }
+#endif // !PLATFORM_EMSCRIPTEN
 
+   zv_dbg("Creating default viewer");
    Viewer *defaultViewer = createViewer("default");
-   defaultViewer->initialize();
 
+#if !PLATFORM_EMSCRIPTEN
    try
    {
        auto images = argsParser.get<std::vector<std::string>>("images");
@@ -143,13 +154,14 @@ bool App::initialize (const std::vector<std::string>& args)
    catch (const std::exception &err)
    {
        zv_dbg("No images provided, using default.");
-   }
+   }   
 
    bool couldStart = impl->server.start(argsParser.get<std::string>("--interface"), argsParser.get<int>("--port"));
    if (argsParser["--require-server"] == true && !couldStart)
    {
        return false;
    }
+#endif // !PLATFORM_EMSCRIPTEN
 
    return true;
 }

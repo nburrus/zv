@@ -4,13 +4,18 @@
 // of the BSD license.  See the LICENSE file for details.
 //
 
+
 #include "Image.h"
 #include "Utils.h"
+
+#include <libzv/Platform.h>
 
 #include <stb_image.h>
 #include <stb_image_write.h>
 
+#if !PLATFORM_EMSCRIPTEN
 #include <turbojpeg.h>
+#endif
 
 #include <fstream>
 #include <vector>
@@ -54,6 +59,7 @@ namespace zv
 
     bool readJpegFile (const std::string& inputFilename, ImageSRGBA& outputImage)
     {
+#if !PLATFORM_EMSCRIPTEN
         static thread_local tjhandle tjdecompressor = nullptr;
         if (!tjdecompressor)
         {
@@ -90,10 +96,14 @@ namespace zv
         }
 
         return true;
+#else
+        return false;
+#endif
     }
 
     bool writeJpegFile (const std::string& filePath, const ImageSRGBA& image)
     {
+#if !PLATFORM_EMSCRIPTEN
         // Save image with turbojpeg
         static thread_local tjhandle tjcompressor = nullptr;
         if (!tjcompressor)
@@ -124,6 +134,9 @@ namespace zv
 
         tjFree (jpegBuf);
         return true;
+#else
+        return false;
+#endif
     }
     
     bool writeImageFile (const std::string& filePath, const ImageSRGBA& image)
@@ -132,7 +145,6 @@ namespace zv
         {
             return writeJpegFile (filePath, image);
         }
-        
         return stbi_write_png(filePath.c_str(), image.width(), image.height(), 4, image.data(), image.bytesPerRow());
     }
     

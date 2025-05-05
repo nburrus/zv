@@ -11,6 +11,10 @@ if (WIN32)
     )
 endif()
 
+if (EMSCRIPTEN)
+  configure_file(${CMAKE_SOURCE_DIR}/emscripten/zv.html ${CMAKE_CURRENT_BINARY_DIR}/zv.html COPYONLY)
+endif()
+
 # add_executable(binary_to_compressed "${DEPS_DIR}/imgui/misc/fonts/binary_to_compressed_c.cpp")
 
 target_link_libraries(zvbin

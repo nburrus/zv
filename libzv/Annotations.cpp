@@ -6,6 +6,7 @@
 
 #include "Annotations.h"
 
+#include <libzv/Platform.h>
 #include <libzv/ImguiUtils.h>
 #include <libzv/Utils.h>
 
@@ -14,7 +15,14 @@
 #include "imgui_impl_opengl3.h"
 #include "imgui_internal.h"
 
+#if PLATFORM_EMSCRIPTEN
+#include <emscripten.h>
+#include <GLES2/gl2.h>
+#define GL_GLEXT_PROTOTYPES
+#define EGL_EGLEXT_PROTOTYPES
+#else
 #include <GL/gl3w.h>
+#endif
 
 namespace zv
 {

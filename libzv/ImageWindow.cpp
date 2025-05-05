@@ -9,6 +9,7 @@
 #include "ImageWindow.h"
 #include "ImageWindowState.h"
 
+#include <libzv/Platform.h>
 #include <libzv/Viewer.h>
 #include <libzv/ImageList.h>
 #include <libzv/ImageCursorOverlay.h>
@@ -30,11 +31,18 @@
 #include <libzv/ColorConversion.h>
 
 // Note: need to include that before GLFW3 for some reason.
+#if PLATFORM_EMSCRIPTEN
+#include <emscripten.h>
+#define GL_GLEXT_PROTOTYPES
+#define EGL_EGLEXT_PROTOTYPES
+#else
 #include <GL/gl3w.h>
+#endif
+
 #include <libzv/GLFWUtils.h>
 
 #include <libzv/Platform.h>
-#if !PLATFORM_LINUX
+#if !PLATFORM_LINUX && !PLATFORM_EMSCRIPTEN
 #include <nfd.h>
 #endif
 
@@ -878,7 +886,7 @@ ImageWidgetRoi ImageWindow::Impl::renderImageItem(const ModifiedImagePtr &modIma
         overlayInfo->mousePosInTexture = mousePosInTexture;
     }
 
-    if (ImGui::IsItemClicked(ImGuiMouseButton_Left) && io.KeyCtrl)
+    if (ImGui::IsItemClicked(ImGuiMouseButton_Left) && io.KeyAlt)
     {
         if ((currentIm.width() / float(zoom.zoomFactor)) > 16.f
              && (currentIm.height() / float(zoom.zoomFactor)) > 16.f)
@@ -888,7 +896,7 @@ ImageWidgetRoi ImageWindow::Impl::renderImageItem(const ModifiedImagePtr &modIma
         }
     }
     
-    if (ImGui::IsItemClicked(ImGuiMouseButton_Right) && io.KeyCtrl)
+    if (ImGui::IsItemClicked(ImGuiMouseButton_Right) && io.KeyAlt)
     {
         if (zoom.zoomFactor >= 2)
             zoom.zoomFactor /= 2;
@@ -1217,7 +1225,7 @@ void ImageWindow::renderFrame ()
             }
         }
 
-        if (ImGui::IsMouseClicked(ImGuiMouseButton_Right) && !io.KeyCtrl)
+        if (ImGui::IsMouseClicked(ImGuiMouseButton_Right) && !io.KeyAlt)
         {
             // xv-like controls focus.
             if (impl->viewer) impl->viewer->onToggleControls();

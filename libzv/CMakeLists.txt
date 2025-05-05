@@ -17,14 +17,19 @@ set (zv_deps_sources
     ${DEPS_DIR}/cppuserprefs/CppUserPrefs.h
     ${DEPS_DIR}/cppuserprefs/tortellini.hh
 
-    ${DEPS_DIR}/gl3w/GL/gl3w.c
-    ${DEPS_DIR}/gl3w/GL/gl3w.h
     ${DEPS_DIR}/stb/stb_impl.cpp
 
     ${DEPS_DIR}/ImGuiFileDialog/ImGuiFileDialog.cpp
 
     ../client/zv/znet.cpp
 )
+
+if (NOT EMSCRIPTEN)
+    list(APPEND zv_deps_sources
+        ${DEPS_DIR}/gl3w/GL/gl3w.c
+        ${DEPS_DIR}/gl3w/GL/gl3w.h
+    )
+endif()
 
 if (APPLE)
     set(USE_NFD 1)
@@ -107,7 +112,9 @@ add_library(zv
     ${zv_platform_specific_sources}
 )
 
-add_dependencies(zv glfw-deps clip-deps libjpeg-turbo-deps)
+if (NOT EMSCRIPTEN)
+    add_dependencies(zv glfw-deps clip-deps libjpeg-turbo-deps)
+endif()
 
 target_include_directories(zv PUBLIC
     ${DEPS_DIR}/fonts
@@ -121,11 +128,13 @@ if (USE_NFD)
     target_include_directories(zv PRIVATE ${DEPS_DIR}/nativefiledialog-extended/src/include)
 endif()
 
-target_link_libraries(zv
-    glfw3
-    clip
-    libjpeg-turbo
-)
+if (NOT EMSCRIPTEN)
+    target_link_libraries(zv
+        glfw3
+        clip
+        libjpeg-turbo
+    )
+endif()
 
 if (APPLE)
     target_link_libraries(zv
@@ -136,7 +145,7 @@ if (APPLE)
         "-framework IOKit"
         "-framework Foundation"
     )
-elseif (UNIX)
+elseif (UNIX AND NOT EMSCRIPTEN)
     target_link_libraries(zv
         png
         GL
@@ -145,6 +154,10 @@ elseif (UNIX)
         xcb # for clip. FIXME: should use a find_library
         X11
     )
+elseif (EMSCRIPTEN)
+    target_link_libraries(zv
+        glfw clip
+    )    
 endif()
 
 if (APPLE)

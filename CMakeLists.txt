@@ -19,6 +19,12 @@ include(ExternalProject)
 configure_file(${CMAKE_SOURCE_DIR}/libzv/GeneratedConfig.h.in ${PROJECT_BINARY_DIR}/GeneratedConfig.h)
 include_directories(${PROJECT_BINARY_DIR})
 
+# Emscripten settings. We want GLFW3
+if (EMSCRIPTEN)
+  add_compile_options(-sUSE_GLFW=3 -sMIN_WEBGL_VERSION=2 -sFULL_ES3=1)
+  add_link_options(-sUSE_GLFW=3 -sMIN_WEBGL_VERSION=2 -sFULL_ES3=1)
+endif()
+
 set(PRECOMPILED_FOLDER "${CMAKE_SOURCE_DIR}/deps/prebuilt/${CMAKE_SYSTEM_NAME}")
 
 # Hack to accept multiple archs separated by semicolon.
@@ -33,26 +39,29 @@ else()
   set (CMAKE_DEPS_CONFIG ${CMAKE_BUILD_TYPE})
 endif()
 
-ExternalProject_Add(glfw-deps
-  LIST_SEPARATOR "${semicolon_smuggle}"
-  PREFIX glfw
-  SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/deps/glfw"
-  CMAKE_ARGS
-        -DCMAKE_BUILD_TYPE=${CMAKE_DEPS_CONFIG}
-        -DCMAKE_OSX_ARCHITECTURES=${cmake_osx_archs_special_separator}
-        -DCMAKE_INSTALL_PREFIX:PATH=${PRECOMPILED_FOLDER}/glfw
-        -DGLFW_BUILD_DOCS=OFF
-        -DGLFW_BUILD_EXAMPLES=OFF
-        -DGLFW_BUILD_TESTS=OFF
-)
+if (NOT EMSCRIPTEN)
+  ExternalProject_Add(glfw-deps
+    LIST_SEPARATOR "${semicolon_smuggle}"
+    PREFIX glfw
+    SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/deps/glfw"
+    CMAKE_ARGS
+          -DCMAKE_BUILD_TYPE=${CMAKE_DEPS_CONFIG}
+          -DCMAKE_OSX_ARCHITECTURES=${cmake_osx_archs_special_separator}
+          -DCMAKE_INSTALL_PREFIX:PATH=${PRECOMPILED_FOLDER}/glfw
+          -DGLFW_BUILD_DOCS=OFF
+          -DGLFW_BUILD_EXAMPLES=OFF
+          -DGLFW_BUILD_TESTS=OFF
+  )
 
-set(GLFW_LIBRARY_FILENAME "${CMAKE_STATIC_LIBRARY_PREFIX}glfw3${CMAKE_STATIC_LIBRARY_SUFFIX}")
-add_library(glfw3 STATIC IMPORTED)
-set_target_properties(glfw3 PROPERTIES IMPORTED_LOCATION ${PRECOMPILED_FOLDER}/glfw/lib/${GLFW_LIBRARY_FILENAME})
-include_directories(glfw3 PROPERTIES IMPORTED_LOCATION ${PRECOMPILED_FOLDER}/glfw/include)
+  set(GLFW_LIBRARY_FILENAME "${CMAKE_STATIC_LIBRARY_PREFIX}glfw3${CMAKE_STATIC_LIBRARY_SUFFIX}")
+  add_library(glfw3 STATIC IMPORTED)
+  set_target_properties(glfw3 PROPERTIES IMPORTED_LOCATION ${PRECOMPILED_FOLDER}/glfw/lib/${GLFW_LIBRARY_FILENAME})
+  include_directories(glfw3 PROPERTIES IMPORTED_LOCATION ${PRECOMPILED_FOLDER}/glfw/include)
 
-if (WIN32)
+  if (WIN32)
   target_link_libraries(glfw3 INTERFACE opengl32)
+endif()
+
 endif()
 
 if (UNIX)
@@ -75,6 +84,7 @@ ExternalProject_Add(clip-deps
         -DCLIP_EXAMPLES=OFF
         -DCLIP_TESTS=OFF
         -DCLIP_X11_WITH_PNG=${CLIP_X11_WITH_PNG}
+        -DCMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE}
   # Now handled in deps/clip/CMakeLists.txt, otherwise this leads
   # to issues with Visual Studio 2019 as it cannot find an INSTALL
   # target in the external project.
@@ -111,6 +121,7 @@ ExternalProject_Add(libjpeg-turbo-deps
         -DCMAKE_INSTALL_PREFIX:PATH=${PRECOMPILED_FOLDER}/libjpeg-turbo
         -DCMAKE_ASM_NASM_COMPILER=${CMAKE_ASM_NASM_COMPILER}
         -DCMAKE_POSITION_INDEPENDENT_CODE=YES
+        -DCMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE}
 )
 if (WIN32)
   set(TURBOJPEG_LIBRARY_FILENAME "${CMAKE_STATIC_LIBRARY_PREFIX}turbojpeg-static${CMAKE_STATIC_LIBRARY_SUFFIX}")
