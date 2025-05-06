@@ -80,10 +80,12 @@ add_library(zv
     ImageWindowActions.h
     ImageWindowState.h
     ImageWindowState.cpp
+    ImguiCanvasContainer.cpp
+    ImguiCanvasContainer.h
     ImguiGLFWWindow.cpp
     ImguiGLFWWindow.h
     ImguiUtils.cpp
-    ImguiUtils.h
+    ImguiUtils.h    
     ImguiWindowContainer.cpp
     ImguiWindowContainer.h
     InteractiveTool.h
