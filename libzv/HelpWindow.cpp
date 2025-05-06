@@ -64,7 +64,7 @@ bool HelpWindow::initialize (GLFWwindow* parentWindow)
     geometry.size.x = 1150/2;
     geometry.size.y = 900/2 + 42;
 
-    const zv::Point dpiScale = ImguiGLFWWindow::primaryMonitorContentDpiScale();
+    const zv::Point dpiScale = ImGui_primaryMonitorContentDpiScale();
     geometry.size.x *= dpiScale.x;
     geometry.size.y *= dpiScale.y;
 
@@ -101,42 +101,11 @@ bool HelpWindow::isEnabled () const
     return impl->imguiGlfwWindow.isEnabled ();
 }
 
-static void AddUnderLine( ImColor col_ )
-{
-    ImVec2 min = ImGui::GetItemRectMin();
-    ImVec2 max = ImGui::GetItemRectMax();
-    min.y = max.y;
-    ImGui::GetWindowDrawList()->AddLine( min, max, col_, 1.0f );
-}
-
-// From https://gist.github.com/dougbinks/ef0962ef6ebe2cadae76c4e9f0586c69#file-imguiutils-h-L228-L262
-static void TextURL( const char* name_, const char* URL_, bool SameLineBefore_, bool SameLineAfter_ )
-{
-    if( SameLineBefore_ ){ ImGui::SameLine( 0.0f, ImGui::GetStyle().ItemInnerSpacing.x ); }
-    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_ButtonHovered]);
-    ImGui::Text("%s", name_);
-    ImGui::PopStyleColor();
-    if (ImGui::IsItemHovered())
-    {
-        if( ImGui::IsMouseClicked(0) )
-        {
-            zv::openURLInBrowser( URL_ );
-        }
-        AddUnderLine( ImGui::GetStyle().Colors[ImGuiCol_ButtonHovered] );
-        // ImGui::SetTooltip( ICON_FA_LINK "  Open in browser\n%s", URL_ );
-    }
-    else
-    {
-        AddUnderLine( ImGui::GetStyle().Colors[ImGuiCol_Button] );
-    }
-    if( SameLineAfter_ ){ ImGui::SameLine( 0.0f, ImGui::GetStyle().ItemInnerSpacing.x ); }
-}
-
 void HelpWindow::renderFrame ()
 {
     const auto frameInfo = impl->imguiGlfwWindow.beginFrame ();    
     const auto& io = ImGui::GetIO();
-    const float monoFontSize = ImguiGLFWWindow::monoFontSize(io);
+    const float monoFontSize = ImGui_MonoFontSize(io);
 
     if (ImGui::IsKeyPressed(GLFW_KEY_Q) || ImGui::IsKeyPressed(GLFW_KEY_ESCAPE) || impl->imguiGlfwWindow.closeRequested())
     {

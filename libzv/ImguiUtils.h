@@ -38,6 +38,14 @@ inline void helpMarker(const char* desc, float wrapWidth, bool add_question_mark
     }
 }
 
+void TextURL( const char* name_, const char* URL_, bool SameLineBefore_, bool SameLineAfter_ );
+
+zv::Point ImGui_primaryMonitorContentDpiScale ();
+zv::Point ImGui_primaryMonitorRetinaFrameBufferScale ();
+
+void ImGui_PushMonoSpaceFont(const ImGuiIO& io, bool small = false);
+float ImGui_MonoFontSize (const ImGuiIO& io);
+
 inline ImGuiWindowFlags windowFlagsWithoutAnything()
 {
     return (ImGuiWindowFlags_NoTitleBar

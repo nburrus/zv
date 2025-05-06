@@ -6,6 +6,7 @@
 
 #include "ControlsWindow.h"
 
+#include <libzv/Platform.h>
 #include <libzv/ImguiUtils.h>
 #include <libzv/ImguiGLFWWindow.h>
 #include <libzv/ImageWindow.h>
@@ -13,7 +14,6 @@
 #include <libzv/GLFWUtils.h>
 #include <libzv/ImageCursorOverlay.h>
 #include <libzv/PlatformSpecific.h>
-#include <libzv/Platform.h>
 #include <libzv/Viewer.h>
 
 #include <libzv/Utils.h>
@@ -38,6 +38,14 @@ namespace zv
 
 struct ControlsWindow::Impl
 {
+    Impl()
+    {
+#if PLATFORM_EMSCRIPTEN
+#else
+        windowContainer = std::make_unique<ImguiGLFWWindow>();
+#endif
+    }
+
     Viewer* viewer = nullptr;
 
     int lastSelectedIdx = 0;
@@ -47,7 +55,7 @@ struct ControlsWindow::Impl
     // Debatable, but since we don't need polymorphism I've decided to use composition
     // for more flexibility, encapsulation (don't need to expose all the methods)
     // and explicit code.
-    ImguiGLFWWindow imguiGlfwWindow;
+    std::unique_ptr<ImguiWindowContainer> windowContainer;
 
     struct {
         bool showAfterNextRendering = false;
@@ -429,7 +437,7 @@ void ControlsWindow::Impl::renderCursorInfo (const CursorOverlayInfo& cursorOver
                                              float overlayHeight)
 {
     auto& io = ImGui::GetIO();
-    const float monoFontSize = ImguiGLFWWindow::monoFontSize(io);
+    const float monoFontSize = ImGui_MonoFontSize(io);
 
     if (cursorOverlayInfo.valid())
     {
@@ -633,18 +641,18 @@ const ControlsWindowInputState& ControlsWindow::inputState () const
     return impl->inputState;
 }
 
-void ControlsWindow::shutdown() { impl->imguiGlfwWindow.shutdown(); }
+void ControlsWindow::shutdown() { impl->windowContainer->shutdown(); }
 
 void ControlsWindow::setEnabled(bool enabled)
 { 
-    impl->imguiGlfwWindow.setEnabled(enabled);
+    impl->windowContainer->setEnabled(enabled);
     
     if (enabled)
     {
         if (impl->updateAfterContentSwitch.needRepositioning)
         {
             // Needs to be after on Linux.
-            impl->imguiGlfwWindow.setWindowPos(impl->updateAfterContentSwitch.targetPosition.x,
+            impl->windowContainer->setWindowPos(impl->updateAfterContentSwitch.targetPosition.x,
                                                impl->updateAfterContentSwitch.targetPosition.y);
         }
         impl->updateAfterContentSwitch.setCompleted ();
@@ -656,7 +664,7 @@ void ControlsWindow::setEnabled(bool enabled)
     }
 }
 
-bool ControlsWindow::isEnabled() const { return impl->imguiGlfwWindow.isEnabled(); }
+bool ControlsWindow::isEnabled() const { return impl->windowContainer->isEnabled(); }
 
 // Warning: may be ignored by some window managers on Linux.. 
 // Working hack would be to call 
@@ -665,12 +673,12 @@ bool ControlsWindow::isEnabled() const { return impl->imguiGlfwWindow.isEnabled(
 // Kwin ignores that otherwise.
 void ControlsWindow::bringToFront ()
 {
-    glfw_reliableBringToFront (impl->imguiGlfwWindow.glfwWindow());
+    glfw_reliableBringToFront (impl->windowContainer->glfwWindow());
 }
 
 bool ControlsWindow::isInitialized () const
 {
-    return impl->imguiGlfwWindow.isInitialized();
+    return impl->windowContainer->isInitialized();
 }
 
 bool ControlsWindow::initialize (GLFWwindow* parentWindow, Viewer* viewer)
@@ -682,7 +690,7 @@ bool ControlsWindow::initialize (GLFWwindow* parentWindow, Viewer* viewer)
     const GLFWvidmode* mode = glfwGetVideoMode(monitor);
     impl->monitorSize = ImVec2(mode->width, mode->height);
 
-    const zv::Point dpiScale = ImguiGLFWWindow::primaryMonitorContentDpiScale();
+    const zv::Point dpiScale = ImGui_primaryMonitorContentDpiScale();
 
     impl->windowSizeAtCurrentDpi = impl->windowSizeAtDefaultDpi;
     impl->windowSizeAtCurrentDpi.x *= dpiScale.x;
@@ -695,7 +703,14 @@ bool ControlsWindow::initialize (GLFWwindow* parentWindow, Viewer* viewer)
     geometry.origin.y = (impl->monitorSize.y - geometry.size.y)/2;
 
     glfwWindowHint(GLFW_RESIZABLE, true);
-    bool ok = impl->imguiGlfwWindow.initialize (parentWindow, "zv controls", geometry);
+
+#if PLATFORM_EMSCRIPTEN
+    bool ok = false;
+#else
+    ImguiGLFWWindow* imguiGlfwWindow = dynamic_cast<ImguiGLFWWindow*>(impl->windowContainer.get());
+    zv_assert (imguiGlfwWindow, "Controls window must be an ImguiGLFWWindow");
+    bool ok = imguiGlfwWindow->initialize (parentWindow, "zv controls", geometry);
+#endif
     if (!ok)
     {
         return false;
@@ -711,7 +726,7 @@ bool ControlsWindow::initialize (GLFWwindow* parentWindow, Viewer* viewer)
     // just keep the image window with the vsync, and skip it for the controls window.
     // Another option would be multi-threading or use a single OpenGL context,
     // but I don't want to introduce that complexity.
-    glfwSwapInterval (0);
+    impl->windowContainer->setSwapInterval(0);
 
     return ok;
 }
@@ -775,13 +790,13 @@ void ControlsWindow::setCurrentActionToConfirm (const ActionToConfirm& actionToC
 
 void ControlsWindow::renderFrame ()
 {
-    const auto frameInfo = impl->imguiGlfwWindow.beginFrame ();
+    const auto frameInfo = impl->windowContainer->beginFrame ();
     const auto& io = ImGui::GetIO();
-    const float monoFontSize = ImguiGLFWWindow::monoFontSize(io);
+    const float monoFontSize = ImGui_MonoFontSize(io);
     auto* imageWindow = impl->viewer->imageWindow();
     auto& imageWindowState = imageWindow->mutableState();
 
-    if (impl->imguiGlfwWindow.closeRequested())
+    if (impl->windowContainer->closeRequested())
     {
         setEnabled (false);
     }
@@ -801,26 +816,14 @@ void ControlsWindow::renderFrame ()
 
     // ImGui::ShowDemoWindow();
     
-    ImGuiWindowFlags flags = (ImGuiWindowFlags_NoTitleBar
-                              | ImGuiWindowFlags_NoResize
-                              | ImGuiWindowFlags_NoMove
-                              | ImGuiWindowFlags_NoScrollbar
-                              | ImGuiWindowFlags_NoScrollWithMouse
-                              | ImGuiWindowFlags_NoCollapse
-                              | ImGuiWindowFlags_NoBackground
-                              | ImGuiWindowFlags_NoSavedSettings
-                              | ImGuiWindowFlags_HorizontalScrollbar
-                              | ImGuiWindowFlags_MenuBar
-                              // | ImGuiWindowFlags_NoDocking
-                              | ImGuiWindowFlags_NoNav);
+    ImGuiWindowFlags extraFlags = (ImGuiWindowFlags_NoScrollWithMouse
+                                   | ImGuiWindowFlags_NoCollapse
+                                   | ImGuiWindowFlags_NoBackground
+                                   | ImGuiWindowFlags_MenuBar);
     
     // flags = 0;
 
-    // Always show the ImGui window filling the GLFW window.
-    ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2(frameInfo.windowContentWidth, frameInfo.windowContentHeight), ImGuiCond_Always);
-    // ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(1,1));
-    if (ImGui::Begin("zv controls", nullptr, flags))
+    if (impl->windowContainer->ImGuiBegin(frameInfo, extraFlags))
     {
         impl->renderMenu ();
 
@@ -957,7 +960,7 @@ void ControlsWindow::renderFrame ()
     // ImGui::PopStyleVar();
 
     ImGui::End();
-    impl->imguiGlfwWindow.endFrame ();
+    impl->windowContainer->endFrame ();
     
     if (impl->updateAfterContentSwitch.showAfterNextRendering)
     {

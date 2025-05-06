@@ -45,6 +45,7 @@
 
 namespace zv
 {
+
 struct ImguiGLFWWindow::Impl
 {
     ImGuiContext* imGuiContext = nullptr;
@@ -233,6 +234,15 @@ void ImguiGLFWWindow::setWindowSizeChangedCallback (WindowSizeChangedCb&& callba
     impl->windowSizeChangedCb = callback;
 }
 
+void ImguiGLFWWindow::setWindowTitle (const std::string& title)
+{
+    if (impl->title == title)
+        return;
+
+    impl->title = title;
+    glfwSetWindowTitle(impl->window, title.c_str());
+}
+
 void ImguiGLFWWindow::setWindowPos (int x, int y)
 {
     glfwRestoreWindow (impl->window);
@@ -265,33 +275,6 @@ zv::Rect ImguiGLFWWindow::geometry() const
     return geom;
 }
 
-zv::Point ImguiGLFWWindow::primaryMonitorContentDpiScale ()
-{
-    float dpiScale_x = 1.f, dpiScale_y = 1.f;
-
-    // On macOS, content scaling will be done automatically. Instead the
-    // framebuffers will get resized.
-#if !PLATFORM_MACOS
-    GLFWmonitor* monitor = glfwGetPrimaryMonitor();
-    glfwGetMonitorContentScale(monitor, &dpiScale_x, &dpiScale_y);
-#endif
-
-    return zv::Point(dpiScale_x, dpiScale_y);
-}
-
-zv::Point ImguiGLFWWindow::primaryMonitorRetinaFrameBufferScale ()
-{
-    float dpiScale_x = 1.f, dpiScale_y = 1.f;
-
-    // This framebuffer scaling only happens on macOS.
-#if PLATFORM_MACOS
-    GLFWmonitor* monitor = glfwGetPrimaryMonitor();
-    glfwGetMonitorContentScale(monitor, &dpiScale_x, &dpiScale_y);
-#endif
-
-    return zv::Point(dpiScale_x, dpiScale_y);
-}
-
 void ImguiGLFWWindow::shutdown()
 {
     if (impl->window)
@@ -322,16 +305,6 @@ static void windowPosCallback(GLFWwindow* w, int x, int y)
     zv_dbg ("Got a window pos callback (%p) %d %d", w, x, y);
 }
 
-void ImguiGLFWWindow::PushMonoSpaceFont (const ImGuiIO& io, bool small)
-{
-    ImGui::PushFont(io.Fonts->Fonts[small ? 2 : 1]); 
-}
-
-float ImguiGLFWWindow::monoFontSize (const ImGuiIO& io)
-{
-    return io.Fonts->Fonts[1]->FontSize * io.Fonts->Fonts[1]->Scale;
-}
-
 bool ImguiGLFWWindow::isInitialized () const
 {
     return impl->window != nullptr;
@@ -347,7 +320,7 @@ bool ImguiGLFWWindow::initialize (GLFWwindow* parentWindow,
     zv_dbg ("Initializing window %s with geometry %f %f", title.c_str(), geometry.size.x, geometry.size.y);
 
     impl->title = title;
-    impl->contentDpiScale = primaryMonitorContentDpiScale().x;
+    impl->contentDpiScale = ImGui_primaryMonitorContentDpiScale().x;
 
     // Always start invisible, we'll show it later when we need to.
     glfwWindowHint(GLFW_VISIBLE, false);
@@ -427,7 +400,7 @@ bool ImguiGLFWWindow::initialize (GLFWwindow* parentWindow,
     // Load the fonts with the proper dpi scale.
     {
         // Note: will still be 1 on macOS retina displays, they only change the framebuffer size.
-        const zv::Point dpiScale = ImguiGLFWWindow::primaryMonitorContentDpiScale();
+        const zv::Point dpiScale = ImGui_primaryMonitorContentDpiScale();
 
         // The first default font is not a monospace anymore, a bit nicer to
         // read and it can scale properly with higher DPI.
@@ -445,7 +418,7 @@ bool ImguiGLFWWindow::initialize (GLFWwindow* parentWindow,
         
         // On Windows and Linux the scale factor is handled by the dpi, but on macOS
         // it's handled via a bigger frameBuffer.
-        const zv::Point retinaScaleFactor = primaryMonitorRetinaFrameBufferScale();
+        const zv::Point retinaScaleFactor = ImGui_primaryMonitorRetinaFrameBufferScale();
 
         {
             auto* font = io.Fonts->AddFontFromMemoryCompressedTTF(zv::Arimo_compressed_data, zv::Arimo_compressed_size, 15.0f * retinaScaleFactor.x * dpiScale.x, nullptr, ranges);
@@ -505,15 +478,13 @@ bool ImguiGLFWWindow::initialize (GLFWwindow* parentWindow,
     // ImGui_ImplGlfw_InstallEmscriptenCallbacks(impl->window, "#canvas");
 #endif
     ImGui_ImplOpenGL3_Init(glslVersion());
-    
-    
-#if !PLATFORM_EMSCRIPTEN
+        
     // Important: do this only after creating the ImGuiContext. Otherwise we might
     // get some callbacks right away and get in trouble.
     // Start hidden. setEnabled will show it as needed.
     glfwSwapInterval(1); // Enable vsync
-#endif
 
+#if PLATFORM_EMSCRIPTEN
     // Prevent context menu on Ctrl+Click
     EM_ASM({
         const canvas = document.getElementById('canvas') || document.getElementsByTagName('canvas')[0];
@@ -523,6 +494,7 @@ bool ImguiGLFWWindow::initialize (GLFWwindow* parentWindow,
             });
         }
     }, 0);
+#endif
 
     return true;
 }
@@ -532,35 +504,12 @@ zv::Padding ImguiGLFWWindow::decorationSize () const
     return impl->decorationSize;
 }
 
-static void AddUnderLine( ImColor col_ )
+void ImguiGLFWWindow::setSwapInterval (int interval)
 {
-    ImVec2 min = ImGui::GetItemRectMin();
-    ImVec2 max = ImGui::GetItemRectMax();
-    min.y = max.y;
-    ImGui::GetWindowDrawList()->AddLine( min, max, col_, 1.0f );
-}
-
-// From https://gist.github.com/dougbinks/ef0962ef6ebe2cadae76c4e9f0586c69#file-imguiutils-h-L228-L262
-static void TextURL( const char* name_, const char* URL_, bool SameLineBefore_, bool SameLineAfter_ )
-{
-    if( SameLineBefore_ ){ ImGui::SameLine( 0.0f, ImGui::GetStyle().ItemInnerSpacing.x ); }
-    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_ButtonHovered]);
-    ImGui::Text("%s", name_);
-    ImGui::PopStyleColor();
-    if (ImGui::IsItemHovered())
-    {
-        if( ImGui::IsMouseClicked(0) )
-        {
-            zv::openURLInBrowser( URL_ );
-        }
-        AddUnderLine( ImGui::GetStyle().Colors[ImGuiCol_ButtonHovered] );
-        // ImGui::SetTooltip( ICON_FA_LINK "  Open in browser\n%s", URL_ );
-    }
-    else
-    {
-        AddUnderLine( ImGui::GetStyle().Colors[ImGuiCol_Button] );
-    }
-    if( SameLineAfter_ ){ ImGui::SameLine( 0.0f, ImGui::GetStyle().ItemInnerSpacing.x ); }
+#if PLATFORM_EMSCRIPTEN
+#else
+    glfwSwapInterval(interval);
+#endif
 }
 
 void ImguiGLFWWindow::enableContexts ()
@@ -609,4 +558,29 @@ void ImguiGLFWWindow::endFrame ()
     // would be safer to call disableContexts now?
 }
 
+bool ImguiGLFWWindow::ImGuiBegin (const FrameInfo& frameInfo, ImGuiWindowFlags extraFlags)
+{
+    ImGuiWindowFlags flags = (ImGuiWindowFlags_NoTitleBar
+                            | ImGuiWindowFlags_NoResize
+                            | ImGuiWindowFlags_NoMove
+                            | ImGuiWindowFlags_NoScrollbar
+                            // ImGuiWindowFlags_NoScrollWithMouse
+                            // | ImGuiWindowFlags_NoCollapse
+                            // | ImGuiWindowFlags_NoBackground
+                            | ImGuiWindowFlags_NoSavedSettings
+                            | ImGuiWindowFlags_HorizontalScrollbar
+                            // | ImGuiWindowFlags_NoDocking
+                            | ImGuiWindowFlags_NoNav);
+
+    flags |= extraFlags;
+
+    ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(frameInfo.windowContentWidth, frameInfo.windowContentHeight), ImGuiCond_Always);
+    return ImGui::Begin(impl->title.c_str(), nullptr, flags);
+}
+
+void ImguiGLFWWindow::endWindow ()
+{
+    ImGui::End();
+}
 } // zv

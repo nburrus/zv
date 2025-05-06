@@ -84,6 +84,8 @@ add_library(zv
     ImguiGLFWWindow.h
     ImguiUtils.cpp
     ImguiUtils.h
+    ImguiWindowContainer.cpp
+    ImguiWindowContainer.h
     InteractiveTool.h
     InteractiveTool.cpp
     MathUtils.h

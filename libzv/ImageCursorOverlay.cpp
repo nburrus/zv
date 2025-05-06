@@ -36,7 +36,7 @@ void ImageCursorOverlay::showTooltip(const CursorOverlayInfo& d, bool showAsTool
     const auto& image = *d.modImagePtr->data()->cpuData;
     const auto& imageTexture = *d.modImagePtr->data()->textureData;
     
-    const float monoFontSize = ImguiGLFWWindow::monoFontSize(io);
+    const float monoFontSize = ImGui_MonoFontSize(io);
     const float padding = monoFontSize / 2.f;
 
     ImVec2 globalTopLeft = ImGui::GetCursorPos();
@@ -101,7 +101,7 @@ void ImageCursorOverlay::showTooltip(const CursorOverlayInfo& d, bool showAsTool
         
         // Show the help
         {
-            ImguiGLFWWindow::PushMonoSpaceFont(io);
+            ImGui_PushMonoSpaceFont(io);
 
             ImVec4 color (1, 1, 1, 1);
 
@@ -187,7 +187,7 @@ void ImageCursorOverlay::showTooltip(const CursorOverlayInfo& d, bool showAsTool
                 }
                 ImGui::Text("%s", colorName.c_str());
 
-                ImguiGLFWWindow::PushMonoSpaceFont(io, true /* small */);
+                ImGui_PushMonoSpaceFont(io, true /* small */);
                 ImGui::SameLine(monoFontSize * 11.2f - paddingIfNotTooltip);
                 ImGui::Text("ΔE=%d", int(distance + 0.5f));
 

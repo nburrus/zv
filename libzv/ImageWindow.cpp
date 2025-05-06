@@ -142,11 +142,17 @@ struct ZoomInfo
 struct ImageWindow::Impl
 {
     Impl (ImageWindow& that) : that (that)
-    {}
+    {
+#if PLATFORM_EMSCRIPTEN
+#else
+        windowContainer = std::make_unique<ImguiGLFWWindow>();
+#endif
+    }
 
     ImageWindow& that;
 
-    ImguiGLFWWindow imguiGlfwWindow;
+    std::unique_ptr<ImguiWindowContainer> windowContainer;
+    
     Viewer* viewer = nullptr;
 
     std::vector<ModifiedImagePtr> currentImages;
@@ -216,7 +222,7 @@ struct ImageWindow::Impl
     
     void onImageWidgetAreaChanged ()
     {
-        imguiGlfwWindow.setWindowSize(imageWidgetRect.current.size.x + windowBorderSize * 2,
+        windowContainer->setWindowSize(imageWidgetRect.current.size.x + windowBorderSize * 2,
                                       imageWidgetRect.current.size.y + windowBorderSize * 2);
     }
 
@@ -375,7 +381,7 @@ void ImageWindow::Impl::adjustForNewSelection ()
     if (firstValidSelectionIndex < 0)
         return;
 
-    this->imguiGlfwWindow.enableContexts ();
+    this->windowContainer->enableContexts ();
     
     // It's very important that this gets called while the GL context is bound
     // as it may release some GLTexture in the cache. Would be nice to make this
@@ -533,30 +539,30 @@ void ImageWindow::setEnabled (bool enabled)
 
     if (enabled)
     {
-        impl->imguiGlfwWindow.setEnabled(true);
+        impl->windowContainer->setEnabled(true);
     }
     else
     {
         impl->mutableState.activeMode = ViewerMode::None;
-        impl->imguiGlfwWindow.setEnabled(false);
+        impl->windowContainer->setEnabled(false);
     }
 }
 
 void ImageWindow::shutdown()
 {
-    impl->imguiGlfwWindow.enableContexts();
+    impl->windowContainer->enableContexts();
     
     // Make sure that we release any GL stuff here with the context set.
     impl->currentImages.clear();
     impl->cursorOverlayInfo.clear ();
     impl->annotationRenderer.shutdown();
 
-    impl->imguiGlfwWindow.shutdown ();
+    impl->windowContainer->shutdown ();
 }
 
 GLFWwindow* ImageWindow::glfwWindow ()
 {
-    return impl->imguiGlfwWindow.glfwWindow();
+    return impl->windowContainer->glfwWindow();
 }
 
 bool ImageWindow::initialize (GLFWwindow* parentWindow, Viewer* viewer)
@@ -577,15 +583,20 @@ bool ImageWindow::initialize (GLFWwindow* parentWindow, Viewer* viewer)
     windowGeometry.size.x = 640;
     windowGeometry.size.y = 480;
     
-    if (!impl->imguiGlfwWindow.initialize (parentWindow, "ZV Image Viewer", windowGeometry, false /* viewports */))
+#if PLATFORM_EMSCRIPTEN
+#else
+    ImguiGLFWWindow* imguiGlfwWindow = dynamic_cast<ImguiGLFWWindow*>(impl->windowContainer.get());
+    zv_assert (imguiGlfwWindow, "ImguiGLFWWindow is expected.");
+    if (!imguiGlfwWindow->initialize (parentWindow, "ZV Image Viewer", windowGeometry, false /* viewports */))
         return false;
+#endif
 
     {
         int xpos, ypos, width, height;
         glfwGetMonitorWorkarea(monitor, &xpos, &ypos, &width, &height);
         impl->monitorWorkArea = Rect::from_x_y_w_h (xpos, ypos, width, height);
         
-        Padding decSize = impl->imguiGlfwWindow.decorationSize();
+        Padding decSize = impl->windowContainer->decorationSize();
         impl->monitorAreaForImageWidget = impl->monitorWorkArea;
         impl->monitorAreaForImageWidget.origin.x += decSize.left;
         impl->monitorAreaForImageWidget.size.x -= decSize.left + decSize.right;
@@ -595,7 +606,7 @@ bool ImageWindow::initialize (GLFWwindow* parentWindow, Viewer* viewer)
 
     impl->annotationRenderer.initializeFromCurrentContext();
     
-    impl->imguiGlfwWindow.setWindowSizeChangedCallback([this](int width, int height, bool fromUser) {
+    impl->windowContainer->setWindowSizeChangedCallback([this](int width, int height, bool fromUser) {
         if (fromUser)
         {
             impl->lastGeometryMode = Impl::WindowGeometryMode::UserDefined;
@@ -774,7 +785,7 @@ void ImageWindow::processKeyEvent (int keycode)
 
 zv::Rect ImageWindow::geometry () const
 {
-    return impl->imguiGlfwWindow.geometry();
+    return impl->windowContainer->geometry();
 }
 
 zv::Rect ImageWindow::imageWidgetGeometry () const
@@ -983,7 +994,7 @@ void ImageWindow::renderFrame ()
     //     impl->updateAfterContentSwitch.needToResize = false;
     // }
 
-    const auto frameInfo = impl->imguiGlfwWindow.beginFrame ();
+    const auto frameInfo = impl->windowContainer->beginFrame ();
     const auto& controlsWindowState = impl->viewer->controlsWindow()->inputState();
     
     // If we do not have a pending resize request, then adjust the content size to the
@@ -996,16 +1007,16 @@ void ImageWindow::renderFrame ()
     }
   
     auto& io = ImGui::GetIO();
-    const float monoFontSize = ImguiGLFWWindow::monoFontSize(io);
+    const float monoFontSize = ImGui_MonoFontSize(io);
     
     impl->mutableState.inputState.shiftIsPressed = ImGui::IsKeyDown(ImGuiKey_LeftShift) || ImGui::IsKeyDown(ImGuiKey_RightShift);
 
     if (!io.WantCaptureKeyboard)
     {
-        if (ImGui::IsKeyPressed(GLFW_KEY_Q) || impl->imguiGlfwWindow.closeRequested())
+        if (ImGui::IsKeyPressed(GLFW_KEY_Q) || impl->windowContainer->closeRequested())
         {
             impl->mutableState.activeMode = ViewerMode::None;
-            impl->imguiGlfwWindow.cancelCloseRequest ();
+            impl->windowContainer->cancelCloseRequest ();
         }
 
         checkImguiGlobalImageKeyEvents ();
@@ -1023,27 +1034,12 @@ void ImageWindow::renderFrame ()
         impl->shouldUpdateWindowSize = false;
     }
     
-    zv::Rect platformWindowGeometry = impl->imguiGlfwWindow.geometry();
+    zv::Rect platformWindowGeometry = impl->windowContainer->geometry();
     impl->imageWidgetRect.current.origin.x = platformWindowGeometry.origin.x + impl->windowBorderSize*2;
     impl->imageWidgetRect.current.origin.y = platformWindowGeometry.origin.y + impl->windowBorderSize*2;
 
-    ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2(frameInfo.windowContentWidth, frameInfo.windowContentHeight), ImGuiCond_Always);
-
-    ImGuiWindowFlags flags = (ImGuiWindowFlags_NoTitleBar
-                            | ImGuiWindowFlags_NoResize
-                            | ImGuiWindowFlags_NoMove
-                            | ImGuiWindowFlags_NoScrollbar
-                            // ImGuiWindowFlags_NoScrollWithMouse
-                            // | ImGuiWindowFlags_NoCollapse
-                            // | ImGuiWindowFlags_NoBackground
-                            | ImGuiWindowFlags_NoSavedSettings
-                            | ImGuiWindowFlags_HorizontalScrollbar
-                            // | ImGuiWindowFlags_NoDocking
-                            | ImGuiWindowFlags_NoNav);
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(1,1,1,1));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0,0));
-    bool isOpen = true;
     
     int firstValidImageIndex = -1;
     for (firstValidImageIndex = 0; firstValidImageIndex < impl->currentImages.size(); ++firstValidImageIndex)
@@ -1056,15 +1052,12 @@ void ImageWindow::renderFrame ()
     std::string mainWindowName = "zv - " + impl->currentImages[firstValidImageIndex]->item()->prettyName;
     if (impl->currentImages[firstValidImageIndex]->hasPendingChanges())
         mainWindowName += " [edited]";
-    glfwSetWindowTitle(impl->imguiGlfwWindow.glfwWindow(), mainWindowName.c_str());
+    impl->windowContainer->setWindowTitle(mainWindowName);
 
-    if (ImGui::Begin((mainWindowName + "###Image").c_str(), &isOpen, flags))
+    ImGuiWindowFlags extraFlags = 0;
+    
+    if (impl->windowContainer->ImGuiBegin(frameInfo, extraFlags))
     {
-        if (!isOpen)
-        {
-            impl->mutableState.activeMode = ViewerMode::None;
-        }
-        
         const ImVec2 globalImageWidgetTopLeft = ImGui::GetCursorScreenPos();
         const auto globalImageWidgetSize = imSize(impl->imageWidgetRect.current);
         const auto globalImageWidgetContentSize = globalImageWidgetSize - ImVec2(impl->currentLayout.config.numCols-1, impl->currentLayout.config.numRows-1)*impl->gridPadding;
@@ -1167,7 +1160,7 @@ void ImageWindow::renderFrame ()
             // ImGui::IsMouseDown(ImGuiMouseButton_Left) && !io.KeyCtrl;
             if (showStatusBar)
             {
-                impl->imguiGlfwWindow.PushMonoSpaceFont(io);
+                ImGui_PushMonoSpaceFont(io);
 
                 float mouseYinWidget = (impl->cursorOverlayInfo.mousePos.y - impl->cursorOverlayInfo.imageWidgetTopLeft.y);
                 const bool showOnBottom = (impl->cursorOverlayInfo.imageWidgetSize.y - mouseYinWidget) > monoFontSize*2.2;
@@ -1236,7 +1229,7 @@ void ImageWindow::renderFrame ()
     ImGui::PopStyleVar();
     ImGui::PopStyleColor();
 
-    impl->imguiGlfwWindow.endFrame ();
+    impl->windowContainer->endFrame ();
     
     if (impl->updateAfterContentSwitch.inProgress)
     {
@@ -1246,10 +1239,10 @@ void ImageWindow::renderFrame ()
         {
             setEnabled(true);
             // Make sure that even if the viewer was already enabled, then we'll focus it.
-            glfwFocusWindow(impl->imguiGlfwWindow.glfwWindow());
-            impl->imguiGlfwWindow.setWindowPos(impl->updateAfterContentSwitch.targetWindowGeometry.origin.x,
+            glfwFocusWindow(impl->windowContainer->glfwWindow());
+            impl->windowContainer->setWindowPos(impl->updateAfterContentSwitch.targetWindowGeometry.origin.x,
                                                impl->updateAfterContentSwitch.targetWindowGeometry.origin.y);
-            impl->imguiGlfwWindow.setWindowSize (impl->updateAfterContentSwitch.targetWindowGeometry.size.x, 
+            impl->windowContainer->setWindowSize (impl->updateAfterContentSwitch.targetWindowGeometry.size.x, 
                                                  impl->updateAfterContentSwitch.targetWindowGeometry.size.y);
             impl->updateAfterContentSwitch.setCompleted();
         }
