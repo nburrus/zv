@@ -9,6 +9,7 @@
 #include <libzv/Platform.h>
 #include <libzv/ImguiUtils.h>
 #include <libzv/ImguiGLFWWindow.h>
+#include <libzv/ImguiCanvasContainer.h>
 #include <libzv/ImageWindow.h>
 #include <libzv/ImageWindowState.h>
 #include <libzv/GLFWUtils.h>
@@ -40,7 +41,8 @@ struct ControlsWindow::Impl
 {
     Impl()
     {
-#if PLATFORM_EMSCRIPTEN
+#if ZV_IMGUI_WINDOW_CONTAINER_TYPE_CANVAS
+        windowContainer = std::make_unique<ImguiCanvasContainer>();
 #else
         windowContainer = std::make_unique<ImguiGLFWWindow>();
 #endif
@@ -673,7 +675,7 @@ bool ControlsWindow::isEnabled() const { return impl->windowContainer->isEnabled
 // Kwin ignores that otherwise.
 void ControlsWindow::bringToFront ()
 {
-    glfw_reliableBringToFront (impl->windowContainer->glfwWindow());
+    impl->windowContainer->bringToFront();
 }
 
 bool ControlsWindow::isInitialized () const
@@ -704,12 +706,15 @@ bool ControlsWindow::initialize (GLFWwindow* parentWindow, Viewer* viewer)
 
     glfwWindowHint(GLFW_RESIZABLE, true);
 
-#if PLATFORM_EMSCRIPTEN
     bool ok = false;
+#if ZV_IMGUI_WINDOW_CONTAINER_TYPE_CANVAS
+    ImguiCanvasContainer* imguiCanvasContainer = dynamic_cast<ImguiCanvasContainer*>(impl->windowContainer.get());
+    zv_assert (imguiCanvasContainer, "ImguiCanvasContainer is expected.");
+    ok = imguiCanvasContainer->initialize ("zv controls", geometry);
 #else
     ImguiGLFWWindow* imguiGlfwWindow = dynamic_cast<ImguiGLFWWindow*>(impl->windowContainer.get());
     zv_assert (imguiGlfwWindow, "Controls window must be an ImguiGLFWWindow");
-    bool ok = imguiGlfwWindow->initialize (parentWindow, "zv controls", geometry);
+    ok = imguiGlfwWindow->initialize (parentWindow, "zv controls", geometry);
 #endif
     if (!ok)
     {

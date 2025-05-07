@@ -15,6 +15,7 @@
 #include <libzv/ImageCursorOverlay.h>
 #include <libzv/ImguiUtils.h>
 #include <libzv/PlatformSpecific.h>
+#include <libzv/ImguiCanvasContainer.h>
 #include <libzv/ImguiGLFWWindow.h>
 #include <libzv/ControlsWindow.h>
 #include <libzv/Prefs.h>
@@ -143,7 +144,8 @@ struct ImageWindow::Impl
 {
     Impl (ImageWindow& that) : that (that)
     {
-#if PLATFORM_EMSCRIPTEN
+#if ZV_IMGUI_WINDOW_CONTAINER_TYPE_CANVAS
+        windowContainer = std::make_unique<ImguiCanvasContainer>();
 #else
         windowContainer = std::make_unique<ImguiGLFWWindow>();
 #endif
@@ -562,7 +564,7 @@ void ImageWindow::shutdown()
 
 GLFWwindow* ImageWindow::glfwWindow ()
 {
-    return impl->windowContainer->glfwWindow();
+    return impl->windowContainer->native_glfwWindow();
 }
 
 bool ImageWindow::initialize (GLFWwindow* parentWindow, Viewer* viewer)
@@ -583,7 +585,11 @@ bool ImageWindow::initialize (GLFWwindow* parentWindow, Viewer* viewer)
     windowGeometry.size.x = 640;
     windowGeometry.size.y = 480;
     
-#if PLATFORM_EMSCRIPTEN
+#if ZV_IMGUI_WINDOW_CONTAINER_TYPE_CANVAS
+    ImguiCanvasContainer* imguiCanvasContainer = dynamic_cast<ImguiCanvasContainer*>(impl->windowContainer.get());
+    zv_assert (imguiCanvasContainer, "ImguiCanvasContainer is expected.");
+    if (!imguiCanvasContainer->initialize ("ZV Image Viewer", windowGeometry))
+        return false;
 #else
     ImguiGLFWWindow* imguiGlfwWindow = dynamic_cast<ImguiGLFWWindow*>(impl->windowContainer.get());
     zv_assert (imguiGlfwWindow, "ImguiGLFWWindow is expected.");
@@ -1239,7 +1245,7 @@ void ImageWindow::renderFrame ()
         {
             setEnabled(true);
             // Make sure that even if the viewer was already enabled, then we'll focus it.
-            glfwFocusWindow(impl->windowContainer->glfwWindow());
+            impl->windowContainer->focus();
             impl->windowContainer->setWindowPos(impl->updateAfterContentSwitch.targetWindowGeometry.origin.x,
                                                impl->updateAfterContentSwitch.targetWindowGeometry.origin.y);
             impl->windowContainer->setWindowSize (impl->updateAfterContentSwitch.targetWindowGeometry.size.x, 

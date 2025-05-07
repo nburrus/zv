@@ -23,6 +23,7 @@
 
 #define IMGUI_DEFINE_MATH_OPERATORS 1
 #include "imgui.h"
+#include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl3.h"
 #include "imgui_internal.h"
 #include <imgui/misc/freetype/imgui_freetype.h>
@@ -34,6 +35,8 @@
 #else
 #include <GL/gl3w.h>
 #endif
+
+#include <GLFW/glfw3.h>
 
 #include <cstdio>
 #include <unordered_set>
@@ -48,8 +51,11 @@ struct ImguiCanvasContainer::Impl
 
     ImguiCanvasContainer::FrameInfo currentFrameInfo;
     
-    zv::Point pos;
-    zv::Point size;
+    zv::Point nextWindowPos;
+    zv::Point nextWindowSize;
+
+    zv::Point windowPos;
+    zv::Point windowSize;
     
     std::string title;
 
@@ -68,7 +74,7 @@ ImguiCanvasContainer::~ImguiCanvasContainer()
     shutdown();
 }
 
-GLFWwindow* ImguiCanvasContainer::glfwWindow ()
+GLFWwindow* ImguiCanvasContainer::native_glfwWindow ()
 {
     return nullptr;
 }
@@ -107,12 +113,7 @@ void ImguiCanvasContainer::onWindowSizeChanged (int width, int height)
         return;
 
 
-
-    // Leave two frames of delay before concluding that the size changed
-    // indeed came from the user and not from our own call to setWindowSize.
-    const int fc = ImGui::GetFrameCount();    
-    bool fromUser = ((fc - impl->lastSizeRequest) > 2);
-    impl->windowSizeChangedCb (width, height, fromUser);
+    impl->windowSizeChangedCb (width, height, /*fromUser=*/ true);
 }
 
 void ImguiCanvasContainer::setWindowSizeChangedCallback (WindowSizeChangedCb&& callback)
@@ -126,261 +127,59 @@ void ImguiCanvasContainer::setWindowTitle (const std::string& title)
         return;
 
     impl->title = title;
-    glfwSetWindowTitle(impl->window, title.c_str());
 }
 
 void ImguiCanvasContainer::setWindowPos (int x, int y)
 {
-    glfwRestoreWindow (impl->window);
-    glfwSetWindowPos (impl->window, x, y);
+    impl->nextWindowPos = zv::Point(x, y);
 }
 
 void ImguiCanvasContainer::setWindowSize (int width, int height)
 {
-    impl->lastSizeRequest = ImGui::GetFrameCount();
-    // Some window managers might maximize automatically
-    glfwRestoreWindow (impl->window);
-    glfwSetWindowSize (impl->window, width, height);
+    impl->nextWindowSize = zv::Point(width, height);
 }
 
 zv::Rect ImguiCanvasContainer::geometry() const
 {
     zv::Rect geom;
 
-    int platformWindowX, platformWindowY;
-    glfwGetWindowPos(impl->window, &platformWindowX, &platformWindowY);
+    geom.origin.x = impl->windowPos.x;
+    geom.origin.y = impl->windowPos.y;
     
-    int platformWindowWidth, platformWindowHeight;
-    glfwGetWindowSize(impl->window, &platformWindowWidth, &platformWindowHeight);
-
-    geom.origin.x = platformWindowX;
-    geom.origin.y = platformWindowY;
-    
-    geom.size.x = platformWindowWidth;
-    geom.size.y = platformWindowHeight;
+    geom.size.x = impl->windowSize.x;
+    geom.size.y = impl->windowSize.y;
     return geom;
 }
 
 void ImguiCanvasContainer::shutdown()
 {
-    if (impl->window)
-    {
-        enableContexts ();
-        
-        // Cleanup
-        ImGui_ImplOpenGL3_Shutdown();
-        ImGui_ImplGlfw_Shutdown();
-        ImGuiContextTracker::instance()->removeContext(impl->imGuiContext);
-        ImGui::DestroyContext(impl->imGuiContext);
-        impl->imGuiContext = nullptr;
-
-        glfwDestroyWindow (impl->window);
-        impl->window = nullptr;
-
-        disableContexts ();
-    }
-}
-
-static void glfwErrorFunction (int code, const char* error)
-{
-    fprintf (stderr, "GLFW Error %d: %s", code, error);
-}
-
-static void windowPosCallback(GLFWwindow* w, int x, int y)
-{
-    zv_dbg ("Got a window pos callback (%p) %d %d", w, x, y);
 }
 
 bool ImguiCanvasContainer::isInitialized () const
 {
-    return impl->window != nullptr;
+    return impl->windowPos.isValid();
 }
 
-bool ImguiCanvasContainer::initialize (GLFWwindow* parentWindow,
-                                  const std::string& title,
-                                  const zv::Rect& geometry,
-                                  bool enableImguiViewports)
+bool ImguiCanvasContainer::initialize (const std::string& title,
+                                       const zv::Rect& geometry)
 {
-    glfwSetErrorCallback (glfwErrorFunction);
-    
     zv_dbg ("Initializing window %s with geometry %f %f", title.c_str(), geometry.size.x, geometry.size.y);
 
     impl->title = title;
     impl->contentDpiScale = ImGui_primaryMonitorContentDpiScale().x;
 
-    // Always start invisible, we'll show it later when we need to.
-    glfwWindowHint(GLFW_VISIBLE, false);
-    impl->window = glfwCreateWindow(geometry.size.x, geometry.size.y, title.c_str(), NULL, parentWindow);
-    glfwWindowHint(GLFW_VISIBLE, true);
-    if (impl->window == NULL)
-        return false;
-
-    int frameLeft, frameRight, frameTop, frameBottom;
-#if PLATFORM_EMSCRIPTEN
-    frameLeft = 0;
-    frameRight = geometry.size.x;
-    frameTop = 0;
-    frameBottom = geometry.size.y;
-#else    
-    glfwGetWindowFrameSize (impl->window, &frameLeft, &frameTop, &frameRight, &frameBottom);
-#endif
-    // No decorations reported on X11.
-    impl->decorationSize.left = std::max(frameLeft, 8);
-    impl->decorationSize.right = std::max(frameRight, 8);
-    impl->decorationSize.top = std::max(frameTop, 32);
-    impl->decorationSize.bottom = std::max(frameBottom, 8);
+    // Use ImGui style values for window decorations
+    const ImGuiStyle& style = ImGui::GetStyle();
+    impl->decorationSize.left = style.WindowPadding.x + style.WindowBorderSize;
+    impl->decorationSize.right = style.WindowPadding.x + style.WindowBorderSize;
+    impl->decorationSize.top = style.WindowPadding.y + style.WindowBorderSize + ImGui::GetFrameHeight(); // Add title bar height
+    impl->decorationSize.bottom = style.WindowPadding.y + style.WindowBorderSize;
    
-    // Won't do anything on macOS, we don't even load the file.
-    GLFWimage glfwImage;
-    glfwImage.pixels = const_cast<unsigned char*>(Icon::instance().rgba32x32());
-    if (glfwImage.pixels)
-    {
-        glfwImage.width = 32;
-        glfwImage.height = 32;
-        glfwSetWindowIcon(impl->window, 1, &glfwImage);
-    }
+    impl->windowPos = geometry.origin;
+    impl->windowSize = geometry.size;
     
-    glfwSetWindowPos(impl->window, geometry.origin.x, geometry.origin.y);
-
-    glfwSetWindowUserPointer(impl->window, this);
-    {
-        glfwSetWindowFocusCallback(impl->window, zv_glfw_WindowFocusCallback);
-        glfwSetCursorEnterCallback(impl->window, zv_glfw_CursorEnterCallback);
-        glfwSetMouseButtonCallback(impl->window, zv_glfw_MouseButtonCallback);
-        glfwSetCursorPosCallback(impl->window, zv_glfw_CursorPosCallback);
-        glfwSetScrollCallback(impl->window,      zv_glfw_ScrollCallback);
-        glfwSetKeyCallback(impl->window,         zv_glfw_KeyCallback);
-        glfwSetCharCallback(impl->window,        zv_glfw_CharCallback);
-        glfwSetMonitorCallback(zv_glfw_MonitorCallback);
-
-        glfwSetWindowSizeCallback(impl->window, zv_glfw_WindowSizeCallback);
-    }
-
-    glfwMakeContextCurrent(impl->window);
-    
-#if !PLATFORM_EMSCRIPTEN
-    // Make sure that gl3w is initialized.
-    bool err = gl3wInit() != 0;
-    if (err)
-    {
-        fprintf(stderr, "Failed to initialize OpenGL loader!\n");
-        return false;
-    }
-#endif
-
-    // Setup Dear ImGui context
-    IMGUI_CHECKVERSION();
-    impl->imGuiContext = ImGui::CreateContext(); // FIXME: use a shared font atlas.
-    impl->imGuiContext->IO.IniFilename = nullptr;
-    ImGuiContextTracker::instance()->addContext(impl->imGuiContext);
-    ImGui::SetCurrentContext(impl->imGuiContext);
-
-    ImGuiIO &io = ImGui::GetIO();
-
-    if (enableImguiViewports)
-    {
-        // Enable Multi-Viewport / Platform Windows. Will be used by the highlight similar color companion window.
-        // io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
-    }
-
-    // Load the fonts with the proper dpi scale.
-    {
-        // Note: will still be 1 on macOS retina displays, they only change the framebuffer size.
-        const zv::Point dpiScale = ImGui_primaryMonitorContentDpiScale();
-
-        // The first default font is not a monospace anymore, a bit nicer to
-        // read and it can scale properly with higher DPI.
-
-        // Taken from Tracy https://github.com/davidwed/tracy
-        static const ImWchar ranges[] = {
-            0x0020,
-            0x00FF, // Basic Latin + Latin Supplement
-            0x03BC,
-            0x03BC, // micro
-            0x0394, // delta
-            0x0394,
-            0,
-        };
-        
-        // On Windows and Linux the scale factor is handled by the dpi, but on macOS
-        // it's handled via a bigger frameBuffer.
-        const zv::Point retinaScaleFactor = ImGui_primaryMonitorRetinaFrameBufferScale();
-
-        {
-            auto* font = io.Fonts->AddFontFromMemoryCompressedTTF(zv::Arimo_compressed_data, zv::Arimo_compressed_size, 15.0f * retinaScaleFactor.x * dpiScale.x, nullptr, ranges);
-
-            ImFontConfig config;
-            config.MergeMode = true;
-            config.GlyphOffset.y = 3.0*dpiScale.x; // so icons are centered in buttons.
-            config.FontBuilderFlags = ImGuiFreeTypeBuilderFlags_LightHinting;
-            // config.GlyphMinAdvanceX = 15.0f; // Use if you want to make the icon monospaced
-            static const ImWchar icon_ranges[] = { ICON_MIN, ICON_MAX, 0 };
-            font = io.Fonts->AddFontFromMemoryCompressedTTF(zv::Icomoon_compressed_data, zv::Icomoon_compressed_size, 17.0f * retinaScaleFactor.x * dpiScale.x, &config, icon_ranges);
-            // font = io.Fonts->AddFontFromMemoryCompressedTTF(zv::FontAwesome5_solid_compressed_data, zv::FontAwesome5_solid_compressed_size, 17.0f * retinaScaleFactor.x * dpiScale.x, &config, icon_ranges);
-            // font = io.Fonts->AddFontFromMemoryCompressedTTF(zv::FontAwesome5_compressed_data, zv::FontAwesome5_compressed_size, 17.0f * retinaScaleFactor.x * dpiScale.x, &config, icon_ranges);
-            
-            font->Scale /= retinaScaleFactor.x;
-        }
-
-        // The second font is the monospace one.
-
-        // Generated from https://github.com/bluescan/proggyfonts
-        {
-            auto* font = io.Fonts->AddFontFromMemoryCompressedTTF(zv::ProggyVector_compressed_data, zv::ProggyVector_compressed_size, 16.0f * retinaScaleFactor.x * dpiScale.x);
-            font->Scale /= retinaScaleFactor.x;
-        }
-        
-        // Third font, small monospace
-        {
-            auto* font = io.Fonts->AddFontFromMemoryCompressedTTF(zv::ProggyVector_compressed_data,
-                                                                  zv::ProggyVector_compressed_size,
-                                                                  15.0f * retinaScaleFactor.x * dpiScale.x,
-                                                                  nullptr,
-                                                                  ranges);
-            font->Scale /= retinaScaleFactor.x;
-        }
-
-        // To scale the original font (poor quality)
-        // ImFontConfig cfg;
-        // cfg.SizePixels = roundf(13 * dpiScale.x);
-        // cfg.GlyphOffset.y = dpiScale.x;
-        // ImFont* font = ImGui::GetIO().Fonts->AddFontDefault(&cfg);
-        
-        // io.Fonts->AddFontFromFileTTF ("C:\\Windows\\Fonts\\segoeui.ttf", roundf(16.0f * dpiScale.x), nullptr, ranges);
-        // io.Fonts->AddFontFromFileTTF ("C:\\Windows\\Fonts\\consola.ttf", 16.0f * dpiScale.x, nullptr, ranges);
-        
-        if (!floatEquals(dpiScale.x, 1.f))
-        {
-            ImGui::GetStyle().ScaleAllSizes(dpiScale.x);
-        }
-    }
-
-    // Setup Platform/Renderer bindings
-    ImGui_ImplGlfw_InitForOpenGL(impl->window,
-                                 false /* do NOT install callbacks,
-                                        we'll forward manually to properly handle multiple contexts
-                                        */);
-#ifdef __EMSCRIPTEN__
-    // ImGui_ImplGlfw_InstallEmscriptenCallbacks(impl->window, "#canvas");
-#endif
-    ImGui_ImplOpenGL3_Init(glslVersion());
-        
-    // Important: do this only after creating the ImGuiContext. Otherwise we might
-    // get some callbacks right away and get in trouble.
-    // Start hidden. setEnabled will show it as needed.
-    glfwSwapInterval(1); // Enable vsync
-
-#if PLATFORM_EMSCRIPTEN
-    // Prevent context menu on Ctrl+Click
-    EM_ASM({
-        const canvas = document.getElementById('canvas') || document.getElementsByTagName('canvas')[0];
-        if (canvas) {
-            canvas.addEventListener('contextmenu', function(e) {
-                e.preventDefault();
-            });
-        }
-    }, 0);
-#endif
+    impl->nextWindowPos = geometry.origin;
+    impl->nextWindowSize = geometry.size;
 
     return true;
 }
@@ -392,81 +191,226 @@ zv::Padding ImguiCanvasContainer::decorationSize () const
 
 void ImguiCanvasContainer::setSwapInterval (int interval)
 {
-#if PLATFORM_EMSCRIPTEN
-#else
-    glfwSwapInterval(interval);
-#endif
+}
+
+void ImguiCanvasContainer::focus ()
+{
+}
+
+void ImguiCanvasContainer::setResizable (bool resizable)
+{
+}
+
+void ImguiCanvasContainer::bringToFront ()
+{
 }
 
 void ImguiCanvasContainer::enableContexts ()
 {
-    ImGui::SetCurrentContext(impl->imGuiContext);
-    glfwMakeContextCurrent(impl->window);
 }
 
 void ImguiCanvasContainer::disableContexts ()
 {
-    ImGui::SetCurrentContext(nullptr);
 }
 
 ImguiCanvasContainer::FrameInfo ImguiCanvasContainer::beginFrame ()
 {
-    enableContexts ();
-
-    glfwGetFramebufferSize(impl->window, &(impl->currentFrameInfo.frameBufferWidth), &(impl->currentFrameInfo.frameBufferHeight));
-    glfwGetWindowSize(impl->window, &(impl->currentFrameInfo.windowContentWidth), &(impl->currentFrameInfo.windowContentHeight));
-    impl->currentFrameInfo.contentDpiScale = impl->contentDpiScale;
-
-    glfwPollEvents();
-    
-    ImGui_ImplOpenGL3_NewFrame();
-    ImGui_ImplGlfw_NewFrame();
-    ImGui::NewFrame();
+    impl->currentFrameInfo.windowContentWidth = impl->windowSize.x;
+    impl->currentFrameInfo.windowContentHeight = impl->windowSize.y;
+    impl->currentFrameInfo.frameBufferWidth = impl->windowSize.x;
+    impl->currentFrameInfo.frameBufferHeight = impl->windowSize.y;
+    impl->currentFrameInfo.contentDpiScale = impl->contentDpiScale;    
     return impl->currentFrameInfo;
 }
 
 void ImguiCanvasContainer::endFrame ()
 {
-    // Rendering
-    ImGui::Render();
-
-    checkGLError ();
-    
-    glViewport(0, 0, impl->currentFrameInfo.frameBufferWidth, impl->currentFrameInfo.frameBufferHeight);
-    glClearColor(0.1, 0.1, 0.1, 1);
-    glClear(GL_COLOR_BUFFER_BIT);
-
-    ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());   
-    glfwSwapBuffers(impl->window);
-
-    checkGLError ();
-
-    // would be safer to call disableContexts now?
 }
 
 bool ImguiCanvasContainer::ImGuiBegin (const FrameInfo& frameInfo, ImGuiWindowFlags extraFlags)
 {
-    ImGuiWindowFlags flags = (ImGuiWindowFlags_NoTitleBar
-                            | ImGuiWindowFlags_NoResize
-                            | ImGuiWindowFlags_NoMove
-                            | ImGuiWindowFlags_NoScrollbar
+    ImGuiWindowFlags flags = (
+                            ImGuiWindowFlags_NoScrollbar
+                            // ImGuiWindowFlags_NoTitleBar
+                            // | ImGuiWindowFlags_NoResize
+                            // | ImGuiWindowFlags_NoMove
                             // ImGuiWindowFlags_NoScrollWithMouse
                             // | ImGuiWindowFlags_NoCollapse
                             // | ImGuiWindowFlags_NoBackground
                             | ImGuiWindowFlags_NoSavedSettings
-                            | ImGuiWindowFlags_HorizontalScrollbar
+                            // | ImGuiWindowFlags_HorizontalScrollbar
                             // | ImGuiWindowFlags_NoDocking
                             | ImGuiWindowFlags_NoNav);
 
     flags |= extraFlags;
 
-    ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2(frameInfo.windowContentWidth, frameInfo.windowContentHeight), ImGuiCond_Always);
-    return ImGui::Begin(impl->title.c_str(), nullptr, flags);
+    if (impl->nextWindowPos.isValid())
+    {
+        ImGui::SetNextWindowPos(imVec2(impl->nextWindowPos), ImGuiCond_Always);
+        impl->nextWindowPos = zv::Point();
+    }
+
+    if (impl->nextWindowSize.isValid())
+    {
+        ImGui::SetNextWindowSize(imVec2(impl->nextWindowSize), ImGuiCond_Always);
+        impl->nextWindowSize = zv::Point();
+    }
+     
+    bool ok = ImGui::Begin(impl->title.c_str(), nullptr, flags);
+    
+    impl->windowSize = toPoint(ImGui::GetWindowSize());
+    impl->windowPos = toPoint(ImGui::GetWindowPos());
+
+    return ok;
 }
 
-void ImguiCanvasContainer::endWindow ()
+struct ImguiCanvas::Impl
 {
-    ImGui::End();
+    ImGuiContext* imGuiContext = nullptr;
+    bool enabled = false;
+    int width = 0;
+    int height = 0;
+    float contentDpiScale = 1.f;
+    GLFWwindow* window = nullptr;
+};
+
+ImguiCanvas::ImguiCanvas()
+: impl(new Impl())
+{}
+
+ImguiCanvas::~ImguiCanvas()
+{
+    if (impl->imGuiContext)
+    {
+        ImGui::SetCurrentContext(impl->imGuiContext);
+        ImGui_ImplOpenGL3_Shutdown();
+        ImGui::DestroyContext(impl->imGuiContext);
+        impl->imGuiContext = nullptr;
+    }
 }
+
+void ImguiCanvas::initialize()
+{
+    // Create window with graphics context.
+    impl->window = glfwCreateWindow(1280, 1024, "ZV Viewer", nullptr, nullptr);    
+
+    glfwMakeContextCurrent(impl->window);
+
+#if !PLATFORM_EMSCRIPTEN
+    // Make sure that gl3w is initialized.
+    bool err = gl3wInit() != 0;
+    if (err)
+    {
+        fprintf(stderr, "Failed to initialize OpenGL loader!\n");
+        zv_assert(false, "Failed to initialize OpenGL loader!");
+    }
+#endif
+
+    glfwShowWindow(impl->window);
+
+    checkGLError ();
+
+    // Setup Dear ImGui context
+    IMGUI_CHECKVERSION();
+    impl->imGuiContext = ImGui::CreateContext();
+    impl->imGuiContext->IO.IniFilename = nullptr;
+    ImGui::SetCurrentContext(impl->imGuiContext);
+
+    ImGuiIO& io = ImGui::GetIO();
+    impl->contentDpiScale = ImGui_primaryMonitorContentDpiScale().x;
+
+    // Load the fonts with the proper dpi scale
+    {
+        const zv::Point dpiScale = ImGui_primaryMonitorContentDpiScale();
+        const zv::Point retinaScaleFactor = ImGui_primaryMonitorRetinaFrameBufferScale();
+
+        static const ImWchar ranges[] = {
+            0x0020, 0x00FF, // Basic Latin + Latin Supplement
+            0x03BC, 0x03BC, // micro
+            0x0394, 0x0394, // delta
+            0,
+        };
+
+        {
+            auto* font = io.Fonts->AddFontFromMemoryCompressedTTF(zv::Arimo_compressed_data, zv::Arimo_compressed_size, 15.0f * retinaScaleFactor.x * dpiScale.x, nullptr, ranges);
+
+            ImFontConfig config;
+            config.MergeMode = true;
+            config.GlyphOffset.y = 3.0*dpiScale.x;
+            config.FontBuilderFlags = ImGuiFreeTypeBuilderFlags_LightHinting;
+            static const ImWchar icon_ranges[] = { ICON_MIN, ICON_MAX, 0 };
+            font = io.Fonts->AddFontFromMemoryCompressedTTF(zv::Icomoon_compressed_data, zv::Icomoon_compressed_size, 17.0f * retinaScaleFactor.x * dpiScale.x, &config, icon_ranges);
+            font->Scale /= retinaScaleFactor.x;
+        }
+
+        {
+            auto* font = io.Fonts->AddFontFromMemoryCompressedTTF(zv::ProggyVector_compressed_data, zv::ProggyVector_compressed_size, 16.0f * retinaScaleFactor.x * dpiScale.x);
+            font->Scale /= retinaScaleFactor.x;
+        }
+
+        {
+            auto* font = io.Fonts->AddFontFromMemoryCompressedTTF(zv::ProggyVector_compressed_data,
+                                                                  zv::ProggyVector_compressed_size,
+                                                                  15.0f * retinaScaleFactor.x * dpiScale.x,
+                                                                  nullptr,
+                                                                  ranges);
+            font->Scale /= retinaScaleFactor.x;
+        }
+
+        if (!floatEquals(dpiScale.x, 1.f))
+        {
+            ImGui::GetStyle().ScaleAllSizes(dpiScale.x);
+        }
+    }
+
+    glfwSwapInterval(1); // Enable vsync
+
+    // Setup Platform/Renderer bindings
+    ImGui_ImplGlfw_InitForOpenGL(impl->window,
+                                 true /* install callbacks, we only have one context */);
+
+    // Setup Platform/Renderer bindings
+    ImGui_ImplOpenGL3_Init(glslVersion());
+}
+
+void ImguiCanvas::onCanvasSizeChanged(int width, int height)
+{
+    impl->width = width;
+    impl->height = height;
+}
+
+ImGuiContext* ImguiCanvas::imGuiContext()
+{
+    return impl->imGuiContext;
+}
+
+void ImguiCanvas::beginFrame()
+{
+    ImGui::SetCurrentContext(impl->imGuiContext);
+    glfwMakeContextCurrent(impl->window);
+    glfwPollEvents();
+
+    ImGui::SetCurrentContext(impl->imGuiContext);
+    ImGui_ImplOpenGL3_NewFrame();
+    ImGui_ImplGlfw_NewFrame();
+    ImGui::NewFrame();
+}
+
+void ImguiCanvas::endFrame()
+{
+    ImGui::Render();
+
+    checkGLError ();
+    
+    int frameBufferWidth, frameBufferHeight;
+    glfwGetFramebufferSize(impl->window, &frameBufferWidth, &frameBufferHeight);
+
+    glViewport(0, 0, frameBufferWidth, frameBufferHeight);
+    glClearColor(0.1, 0.1, 0.1, 1);
+    glClear(GL_COLOR_BUFFER_BIT);
+
+    ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+    glfwSwapBuffers(impl->window);
+}
+
 } // zv

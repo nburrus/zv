@@ -81,8 +81,8 @@ bool HelpWindow::initialize (GLFWwindow* parentWindow)
     // setWindowFlagsToAlwaysShowOnActiveDesktop(impl->imguiGlfwWindow.glfwWindow());
 
     // No resize for the help.
-    glfwSetWindowAttrib(impl->imguiGlfwWindow.glfwWindow(), GLFW_RESIZABLE, false);
-       
+    impl->imguiGlfwWindow.setResizable(false);
+    
     return true;
 }
 

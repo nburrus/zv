@@ -31,14 +31,18 @@ struct Rect;
 class ImguiCanvas
 {
 public:
-    static ImguiCanvas* instance();
+    ImguiCanvas();
+    ~ImguiCanvas();
+
     void initialize ();
     void onCanvasSizeChanged (int width, int height);
     ImGuiContext* imGuiContext();
+    void beginFrame ();
+    void endFrame ();
 
 private:
-    ImguiCanvas();
-    ~ImguiCanvas();
+    struct Impl;
+    std::unique_ptr<Impl> impl;
 };
 
 /**
@@ -81,14 +85,17 @@ public:
     void endFrame () override;
 
     bool ImGuiBegin (const FrameInfo& frameInfo, ImGuiWindowFlags extraFlags) override;
-    void endWindow () override;
 
     void enableContexts () override;
     void disableContexts () override;
 
     void setSwapInterval (int interval) override;
 
-    GLFWwindow* glfwWindow () override;
+    GLFWwindow* native_glfwWindow () override;
+
+    void focus () override;
+    void setResizable (bool resizable) override;
+    void bringToFront () override;
 
 private:
     struct Impl;

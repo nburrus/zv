@@ -6,11 +6,19 @@
 
 #pragma once
 
+#include <libzv/Platform.h>
 #include <libzv/MathUtils.h>
 
 #include <memory>
 #include <functional>
 #include <string>
+
+// Temporarily use canvas everywhere.
+#if true || PLATFORM_EMSCRIPTEN
+#define ZV_IMGUI_WINDOW_CONTAINER_TYPE_CANVAS 1
+#else
+#define ZV_IMGUI_WINDOW_CONTAINER_TYPE_CANVAS 0
+#endif
 
 struct GLFWwindow;
 
@@ -58,6 +66,7 @@ public:
     virtual void setWindowSizeChangedCallback (WindowSizeChangedCb&& callback) = 0;
 
     virtual zv::Padding decorationSize () const = 0;
+    
 
 public:
     virtual bool closeRequested () const = 0;
@@ -71,14 +80,17 @@ public:
     virtual void endFrame () = 0;
 
     virtual bool ImGuiBegin (const FrameInfo& frameInfo, ImGuiWindowFlags extraFlags) = 0;
-    virtual void endWindow () = 0;
 
     virtual void enableContexts () = 0;
     virtual void disableContexts () = 0;
 
     virtual void setSwapInterval (int interval) = 0;
 
-    virtual GLFWwindow* glfwWindow () = 0;
+    virtual void bringToFront () = 0;
+    virtual void focus () = 0;
+    virtual void setResizable (bool resizable) = 0;
+
+    virtual GLFWwindow* native_glfwWindow () = 0;    
 };
 
 } // zv

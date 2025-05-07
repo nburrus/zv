@@ -19,6 +19,26 @@
             "preLaunchTask": "CMake: build-zv"
         },
         {
+            "name": "(macOS) zv",
+            "type": "lldb",
+            "request": "launch",
+            // Resolved by CMake Tools:
+            "program": "${workspaceFolder}/build/zv/zv",
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",            
+            "externalConsole": false,
+            // "args": [ "--port", "4207" ],
+            "args": [ 
+                // "${workspaceFolder}/tests/baboon.png",
+                // "${workspaceFolder}/tests/rgbgrid.png", 
+                // "${workspaceFolder}/tests/rgbgrid_small.png",
+                // "${workspaceFolder}/tests/brettel1997_protan_wn_1.0.png",
+                // "${workspaceFolder}/tests/brettel1997_tritan_wn_1.0.png",
+             ],
+            // "args": [ "/common/folderA/foo.png", "/common/folderB/foo.png" ]
+            "preLaunchTask": "CMake: build-zv"
+        },
+        {
             "name": "Python: Current File",
             "type": "python",
             "request": "launch",
@@ -73,7 +93,6 @@
             ],
             // "args": [ "--port", "4207" ],
             "args": [ 
-                "/home/nb/Room3d/MountSunday/images/imported/MountSunday_SLR_0001.jpg"
                 // "${workspaceFolder}/tests/baboon.png",
                 // "${workspaceFolder}/tests/rgbgrid.png", 
                 // "${workspaceFolder}/tests/rgbgrid_small.png",

@@ -10,6 +10,7 @@
 #include <libzv/PlatformSpecific.h>
 #include <libzv/Prefs.h>
 #include <libzv/Utils.h>
+#include <libzv/ImguiCanvasContainer.h>
 
 #include <libzv/ImageList.h>
 #include <libzv/ImageWindow.h>
@@ -17,6 +18,7 @@
 #include <libzv/HelpWindow.h>
 
 #include "GeneratedConfig.h"
+#include "libzv/OpenGL.h"
 
 #include <clip/clip.h>
 
@@ -55,6 +57,8 @@ struct Viewer::Impl
     
     GLFWwindow* mainContextWindow() { return imageWindow.glfwWindow(); }
 
+    std::unique_ptr<ImguiCanvas> imguiCanvas;
+
     ImageList imageList;    
     ImageWindow imageWindow;
     ControlsWindow controlsWindow;
@@ -64,6 +68,11 @@ struct Viewer::Impl
     
     void renderFrame ()
     {
+        if (imguiCanvas)
+        {
+            imguiCanvas->beginFrame();
+        }
+
         if (state.helpRequested)
         {
             if (!helpWindow.isInitialized())
@@ -134,6 +143,11 @@ struct Viewer::Impl
 
             controlsWindow.renderFrame();
         }
+
+        if (imguiCanvas)
+        {
+            imguiCanvas->endFrame();
+        }
     }
 };
 
@@ -176,8 +190,6 @@ bool Viewer::initialize ()
     if (!glfwInit())
         return false;
     
-    p.lap ("glfwInit");
-
     // Decide GL+GLSL versions
 #if __APPLE__
     // GL 3.2 + GLSL 150
@@ -193,6 +205,15 @@ bool Viewer::initialize ()
     //glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);            // 3.0+ only
 #endif
         
+#if ZV_IMGUI_WINDOW_CONTAINER_TYPE_CANVAS
+    impl->imguiCanvas = std::make_unique<ImguiCanvas>();
+#endif
+
+    if (impl->imguiCanvas)
+    {
+        impl->imguiCanvas->initialize();
+    }
+
     impl->imageWindow.initialize (nullptr, this);
     p.lap ("imageWindow");
     

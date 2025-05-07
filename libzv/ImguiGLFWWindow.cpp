@@ -159,9 +159,24 @@ ImguiGLFWWindow::~ImguiGLFWWindow()
     shutdown();
 }
 
-GLFWwindow* ImguiGLFWWindow::glfwWindow ()
+GLFWwindow* ImguiGLFWWindow::native_glfwWindow ()
 {
     return impl->window;
+}
+
+void ImguiGLFWWindow::focus ()
+{
+    glfwFocusWindow(impl->window);
+}
+
+void ImguiGLFWWindow::setResizable (bool resizable)
+{
+    glfwSetWindowAttrib(impl->window, GLFW_RESIZABLE, resizable ? GLFW_TRUE : GLFW_FALSE);
+}
+
+void ImguiGLFWWindow::bringToFront ()
+{
+    glfw_reliableBringToFront(impl->window);
 }
 
 bool ImguiGLFWWindow::isEnabled () const
@@ -579,8 +594,4 @@ bool ImguiGLFWWindow::ImGuiBegin (const FrameInfo& frameInfo, ImGuiWindowFlags e
     return ImGui::Begin(impl->title.c_str(), nullptr, flags);
 }
 
-void ImguiGLFWWindow::endWindow ()
-{
-    ImGui::End();
-}
 } // zv
