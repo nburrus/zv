@@ -573,7 +573,7 @@ void ImguiGLFWWindow::endFrame ()
     // would be safer to call disableContexts now?
 }
 
-bool ImguiGLFWWindow::ImGuiBegin (const FrameInfo& frameInfo, ImGuiWindowFlags extraFlags)
+bool ImguiGLFWWindow::ImGuiBegin (const FrameInfo& frameInfo, bool* p_open, ImGuiWindowFlags extraFlags)
 {
     ImGuiWindowFlags flags = (ImGuiWindowFlags_NoTitleBar
                             | ImGuiWindowFlags_NoResize
@@ -591,7 +591,7 @@ bool ImguiGLFWWindow::ImGuiBegin (const FrameInfo& frameInfo, ImGuiWindowFlags e
 
     ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_Always);
     ImGui::SetNextWindowSize(ImVec2(frameInfo.windowContentWidth, frameInfo.windowContentHeight), ImGuiCond_Always);
-    return ImGui::Begin(impl->title.c_str(), nullptr, flags);
+    return ImGui::Begin(impl->title.c_str(), p_open, flags);
 }
 
 } // zv

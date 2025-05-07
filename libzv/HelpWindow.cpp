@@ -9,6 +9,7 @@
 #include <libzv/OpenGL.h>
 #include <libzv/ImguiUtils.h>
 #include <libzv/ImguiGLFWWindow.h>
+#include <libzv/ImguiCanvasContainer.h>
 #include <libzv/Prefs.h>
 #include <libzv/PlatformSpecific.h>
 
@@ -37,8 +38,16 @@ namespace zv
 
 struct HelpWindow::Impl
 {
-    // Debatable, but decided to use composition for more flexibility and explicit code.
-    ImguiGLFWWindow imguiGlfwWindow;
+    Impl()
+    {
+#if ZV_IMGUI_WINDOW_CONTAINER_TYPE_CANVAS
+        windowContainer = std::make_unique<ImguiCanvasContainer>();
+#else
+        windowContainer = std::make_unique<ImguiGLFWWindow>();
+#endif
+    }
+
+    std::unique_ptr<ImguiWindowContainer> windowContainer;
 };
 
 HelpWindow::HelpWindow()
@@ -49,7 +58,7 @@ HelpWindow::~HelpWindow() = default;
 
 bool HelpWindow::isInitialized () const
 {
-    return impl->imguiGlfwWindow.isInitialized();
+    return impl->windowContainer->isInitialized();
 }
 
 bool HelpWindow::initialize (GLFWwindow* parentWindow)
@@ -71,7 +80,16 @@ bool HelpWindow::initialize (GLFWwindow* parentWindow)
     geometry.origin.x = (monitorSize.x - geometry.size.x)/2;
     geometry.origin.y = (monitorSize.y - geometry.size.y)/2;
 
-    bool ok = impl->imguiGlfwWindow.initialize (parentWindow, "zv Help", geometry);
+    bool ok = false;
+#if ZV_IMGUI_WINDOW_CONTAINER_TYPE_CANVAS
+    ImguiCanvasContainer* imguiCanvasContainer = dynamic_cast<ImguiCanvasContainer*>(impl->windowContainer.get());
+    zv_assert (imguiCanvasContainer, "ImguiCanvasContainer is expected.");
+    ok = imguiCanvasContainer->initialize ("zv Help", geometry);
+#else
+    ImguiGLFWWindow* imguiGlfwWindow = dynamic_cast<ImguiGLFWWindow*>(impl->windowContainer.get());
+    zv_assert (imguiGlfwWindow, "ImguiGLFWWindow is expected.");
+    ok = imguiGlfwWindow->initialize (parentWindow, "zv Help", geometry, false /* viewports */);
+#endif
     if (!ok)
     {
         return false;
@@ -81,56 +99,47 @@ bool HelpWindow::initialize (GLFWwindow* parentWindow)
     // setWindowFlagsToAlwaysShowOnActiveDesktop(impl->imguiGlfwWindow.glfwWindow());
 
     // No resize for the help.
-    impl->imguiGlfwWindow.setResizable(false);
+    impl->windowContainer->setResizable(false);
     
     return true;
 }
 
 void HelpWindow::shutdown () 
 { 
-    impl->imguiGlfwWindow.shutdown (); 
+    impl->windowContainer->shutdown (); 
 }
 
 void HelpWindow::setEnabled (bool enabled)
 {
-    impl->imguiGlfwWindow.setEnabled (enabled);
+    impl->windowContainer->setEnabled (enabled);
 }
 
 bool HelpWindow::isEnabled () const
 {
-    return impl->imguiGlfwWindow.isEnabled ();
+    return impl->windowContainer->isEnabled ();
 }
 
 void HelpWindow::renderFrame ()
 {
-    const auto frameInfo = impl->imguiGlfwWindow.beginFrame ();    
+    const auto frameInfo = impl->windowContainer->beginFrame ();    
     const auto& io = ImGui::GetIO();
     const float monoFontSize = ImGui_MonoFontSize(io);
 
-    if (ImGui::IsKeyPressed(GLFW_KEY_Q) || ImGui::IsKeyPressed(GLFW_KEY_ESCAPE) || impl->imguiGlfwWindow.closeRequested())
+    if (ImGui::IsKeyPressed(GLFW_KEY_Q) || ImGui::IsKeyPressed(GLFW_KEY_ESCAPE) || impl->windowContainer->closeRequested())
     {
         setEnabled(false);
     }
 
-    ImGuiWindowFlags flags = (ImGuiWindowFlags_NoTitleBar
-                              | ImGuiWindowFlags_NoResize
-                              | ImGuiWindowFlags_NoMove
-                              | ImGuiWindowFlags_NoScrollbar
-                              | ImGuiWindowFlags_NoScrollWithMouse
-                              | ImGuiWindowFlags_NoCollapse
-                              | ImGuiWindowFlags_NoBackground
-                              | ImGuiWindowFlags_NoSavedSettings
-                              | ImGuiWindowFlags_HorizontalScrollbar
-                              // | ImGuiWindowFlags_NoDocking
-                              | ImGuiWindowFlags_NoNav);
-    
+    ImGuiWindowFlags extraFlags = ImGuiWindowFlags_NoResize;
 
-    // ImGui::ShowDemoWindow();
-
-    ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2(frameInfo.windowContentWidth, frameInfo.windowContentHeight), ImGuiCond_Always);
-    if (ImGui::Begin("zv Help Context", nullptr, flags))
+    bool isOpen = true;
+    if (impl->windowContainer->ImGuiBegin(frameInfo, &isOpen, extraFlags))
     {
+        if (!isOpen)
+        {
+            setEnabled(false);
+        }
+
         static std::string appVersion;
         static std::string buildNumber;
         if (appVersion.empty())
@@ -154,7 +163,7 @@ void HelpWindow::renderFrame ()
     }
     ImGui::End();
     
-    impl->imguiGlfwWindow.endFrame ();
+    impl->windowContainer->endFrame ();
 }
 
 } // zv

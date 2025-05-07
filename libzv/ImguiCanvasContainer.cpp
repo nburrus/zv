@@ -227,7 +227,7 @@ void ImguiCanvasContainer::endFrame ()
 {
 }
 
-bool ImguiCanvasContainer::ImGuiBegin (const FrameInfo& frameInfo, ImGuiWindowFlags extraFlags)
+bool ImguiCanvasContainer::ImGuiBegin (const FrameInfo& frameInfo, bool* p_open, ImGuiWindowFlags extraFlags)
 {
     ImGuiWindowFlags flags = (
                             ImGuiWindowFlags_NoScrollbar
@@ -256,7 +256,7 @@ bool ImguiCanvasContainer::ImGuiBegin (const FrameInfo& frameInfo, ImGuiWindowFl
         impl->nextWindowSize = zv::Point();
     }
      
-    bool ok = ImGui::Begin(impl->title.c_str(), nullptr, flags);
+    bool ok = ImGui::Begin(impl->title.c_str(), p_open, flags);
     
     impl->windowSize = toPoint(ImGui::GetWindowSize());
     impl->windowPos = toPoint(ImGui::GetWindowPos());
@@ -318,6 +318,8 @@ void ImguiCanvas::initialize()
 
     ImGuiIO& io = ImGui::GetIO();
     impl->contentDpiScale = ImGui_primaryMonitorContentDpiScale().x;
+
+    io.ConfigWindowsMoveFromTitleBarOnly = true;
 
     // Load the fonts with the proper dpi scale
     {

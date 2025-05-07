@@ -84,7 +84,7 @@ public:
     FrameInfo beginFrame () override;
     void endFrame () override;
 
-    bool ImGuiBegin (const FrameInfo& frameInfo, ImGuiWindowFlags extraFlags) override;
+    bool ImGuiBegin (const FrameInfo& frameInfo, bool* p_open, ImGuiWindowFlags extraFlags) override;
 
     void enableContexts () override;
     void disableContexts () override;

@@ -79,7 +79,7 @@ public:
     virtual FrameInfo beginFrame () = 0;
     virtual void endFrame () = 0;
 
-    virtual bool ImGuiBegin (const FrameInfo& frameInfo, ImGuiWindowFlags extraFlags) = 0;
+    virtual bool ImGuiBegin (const FrameInfo& frameInfo, bool* p_open, ImGuiWindowFlags extraFlags) = 0;
 
     virtual void enableContexts () = 0;
     virtual void disableContexts () = 0;

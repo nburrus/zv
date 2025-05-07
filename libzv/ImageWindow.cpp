@@ -1062,7 +1062,7 @@ void ImageWindow::renderFrame ()
 
     ImGuiWindowFlags extraFlags = 0;
     
-    if (impl->windowContainer->ImGuiBegin(frameInfo, extraFlags))
+    if (impl->windowContainer->ImGuiBegin(frameInfo, nullptr, extraFlags))
     {
         const ImVec2 globalImageWidgetTopLeft = ImGui::GetCursorScreenPos();
         const auto globalImageWidgetSize = imSize(impl->imageWidgetRect.current);

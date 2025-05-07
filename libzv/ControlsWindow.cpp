@@ -828,8 +828,14 @@ void ControlsWindow::renderFrame ()
     
     // flags = 0;
 
-    if (impl->windowContainer->ImGuiBegin(frameInfo, extraFlags))
+    bool isOpen = true;
+    if (impl->windowContainer->ImGuiBegin(frameInfo, &isOpen, extraFlags))
     {
+        if (!isOpen)
+        {
+            setEnabled(false);
+        }
+
         impl->renderMenu ();
 
         impl->maybeRenderOpenImage ();
