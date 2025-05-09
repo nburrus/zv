@@ -21,7 +21,7 @@ include_directories(${PROJECT_BINARY_DIR})
 
 # Emscripten settings. We want GLFW3
 if (EMSCRIPTEN)
-  add_compile_options(-sUSE_GLFW=3 -sMIN_WEBGL_VERSION=2 -sFULL_ES3=1)
+  add_compile_options(-sUSE_GLFW=3 -sMIN_WEBGL_VERSION=2 -sFULL_ES3=1 )
   add_link_options(-sUSE_GLFW=3 -sMIN_WEBGL_VERSION=2 -sFULL_ES3=1)
 endif()
 

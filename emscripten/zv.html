@@ -41,10 +41,17 @@
         totalDependencies: 0,
         monitorRunDependencies: function(left) {}
       };
-      window.addEventListener('resize', js_resizeCanvas, false);
-      function js_resizeCanvas() {
-            document.getElementById('canvas').width = window.innerWidth;
-            document.getElementById('canvas').height = window.innerHeight;
+      window.addEventListener('resize', js_resizeCanvasToFitWindow, false);
+      function js_resizeCanvasToFitWindow() {
+            console.log("js_resizeCanvasToFitWindow");
+            var canvas = document.getElementById('canvas');
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            // NOT calling the C++ function to notify about the resize, we monitor
+            // it by directly checking the canvas width/height on each frame.
+            // if (Module.calledRun) { // Ensure the C++ runtime is ready
+            //     Module._zv_resizeCanvas(canvas.width, canvas.height);
+            // }
       }
 
     </script>

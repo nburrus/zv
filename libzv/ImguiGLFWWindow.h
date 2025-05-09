@@ -53,6 +53,8 @@ public:
     using WindowSizeChangedCb = std::function<void(int,int,bool /* from user interaction */)>;
     void setWindowSizeChangedCallback (WindowSizeChangedCb&& callback) override;
 
+    zv::Rect workingArea () const override;
+    zv::Point containerSize () const override;
     zv::Padding decorationSize () const override;
 
 public:

@@ -122,6 +122,9 @@
 		"cmake.configureSettings": {
 			"CMAKE_TOOLCHAIN_FILE": "/opt/homebrew/Cellar/emscripten/4.0.7/libexec/cmake/Modules/Platform/Emscripten.cmake",
 			"CMAKE_CROSSCOMPILING_EMULATOR": "/opt/homebrew/opt/node/bin/node"
-		}
+		},
+		"clangd.arguments": [
+        	"--compile-commands-dir=${workspaceFolder}/build-emscripten"
+    	],
 	}
 }

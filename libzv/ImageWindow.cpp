@@ -371,9 +371,8 @@ bool ImageWindow::Impl::runAfterCheckingPendingChanges (std::function<void(void)
 
 void ImageWindow::Impl::adjustForNewSelection ()
 {
-    GLFWmonitor* monitor = glfwGetPrimaryMonitor();
-    const GLFWvidmode* mode = glfwGetVideoMode(monitor);
-    this->monitorSize = ImVec2(mode->width, mode->height);
+    this->monitorSize = imVec2(windowContainer->containerSize());
+    zv_dbg("[ImageWindow] monitorSize %f %f", this->monitorSize.x, this->monitorSize.y);
 
     ImageList& imageList = this->viewer->imageList();
     const auto& selectedRange = imageList.selectedRange();
@@ -571,9 +570,7 @@ bool ImageWindow::initialize (GLFWwindow* parentWindow, Viewer* viewer)
 {
     impl->viewer = viewer;
 
-    GLFWmonitor* monitor = glfwGetPrimaryMonitor();
-    const GLFWvidmode* mode = glfwGetVideoMode(monitor);
-    impl->monitorSize = ImVec2(mode->width, mode->height);
+    impl->monitorSize = imVec2(impl->windowContainer->containerSize());
     zv_dbg ("Primary monitor size = %f x %f", impl->monitorSize.x, impl->monitorSize.y);    
 
     // Create window with graphics context.
@@ -598,9 +595,8 @@ bool ImageWindow::initialize (GLFWwindow* parentWindow, Viewer* viewer)
 #endif
 
     {
-        int xpos, ypos, width, height;
-        glfwGetMonitorWorkarea(monitor, &xpos, &ypos, &width, &height);
-        impl->monitorWorkArea = Rect::from_x_y_w_h (xpos, ypos, width, height);
+        impl->monitorWorkArea = impl->windowContainer->workingArea();
+        zv_dbg ("Monitor work area = %f %f %f %f", impl->monitorWorkArea.origin.x, impl->monitorWorkArea.origin.y, impl->monitorWorkArea.size.x, impl->monitorWorkArea.size.y);
         
         Padding decSize = impl->windowContainer->decorationSize();
         impl->monitorAreaForImageWidget = impl->monitorWorkArea;

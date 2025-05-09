@@ -164,6 +164,25 @@ GLFWwindow* ImguiGLFWWindow::native_glfwWindow ()
     return impl->window;
 }
 
+zv::Rect ImguiGLFWWindow::workingArea () const
+{
+    GLFWmonitor* monitor = glfwGetPrimaryMonitor();
+    if (!monitor)
+        return {};
+    int xpos, ypos, width, height;
+    glfwGetMonitorWorkarea(monitor, &xpos, &ypos, &width, &height);
+    return zv::Rect::from_x_y_w_h (xpos, ypos, width, height);
+}
+
+zv::Point ImguiGLFWWindow::containerSize () const
+{
+    GLFWmonitor* monitor = glfwGetPrimaryMonitor();
+    if (!monitor)
+        return {};
+    const GLFWvidmode* mode = glfwGetVideoMode(monitor);
+    return zv::Point(mode->width, mode->height);
+}
+
 void ImguiGLFWWindow::focus ()
 {
     glfwFocusWindow(impl->window);

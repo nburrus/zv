@@ -44,6 +44,45 @@
 namespace zv
 {
 
+ImguiCanvas* g_currentCanvas = nullptr;
+
+// Global instance for emscripten callbacks
+#if PLATFORM_EMSCRIPTEN
+int g_canvasWidth = 0;
+int g_canvasHeight = 0;
+
+// Function used by c++ to get the size of the html canvas
+EM_JS(int, em_canvasGetWidth, (), {
+    return Module.canvas.width;
+});
+
+// Function used by c++ to get the size of the html canvas
+EM_JS(int, em_canvasGetHeight, (), {
+    return Module.canvas.height;
+});
+
+// Function called by javascript
+EM_JS(void, em_resizeCanvas, (), {
+    js_resizeCanvasToFitWindow();
+});
+
+#endif
+
+#if PLATFORM_EMSCRIPTEN
+extern "C" {
+    // Function to be called from JavaScript
+    EMSCRIPTEN_KEEPALIVE void zv_resizeCanvas(int width, int height) {
+        // Need to access a global ImguiCanvas instance
+        // You'll need to implement a way to store and retrieve the current ImguiCanvas instance
+        if (g_currentCanvas)
+        {
+            g_currentCanvas->handleResize(width, height);
+        }
+    }
+}
+#endif
+
+
 struct ImguiCanvasContainer::Impl
 {
     bool enabled = false;
@@ -131,11 +170,13 @@ void ImguiCanvasContainer::setWindowTitle (const std::string& title)
 
 void ImguiCanvasContainer::setWindowPos (int x, int y)
 {
+    zv_dbg("[CanvasContainer] setWindowPos %d %d", x, y);
     impl->nextWindowPos = zv::Point(x, y);
 }
 
 void ImguiCanvasContainer::setWindowSize (int width, int height)
 {
+    zv_dbg("[CanvasContainer] setWindowSize %d %d", width, height);
     impl->nextWindowSize = zv::Point(width, height);
 }
 
@@ -163,7 +204,7 @@ bool ImguiCanvasContainer::isInitialized () const
 bool ImguiCanvasContainer::initialize (const std::string& title,
                                        const zv::Rect& geometry)
 {
-    zv_dbg ("Initializing window %s with geometry %f %f", title.c_str(), geometry.size.x, geometry.size.y);
+    zv_dbg ("Initializing window %s with geometry %f x %f (%f, %f)", title.c_str(), geometry.size.x, geometry.size.y, geometry.origin.x, geometry.origin.y);
 
     impl->title = title;
     impl->contentDpiScale = ImGui_primaryMonitorContentDpiScale().x;
@@ -191,6 +232,23 @@ zv::Padding ImguiCanvasContainer::decorationSize () const
 
 void ImguiCanvasContainer::setSwapInterval (int interval)
 {
+}
+
+zv::Rect ImguiCanvasContainer::workingArea () const
+{
+    Rect r;
+    r.origin = zv::Point(0, 0);
+    r.size = containerSize();
+    return r;
+}
+
+zv::Point ImguiCanvasContainer::containerSize () const
+{
+#if PLATFORM_EMSCRIPTEN
+    return zv::Point(g_canvasWidth, g_canvasHeight);
+#else
+    return g_currentCanvas->canvasSize();
+#endif
 }
 
 void ImguiCanvasContainer::focus ()
@@ -291,8 +349,25 @@ ImguiCanvas::~ImguiCanvas()
 
 void ImguiCanvas::initialize()
 {
+    zv_assert(g_currentCanvas == nullptr, "g_currentCanvas is already set");
+    g_currentCanvas = this;
+
+#if PLATFORM_EMSCRIPTEN
+    em_resizeCanvas();
+
+    // Set the global canvas instance for emscripten callbacks
+    g_canvasWidth = em_canvasGetWidth();
+    g_canvasHeight = em_canvasGetWidth();
+#endif
+
     // Create window with graphics context.
-    impl->window = glfwCreateWindow(1280, 1024, "ZV Viewer", nullptr, nullptr);    
+#ifndef PLATFORM_EMSCRIPTEN
+    impl->window = glfwCreateWindow(1280, 1024, "ZV Viewer", nullptr, nullptr);
+#else
+    // For Emscripten, glfwCreateWindow uses the canvas element by default.
+    // The size is controlled by the canvas element's dimensions.
+    impl->window = glfwCreateWindow(g_canvasWidth, g_canvasHeight, "ZV Viewer", nullptr, nullptr); // Size doesn't matter for Emscripten
+#endif
 
     glfwMakeContextCurrent(impl->window);
 
@@ -365,7 +440,9 @@ void ImguiCanvas::initialize()
         }
     }
 
+#if !PLATFORM_EMSCRIPTEN
     glfwSwapInterval(1); // Enable vsync
+#endif
 
     // Setup Platform/Renderer bindings
     ImGui_ImplGlfw_InitForOpenGL(impl->window,
@@ -386,8 +463,46 @@ ImGuiContext* ImguiCanvas::imGuiContext()
     return impl->imGuiContext;
 }
 
+zv::Point ImguiCanvas::canvasSize () const
+{
+    return zv::Point(impl->width, impl->height);
+}
+
+// Non-static method implementation
+void ImguiCanvas::handleResize(int width, int height)
+{
+    zv_dbg("handleResize %d %d", width, height);
+
+    ImGuiIO& io = ImGui::GetIO();
+    io.DisplaySize = ImVec2((float)width, (float)height);
+    // Assuming a 1:1 mapping for framebuffer scale for simplicity,
+    // but this might need adjustment based on DPI/retina scaling.
+    io.DisplayFramebufferScale = ImVec2(1.0f, 1.0f);
+
+    // Update the window size using GLFW
+    if (impl && impl->window)
+    {
+        glfwSetWindowSize(impl->window, width, height);
+    }
+    
+    // Also update our internal size tracking
+    onCanvasSizeChanged(width, height);
+}
+
 void ImguiCanvas::beginFrame()
 {
+#if PLATFORM_EMSCRIPTEN
+    int width = em_canvasGetWidth();
+    int height = em_canvasGetHeight();
+
+    if (width != g_canvasWidth || height != g_canvasHeight)
+    {
+        g_canvasWidth = width;
+        g_canvasHeight = height;
+        handleResize(width, height);
+    }
+#endif
+
     ImGui::SetCurrentContext(impl->imGuiContext);
     glfwMakeContextCurrent(impl->window);
     glfwPollEvents();

@@ -40,6 +40,10 @@ public:
     void beginFrame ();
     void endFrame ();
 
+    // Method to handle canvas resize from JavaScript
+    void handleResize  (int width, int height);
+    zv::Point canvasSize () const;
+
 private:
     struct Impl;
     std::unique_ptr<Impl> impl;
@@ -71,6 +75,8 @@ public:
     using WindowSizeChangedCb = std::function<void(int,int,bool /* from user interaction */)>;
     void setWindowSizeChangedCallback (WindowSizeChangedCb&& callback) override;
 
+    zv::Rect workingArea () const override;
+    zv::Point containerSize () const override;
     zv::Padding decorationSize () const override;
 
 public:
