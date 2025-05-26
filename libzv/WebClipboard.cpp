@@ -1,5 +1,8 @@
 #include "WebClipboard.h"
 
+#include <libzv/Platform.h>
+#include <libzv/Utils.h>
+
 #if PLATFORM_EMSCRIPTEN
 #include <emscripten.h>
 #include <emscripten/val.h>
@@ -43,26 +46,64 @@ bool WebClipboard::copyImageToClipboard(const void* imageData, int width, int he
 
 bool WebClipboard::pasteFromClipboard(void** imageData, int* width, int* height) {
 #if PLATFORM_EMSCRIPTEN
-    emscripten::val result = emscripten::val::global("js_pasteFromClipboard").call<emscripten::val>("call", emscripten::val::null());
-    if (result.isNull()) {
+    try {
+        emscripten::val result = emscripten::val::global("js_pasteFromClipboard").call<emscripten::val>("call", emscripten::val::null());
+        if (result.isNull()) {
+            zv_dbg("No image data in clipboard or paste operation failed");
+            return false;
+        }
+
+        zv_dbg("Got a result!");
+        
+        // Get the image data from the canvas
+        emscripten::val ctx = result.call<emscripten::val>("getContext", std::string("2d"));
+        if (ctx.isNull()) {
+            zv_dbg("Failed to get context");
+            return false;
+        }
+
+        zv_dbg("Got a context!");
+
+        emscripten::val imageDataVal = ctx.call<emscripten::val>("getImageData", 0, 0, result["width"], result["height"]);
+
+        zv_dbg("Got an image data value!");
+        
+        // Copy the data to the output buffer
+        *width = result["width"].as<int>();
+        *height = result["height"].as<int>();
+        size_t dataSize = *width * *height * 4;
+
+        zv_dbg("width: %d, height: %d", *width, *height);
+
+        *imageData = malloc(dataSize);
+        if (!*imageData) {
+            zv_dbg("Failed to allocate memory for pasted image");
+            return false;
+        }        
+        
+        zv_dbg("alloc");
+
+        emscripten::val dataView = emscripten::val::global("Uint8Array").new_(imageDataVal["data"]);
+
+        zv_dbg("dataView");
+
+        dataView.call<void>("forEach", emscripten::val::global("Function").new_(
+            std::string("v"),
+            std::string("i"),
+            std::string("HEAP8[this + i] = v;")
+        ).call<emscripten::val>("bind", emscripten::val(reinterpret_cast<intptr_t>(*imageData))));
+
+        zv_dbg("forEach");
+        
+        return true;
+    } catch (const std::exception& e) {
+        zv_dbg("Exception during clipboard paste: %s", e.what());
+        if (*imageData) {
+            free(*imageData);
+            *imageData = nullptr;
+        }
         return false;
     }
-    
-    // Get the image data from the canvas
-    emscripten::val ctx = result.call<emscripten::val>("getContext", std::string("2d"));
-    emscripten::val imageDataVal = ctx.call<emscripten::val>("getImageData", 0, 0, result["width"], result["height"]);
-    
-    // Copy the data to the output buffer
-    *width = result["width"].as<int>();
-    *height = result["height"].as<int>();
-    size_t dataSize = *width * *height * 4;
-    *imageData = malloc(dataSize);
-    emscripten::val dataView = emscripten::val::global("Uint8Array").new_(imageDataVal["data"]);
-    dataView.call<void>("forEach", emscripten::val::global("Function").new_(
-        std::string("(v, i) => { HEAP8[this + i] = v; }"),
-        emscripten::val(reinterpret_cast<intptr_t>(*imageData))
-    ));
-    return true;
 #else
     return false;
 #endif

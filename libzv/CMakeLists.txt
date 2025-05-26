@@ -108,6 +108,8 @@ add_library(zv
     Utils.h
     Viewer.cpp
     Viewer.h
+    WebClipboard.cpp
+    WebClipboard.h
 
     # Binary resource.
     # zvIcon_xxd.cpp
@@ -160,7 +162,7 @@ elseif (UNIX AND NOT EMSCRIPTEN)
     )
 elseif (EMSCRIPTEN)
     target_link_libraries(zv
-        glfw clip
+        glfw clip embind
     )    
 endif()
 
