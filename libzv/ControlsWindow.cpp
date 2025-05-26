@@ -823,7 +823,6 @@ void ControlsWindow::renderFrame ()
     
     ImGuiWindowFlags extraFlags = (ImGuiWindowFlags_NoScrollWithMouse
                                    | ImGuiWindowFlags_NoCollapse
-                                   | ImGuiWindowFlags_NoBackground
                                    | ImGuiWindowFlags_MenuBar);
     
     // flags = 0;

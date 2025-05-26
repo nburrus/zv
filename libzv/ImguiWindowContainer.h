@@ -16,7 +16,7 @@
 #include <string>
 
 // Temporarily use canvas everywhere.
-#if PLATFORM_EMSCRIPTEN
+#if true || PLATFORM_EMSCRIPTEN
 #define ZV_IMGUI_WINDOW_CONTAINER_TYPE_CANVAS 1
 #else
 #define ZV_IMGUI_WINDOW_CONTAINER_TYPE_CANVAS 0

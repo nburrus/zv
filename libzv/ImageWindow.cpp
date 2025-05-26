@@ -1172,11 +1172,18 @@ void ImageWindow::renderFrame ()
                     continue;
                 
                 ImVec2 deltaFromTopLeft = impl->cursorOverlayInfo.mousePosInWindow - impl->cursorOverlayInfo.imageWidgetTopLeft;
+
+                zv_dbg("deltaFromTopLeft: %f %f", deltaFromTopLeft.x, deltaFromTopLeft.y);
+                zv_dbg("[%d] topleft=%f %f", idx, widgetGeometries[idx].topLeft().x, widgetGeometries[idx].topLeft().y);
+
                 // FIXME: replace this with an image of a cross-hair texture. Filled black with a white outline.
                 ImVec2 circleTopLeftInScreen = impl->windowContainer->imguiWindowToDrawList(frameInfo, imVec2(widgetGeometries[idx].topLeft()) + deltaFromTopLeft);
+
+                zv_dbg("[%d] circleTopLeftInScreen: %f %f", idx, circleTopLeftInScreen.x, circleTopLeftInScreen.y);
+
                 ImGui::GetForegroundDrawList()->AddCircle(circleTopLeftInScreen, 4.0, IM_COL32(255,255,255,180), 0, 2.0f);
-                ImGui::GetForegroundDrawList()->AddCircle(circleTopLeftInScreen + deltaFromTopLeft, 5.0, IM_COL32(0,0,0,180), 0, 1.f);
-                ImGui::GetForegroundDrawList()->AddCircle(circleTopLeftInScreen + deltaFromTopLeft, 3.0, IM_COL32(0,0,0,180), 0, 1.f);
+                ImGui::GetForegroundDrawList()->AddCircle(circleTopLeftInScreen, 5.0, IM_COL32(0,0,0,180), 0, 1.f);
+                ImGui::GetForegroundDrawList()->AddCircle(circleTopLeftInScreen, 3.0, IM_COL32(0,0,0,180), 0, 1.f);
             }
 
             // const bool showStatusBar = (impl->mutableState.inputState.shiftIsPressed || controlsWindowState.shiftIsPressed);
