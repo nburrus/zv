@@ -52,11 +52,11 @@ private:
 /**
  * Virtual container that will just create an ImGui window with its title bar, etc. 
  */
-class ImguiCanvasContainer : public ImguiWindowContainer
+class ImguiCanvasWindow : public ImguiWindowContainer
 {
 public:
-    ImguiCanvasContainer();
-    ~ImguiCanvasContainer();
+    ImguiCanvasWindow();
+    ~ImguiCanvasWindow();
     
 public:
     bool initialize (const std::string& title,
@@ -67,30 +67,35 @@ public:
     void setEnabled (bool enabled) override;
     bool isEnabled () const override;
     
-    void setWindowTitle (const std::string& title) override;
-    void setWindowPos (int x, int y) override;
-    void setWindowSize (int width, int height) override;    
+    void setContainerTitle (const std::string& title) override;
+    void setContainerPos (int x, int y) override;
+    void setContainerSize (int width, int height) override;    
     
-    void onWindowSizeChanged (int width, int height) override;
+    void onContainerSizeChanged (int width, int height) override;
     using WindowSizeChangedCb = std::function<void(int,int,bool /* from user interaction */)>;
-    void setWindowSizeChangedCallback (WindowSizeChangedCb&& callback) override;
+    void setContainerSizeChangedCallback (WindowSizeChangedCb&& callback) override;
 
-    zv::Rect workingArea () const override;
-    zv::Point containerSize () const override;
-    zv::Padding decorationSize () const override;
+    zv::Rect canvasArea () const override;
+    zv::Point canvasSize () const override;
+    zv::Padding canvasDecorationSize () const override;
+
+    ImVec2 imguiWindowToDrawList (const FrameInfo& frameInfo, const ImVec2& p) const override;
+    ImVec2 drawListToImguiWindow (const FrameInfo& frameInfo, const ImVec2& p) const override;
+    ImVec2 viewportToImguiWindow (const FrameInfo& frameInfo, const ImVec2& p) const override;
 
 public:
     bool closeRequested () const override;
     void cancelCloseRequest () override;
     void triggerCloseRequest () override;
 
-    zv::Rect geometry() const override;
+    zv::Rect containerGeometry() const override;
 
 public:
     FrameInfo beginFrame () override;
     void endFrame () override;
 
     bool ImGuiBegin (const FrameInfo& frameInfo, bool* p_open, ImGuiWindowFlags extraFlags) override;
+    void ImGuiEnd () override;
 
     void enableContexts () override;
     void disableContexts () override;

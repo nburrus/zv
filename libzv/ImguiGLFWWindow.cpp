@@ -53,7 +53,7 @@ struct ImguiGLFWWindow::Impl
     GLFWwindow* window = nullptr;
     bool enabled = false;
 
-    ImguiGLFWWindow::FrameInfo currentFrameInfo;
+    FrameInfo currentFrameInfo;
     
     zv::Point posToSetForNextShow;
     
@@ -64,7 +64,7 @@ struct ImguiGLFWWindow::Impl
     ImguiGLFWWindow::WindowSizeChangedCb windowSizeChangedCb;
     int lastSizeRequest;
 
-    zv::Padding decorationSize;
+    zv::Padding viewportDecorationSize;
 };
 
 class ImGuiScopedContext
@@ -145,7 +145,7 @@ void zv_glfw_MonitorCallback(GLFWmonitor* m, int event)
 void zv_glfw_WindowSizeCallback(GLFWwindow* w, int width, int height) 
 { 
     ImGuiScopedContext ctx (w);
-    ctx.imguiGLFWWindow()->onWindowSizeChanged (width, height);
+    ctx.imguiGLFWWindow()->onContainerSizeChanged (width, height);
 }
 
 } // anonymous
@@ -164,7 +164,7 @@ GLFWwindow* ImguiGLFWWindow::native_glfwWindow ()
     return impl->window;
 }
 
-zv::Rect ImguiGLFWWindow::workingArea () const
+zv::Rect ImguiGLFWWindow::canvasArea () const
 {
     GLFWmonitor* monitor = glfwGetPrimaryMonitor();
     if (!monitor)
@@ -174,13 +174,18 @@ zv::Rect ImguiGLFWWindow::workingArea () const
     return zv::Rect::from_x_y_w_h (xpos, ypos, width, height);
 }
 
-zv::Point ImguiGLFWWindow::containerSize () const
+zv::Point ImguiGLFWWindow::canvasSize () const
 {
     GLFWmonitor* monitor = glfwGetPrimaryMonitor();
     if (!monitor)
         return {};
     const GLFWvidmode* mode = glfwGetVideoMode(monitor);
     return zv::Point(mode->width, mode->height);
+}
+
+zv::Padding ImguiGLFWWindow::canvasDecorationSize () const
+{
+    return impl->viewportDecorationSize;
 }
 
 void ImguiGLFWWindow::focus ()
@@ -251,7 +256,7 @@ void ImguiGLFWWindow::triggerCloseRequest ()
     glfwSetWindowShouldClose (impl->window, true);
 }
 
-void ImguiGLFWWindow::onWindowSizeChanged (int width, int height)
+void ImguiGLFWWindow::onContainerSizeChanged (int width, int height)
 {
     if (!impl->windowSizeChangedCb)
         return;
@@ -263,12 +268,12 @@ void ImguiGLFWWindow::onWindowSizeChanged (int width, int height)
     impl->windowSizeChangedCb (width, height, fromUser);
 }
 
-void ImguiGLFWWindow::setWindowSizeChangedCallback (WindowSizeChangedCb&& callback)
+void ImguiGLFWWindow::setContainerSizeChangedCallback (WindowSizeChangedCb&& callback)
 {
     impl->windowSizeChangedCb = callback;
 }
 
-void ImguiGLFWWindow::setWindowTitle (const std::string& title)
+void ImguiGLFWWindow::setContainerTitle (const std::string& title)
 {
     if (impl->title == title)
         return;
@@ -277,13 +282,13 @@ void ImguiGLFWWindow::setWindowTitle (const std::string& title)
     glfwSetWindowTitle(impl->window, title.c_str());
 }
 
-void ImguiGLFWWindow::setWindowPos (int x, int y)
+void ImguiGLFWWindow::setContainerPos (int x, int y)
 {
     glfwRestoreWindow (impl->window);
     glfwSetWindowPos (impl->window, x, y);
 }
 
-void ImguiGLFWWindow::setWindowSize (int width, int height)
+void ImguiGLFWWindow::setContainerSize (int width, int height)
 {
     impl->lastSizeRequest = ImGui::GetFrameCount();
     // Some window managers might maximize automatically
@@ -291,7 +296,7 @@ void ImguiGLFWWindow::setWindowSize (int width, int height)
     glfwSetWindowSize (impl->window, width, height);
 }
 
-zv::Rect ImguiGLFWWindow::geometry() const
+zv::Rect ImguiGLFWWindow::containerGeometry() const
 {
     zv::Rect geom;
 
@@ -373,10 +378,10 @@ bool ImguiGLFWWindow::initialize (GLFWwindow* parentWindow,
     glfwGetWindowFrameSize (impl->window, &frameLeft, &frameTop, &frameRight, &frameBottom);
 #endif
     // No decorations reported on X11.
-    impl->decorationSize.left = std::max(frameLeft, 8);
-    impl->decorationSize.right = std::max(frameRight, 8);
-    impl->decorationSize.top = std::max(frameTop, 32);
-    impl->decorationSize.bottom = std::max(frameBottom, 8);
+    impl->viewportDecorationSize.left = std::max(frameLeft, 8);
+    impl->viewportDecorationSize.right = std::max(frameRight, 8);
+    impl->viewportDecorationSize.top = std::max(frameTop, 32);
+    impl->viewportDecorationSize.bottom = std::max(frameBottom, 8);
    
     // Won't do anything on macOS, we don't even load the file.
     GLFWimage glfwImage;
@@ -533,11 +538,6 @@ bool ImguiGLFWWindow::initialize (GLFWwindow* parentWindow,
     return true;
 }
 
-zv::Padding ImguiGLFWWindow::decorationSize () const
-{
-    return impl->decorationSize;
-}
-
 void ImguiGLFWWindow::setSwapInterval (int interval)
 {
 #if PLATFORM_EMSCRIPTEN
@@ -557,12 +557,12 @@ void ImguiGLFWWindow::disableContexts ()
     ImGui::SetCurrentContext(nullptr);
 }
 
-ImguiGLFWWindow::FrameInfo ImguiGLFWWindow::beginFrame ()
+FrameInfo ImguiGLFWWindow::beginFrame ()
 {
     enableContexts ();
 
     glfwGetFramebufferSize(impl->window, &(impl->currentFrameInfo.frameBufferWidth), &(impl->currentFrameInfo.frameBufferHeight));
-    glfwGetWindowSize(impl->window, &(impl->currentFrameInfo.windowContentWidth), &(impl->currentFrameInfo.windowContentHeight));
+    glfwGetWindowSize(impl->window, &(impl->currentFrameInfo.containerWidth), &(impl->currentFrameInfo.containerHeight));
     impl->currentFrameInfo.contentDpiScale = impl->contentDpiScale;
 
     glfwPollEvents();
@@ -609,8 +609,28 @@ bool ImguiGLFWWindow::ImGuiBegin (const FrameInfo& frameInfo, bool* p_open, ImGu
     flags |= extraFlags;
 
     ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2(frameInfo.windowContentWidth, frameInfo.windowContentHeight), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(frameInfo.containerWidth, frameInfo.containerHeight), ImGuiCond_Always);
     return ImGui::Begin(impl->title.c_str(), p_open, flags);
+}
+
+void ImguiGLFWWindow::ImGuiEnd ()
+{
+    ImGui::End();
+}
+
+ImVec2 ImguiGLFWWindow::imguiWindowToDrawList (const FrameInfo& frameInfo, const ImVec2& p) const
+{
+    return p;
+}
+
+ImVec2 ImguiGLFWWindow::drawListToImguiWindow (const FrameInfo& frameInfo, const ImVec2& p) const
+{
+    return p;
+}
+
+ImVec2 ImguiGLFWWindow::viewportToImguiWindow (const FrameInfo& frameInfo, const ImVec2& p) const
+{
+    return p;
 }
 
 } // zv

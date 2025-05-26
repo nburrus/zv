@@ -44,7 +44,7 @@ struct CursorOverlayInfo
         // This 0.5 offset is important since the mouse coordinate is an integer.
         // So when we are in the center of a pixel we'll return 0,0 instead of
         // 0.5,0.5.
-        ImVec2 widgetPos = (mousePos + ImVec2(0.5f,0.5f)) - imageWidgetTopLeft;
+        ImVec2 widgetPos = (mousePosInWindow + ImVec2(0.5f,0.5f)) - imageWidgetTopLeft;
         ImVec2 uv_window = widgetPos / imageWidgetSize;
         return (uvBottomRight-uvTopLeft)*uv_window + uvTopLeft;
     }
@@ -56,7 +56,8 @@ struct CursorOverlayInfo
     ImVec2 uvTopLeft = ImVec2(0, 0);
     ImVec2 uvBottomRight = ImVec2(1, 1);
     ImVec2 roiWindowSize = ImVec2(15, 15);
-    ImVec2 mousePos = ImVec2(0,0);
+    ImVec2 mousePosInViewport = ImVec2(0,0);
+    ImVec2 mousePosInWindow = ImVec2(0,0);
     // Might be zoomed in, not the same as mousePosInOriginalTexture()
     ImVec2 mousePosInTexture = ImVec2(0,0); // normalized to 0,1
     double timeOfLastCopyToClipboard = NAN;

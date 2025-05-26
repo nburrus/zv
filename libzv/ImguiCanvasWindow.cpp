@@ -4,7 +4,7 @@
 // of the BSD license.  See the LICENSE file for details.
 //
 
-#include "ImguiCanvasContainer.h"
+#include "ImguiCanvasWindow.h"
 
 #include <libzv/ImguiUtils.h>
 #include <libzv/Icon.h>
@@ -83,15 +83,15 @@ extern "C" {
 #endif
 
 
-struct ImguiCanvasContainer::Impl
+struct ImguiCanvasWindow::Impl
 {
     bool enabled = false;
     bool closeRequested = false;
 
-    ImguiCanvasContainer::FrameInfo currentFrameInfo;
+    FrameInfo currentFrameInfo;
     
     zv::Point nextWindowPos;
-    zv::Point nextWindowSize;
+    zv::Point nextContainerContentSize;
 
     zv::Point windowPos;
     zv::Point windowSize;
@@ -100,30 +100,29 @@ struct ImguiCanvasContainer::Impl
 
     float contentDpiScale = 1.f;
 
-    ImguiCanvasContainer::WindowSizeChangedCb windowSizeChangedCb;
-    zv::Padding decorationSize;
+    ImguiCanvasWindow::WindowSizeChangedCb windowSizeChangedCb;
 };
 
-ImguiCanvasContainer::ImguiCanvasContainer()
+ImguiCanvasWindow::ImguiCanvasWindow()
 : impl (new Impl())
 {}
 
-ImguiCanvasContainer::~ImguiCanvasContainer()
+ImguiCanvasWindow::~ImguiCanvasWindow()
 {
     shutdown();
 }
 
-GLFWwindow* ImguiCanvasContainer::native_glfwWindow ()
+GLFWwindow* ImguiCanvasWindow::native_glfwWindow ()
 {
     return nullptr;
 }
 
-bool ImguiCanvasContainer::isEnabled () const
+bool ImguiCanvasWindow::isEnabled () const
 {
     return impl->enabled;
 }
 
-void ImguiCanvasContainer::setEnabled (bool enabled)
+void ImguiCanvasWindow::setEnabled (bool enabled)
 {
     if (impl->enabled == enabled)
         return;
@@ -131,22 +130,22 @@ void ImguiCanvasContainer::setEnabled (bool enabled)
     impl->enabled = enabled;
 }
 
-bool ImguiCanvasContainer::closeRequested () const
+bool ImguiCanvasWindow::closeRequested () const
 {
     return impl->closeRequested;
 }
 
-void ImguiCanvasContainer::cancelCloseRequest ()
+void ImguiCanvasWindow::cancelCloseRequest ()
 {
     impl->closeRequested = false;
 }
 
-void ImguiCanvasContainer::triggerCloseRequest ()
+void ImguiCanvasWindow::triggerCloseRequest ()
 {
     impl->closeRequested = true;
 }
 
-void ImguiCanvasContainer::onWindowSizeChanged (int width, int height)
+void ImguiCanvasWindow::onContainerSizeChanged (int width, int height)
 {
     if (!impl->windowSizeChangedCb)
         return;
@@ -155,12 +154,12 @@ void ImguiCanvasContainer::onWindowSizeChanged (int width, int height)
     impl->windowSizeChangedCb (width, height, /*fromUser=*/ true);
 }
 
-void ImguiCanvasContainer::setWindowSizeChangedCallback (WindowSizeChangedCb&& callback)
+void ImguiCanvasWindow::setContainerSizeChangedCallback (WindowSizeChangedCb&& callback)
 {
     impl->windowSizeChangedCb = callback;
 }
 
-void ImguiCanvasContainer::setWindowTitle (const std::string& title)
+void ImguiCanvasWindow::setContainerTitle (const std::string& title)
 {
     if (impl->title == title)
         return;
@@ -168,19 +167,19 @@ void ImguiCanvasContainer::setWindowTitle (const std::string& title)
     impl->title = title;
 }
 
-void ImguiCanvasContainer::setWindowPos (int x, int y)
+void ImguiCanvasWindow::setContainerPos (int x, int y)
 {
     zv_dbg("[CanvasContainer] setWindowPos %d %d", x, y);
     impl->nextWindowPos = zv::Point(x, y);
 }
 
-void ImguiCanvasContainer::setWindowSize (int width, int height)
+void ImguiCanvasWindow::setContainerSize (int width, int height)
 {
     zv_dbg("[CanvasContainer] setWindowSize %d %d", width, height);
-    impl->nextWindowSize = zv::Point(width, height);
+    impl->nextContainerContentSize = zv::Point(width, height);
 }
 
-zv::Rect ImguiCanvasContainer::geometry() const
+zv::Rect ImguiCanvasWindow::containerGeometry() const
 {
     zv::Rect geom;
 
@@ -192,57 +191,50 @@ zv::Rect ImguiCanvasContainer::geometry() const
     return geom;
 }
 
-void ImguiCanvasContainer::shutdown()
+void ImguiCanvasWindow::shutdown()
 {
 }
 
-bool ImguiCanvasContainer::isInitialized () const
+bool ImguiCanvasWindow::isInitialized () const
 {
     return impl->windowPos.isValid();
 }
 
-bool ImguiCanvasContainer::initialize (const std::string& title,
+bool ImguiCanvasWindow::initialize (const std::string& title,
                                        const zv::Rect& geometry)
 {
     zv_dbg ("Initializing window %s with geometry %f x %f (%f, %f)", title.c_str(), geometry.size.x, geometry.size.y, geometry.origin.x, geometry.origin.y);
 
     impl->title = title;
     impl->contentDpiScale = ImGui_primaryMonitorContentDpiScale().x;
-
-    // Use ImGui style values for window decorations
-    const ImGuiStyle& style = ImGui::GetStyle();
-    impl->decorationSize.left = style.WindowPadding.x + style.WindowBorderSize;
-    impl->decorationSize.right = style.WindowPadding.x + style.WindowBorderSize;
-    impl->decorationSize.top = style.WindowPadding.y + style.WindowBorderSize + ImGui::GetFrameHeight(); // Add title bar height
-    impl->decorationSize.bottom = style.WindowPadding.y + style.WindowBorderSize;
    
     impl->windowPos = geometry.origin;
     impl->windowSize = geometry.size;
     
     impl->nextWindowPos = geometry.origin;
-    impl->nextWindowSize = geometry.size;
+    impl->nextContainerContentSize = geometry.size;
 
     return true;
 }
 
-zv::Padding ImguiCanvasContainer::decorationSize () const
+zv::Padding ImguiCanvasWindow::canvasDecorationSize () const
 {
-    return impl->decorationSize;
+    return zv::Padding{0,0,0,0};
 }
 
-void ImguiCanvasContainer::setSwapInterval (int interval)
+void ImguiCanvasWindow::setSwapInterval (int interval)
 {
 }
 
-zv::Rect ImguiCanvasContainer::workingArea () const
+zv::Rect ImguiCanvasWindow::canvasArea () const
 {
     Rect r;
     r.origin = zv::Point(0, 0);
-    r.size = containerSize();
+    r.size = canvasSize();
     return r;
 }
 
-zv::Point ImguiCanvasContainer::containerSize () const
+zv::Point ImguiCanvasWindow::canvasSize () const
 {
 #if PLATFORM_EMSCRIPTEN
     return zv::Point(g_canvasWidth, g_canvasHeight);
@@ -251,41 +243,64 @@ zv::Point ImguiCanvasContainer::containerSize () const
 #endif
 }
 
-void ImguiCanvasContainer::focus ()
+ImVec2 ImguiCanvasWindow::imguiWindowToDrawList (const FrameInfo& frameInfo, const ImVec2& p) const
+{
+    return p + imVec2(frameInfo.containerOrigin);
+}
+
+ImVec2 ImguiCanvasWindow::drawListToImguiWindow (const FrameInfo& frameInfo, const ImVec2& p) const
+{
+    return p - imVec2(frameInfo.containerOrigin);
+}
+
+ImVec2 ImguiCanvasWindow::viewportToImguiWindow (const FrameInfo& frameInfo, const ImVec2& p) const
+{
+    return p - imVec2(frameInfo.containerOrigin) - ImVec2(frameInfo.containerDecorationSize.left, frameInfo.containerDecorationSize.top);
+}
+
+void ImguiCanvasWindow::focus ()
 {
 }
 
-void ImguiCanvasContainer::setResizable (bool resizable)
+void ImguiCanvasWindow::setResizable (bool resizable)
 {
 }
 
-void ImguiCanvasContainer::bringToFront ()
+void ImguiCanvasWindow::bringToFront ()
 {
 }
 
-void ImguiCanvasContainer::enableContexts ()
+void ImguiCanvasWindow::enableContexts ()
 {
 }
 
-void ImguiCanvasContainer::disableContexts ()
+void ImguiCanvasWindow::disableContexts ()
 {
 }
 
-ImguiCanvasContainer::FrameInfo ImguiCanvasContainer::beginFrame ()
+FrameInfo ImguiCanvasWindow::beginFrame ()
 {
-    impl->currentFrameInfo.windowContentWidth = impl->windowSize.x;
-    impl->currentFrameInfo.windowContentHeight = impl->windowSize.y;
+        // Use ImGui style values for window decorations
+    const ImGuiStyle& style = ImGui::GetStyle();
+    impl->currentFrameInfo.containerDecorationSize.left = 0; // style.WindowPadding.x + style.WindowBorderSize;
+    impl->currentFrameInfo.containerDecorationSize.right = 0; //style.WindowPadding.x + style.WindowBorderSize;
+    impl->currentFrameInfo.containerDecorationSize.top = ImGui::GetFontSize() + style.FramePadding.y * 2.0f;
+    impl->currentFrameInfo.containerDecorationSize.bottom = 0; //style.WindowPadding.y + style.WindowBorderSize;
+
+    impl->currentFrameInfo.containerOrigin = impl->windowPos;
+    impl->currentFrameInfo.containerWidth = impl->windowSize.x;
+    impl->currentFrameInfo.containerHeight = impl->windowSize.y;
     impl->currentFrameInfo.frameBufferWidth = impl->windowSize.x;
     impl->currentFrameInfo.frameBufferHeight = impl->windowSize.y;
     impl->currentFrameInfo.contentDpiScale = impl->contentDpiScale;    
     return impl->currentFrameInfo;
 }
 
-void ImguiCanvasContainer::endFrame ()
+void ImguiCanvasWindow::endFrame ()
 {
 }
 
-bool ImguiCanvasContainer::ImGuiBegin (const FrameInfo& frameInfo, bool* p_open, ImGuiWindowFlags extraFlags)
+bool ImguiCanvasWindow::ImGuiBegin (const FrameInfo& frameInfo, bool* p_open, ImGuiWindowFlags extraFlags)
 {
     ImGuiWindowFlags flags = (
                             ImGuiWindowFlags_NoScrollbar
@@ -308,18 +323,23 @@ bool ImguiCanvasContainer::ImGuiBegin (const FrameInfo& frameInfo, bool* p_open,
         impl->nextWindowPos = zv::Point();
     }
 
-    if (impl->nextWindowSize.isValid())
+    if (impl->nextContainerContentSize.isValid())
     {
-        ImGui::SetNextWindowSize(imVec2(impl->nextWindowSize), ImGuiCond_Always);
-        impl->nextWindowSize = zv::Point();
+        ImGui::SetNextWindowSize(imVec2(impl->nextContainerContentSize) + imVec2(frameInfo.containerDecorationSize.topLeft()), ImGuiCond_Always);
+        impl->nextContainerContentSize = zv::Point();
     }
      
     bool ok = ImGui::Begin(impl->title.c_str(), p_open, flags);
-    
-    impl->windowSize = toPoint(ImGui::GetWindowSize());
+        
     impl->windowPos = toPoint(ImGui::GetWindowPos());
 
     return ok;
+}
+
+void ImguiCanvasWindow::ImGuiEnd ()
+{
+    impl->windowSize = toPoint(ImGui::GetWindowSize());
+    ImGui::End();
 }
 
 struct ImguiCanvas::Impl

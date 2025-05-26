@@ -15,7 +15,7 @@
 #include <libzv/ImageCursorOverlay.h>
 #include <libzv/ImguiUtils.h>
 #include <libzv/PlatformSpecific.h>
-#include <libzv/ImguiCanvasContainer.h>
+#include <libzv/ImguiCanvasWindow.h>
 #include <libzv/ImguiGLFWWindow.h>
 #include <libzv/ControlsWindow.h>
 #include <libzv/Prefs.h>
@@ -145,7 +145,7 @@ struct ImageWindow::Impl
     Impl (ImageWindow& that) : that (that)
     {
 #if ZV_IMGUI_WINDOW_CONTAINER_TYPE_CANVAS
-        windowContainer = std::make_unique<ImguiCanvasContainer>();
+        windowContainer = std::make_unique<ImguiCanvasWindow>();
 #else
         windowContainer = std::make_unique<ImguiGLFWWindow>();
 #endif
@@ -224,7 +224,7 @@ struct ImageWindow::Impl
     
     void onImageWidgetAreaChanged ()
     {
-        windowContainer->setWindowSize(imageWidgetRect.current.size.x + windowBorderSize * 2,
+        windowContainer->setContainerSize(imageWidgetRect.current.size.x + windowBorderSize * 2,
                                       imageWidgetRect.current.size.y + windowBorderSize * 2);
     }
 
@@ -337,7 +337,8 @@ struct ImageWindow::Impl
     using CreateModifierFunc = std::function<std::unique_ptr<ImageModifier>(void)>;
     void addModifier (const CreateModifierFunc& createModifier);
 
-    ImageWidgetRoi renderImageItem(const ModifiedImagePtr &modImagePtr,
+    ImageWidgetRoi renderImageItem(const FrameInfo& frameInfo,
+                                   const ModifiedImagePtr &modImagePtr,
                                    const ImVec2 &imageWidgetTopLeft,
                                    const ImVec2 &imageWidgetSize,
                                    ZoomInfo &zoom,
@@ -371,7 +372,7 @@ bool ImageWindow::Impl::runAfterCheckingPendingChanges (std::function<void(void)
 
 void ImageWindow::Impl::adjustForNewSelection ()
 {
-    this->monitorSize = imVec2(windowContainer->containerSize());
+    this->monitorSize = imVec2(windowContainer->canvasSize());
     zv_dbg("[ImageWindow] monitorSize %f %f", this->monitorSize.x, this->monitorSize.y);
 
     ImageList& imageList = this->viewer->imageList();
@@ -570,7 +571,7 @@ bool ImageWindow::initialize (GLFWwindow* parentWindow, Viewer* viewer)
 {
     impl->viewer = viewer;
 
-    impl->monitorSize = imVec2(impl->windowContainer->containerSize());
+    impl->monitorSize = imVec2(impl->windowContainer->canvasSize());
     zv_dbg ("Primary monitor size = %f x %f", impl->monitorSize.x, impl->monitorSize.y);    
 
     // Create window with graphics context.
@@ -583,8 +584,8 @@ bool ImageWindow::initialize (GLFWwindow* parentWindow, Viewer* viewer)
     windowGeometry.size.y = 480;
     
 #if ZV_IMGUI_WINDOW_CONTAINER_TYPE_CANVAS
-    ImguiCanvasContainer* imguiCanvasContainer = dynamic_cast<ImguiCanvasContainer*>(impl->windowContainer.get());
-    zv_assert (imguiCanvasContainer, "ImguiCanvasContainer is expected.");
+    ImguiCanvasWindow* imguiCanvasContainer = dynamic_cast<ImguiCanvasWindow*>(impl->windowContainer.get());
+    zv_assert (imguiCanvasContainer, "ImguiCanvasWindow is expected.");
     if (!imguiCanvasContainer->initialize ("ZV Image Viewer", windowGeometry))
         return false;
 #else
@@ -595,10 +596,10 @@ bool ImageWindow::initialize (GLFWwindow* parentWindow, Viewer* viewer)
 #endif
 
     {
-        impl->monitorWorkArea = impl->windowContainer->workingArea();
+        impl->monitorWorkArea = impl->windowContainer->canvasArea();
         zv_dbg ("Monitor work area = %f %f %f %f", impl->monitorWorkArea.origin.x, impl->monitorWorkArea.origin.y, impl->monitorWorkArea.size.x, impl->monitorWorkArea.size.y);
         
-        Padding decSize = impl->windowContainer->decorationSize();
+        Padding decSize = impl->windowContainer->canvasDecorationSize();
         impl->monitorAreaForImageWidget = impl->monitorWorkArea;
         impl->monitorAreaForImageWidget.origin.x += decSize.left;
         impl->monitorAreaForImageWidget.size.x -= decSize.left + decSize.right;
@@ -608,7 +609,7 @@ bool ImageWindow::initialize (GLFWwindow* parentWindow, Viewer* viewer)
 
     impl->annotationRenderer.initializeFromCurrentContext();
     
-    impl->windowContainer->setWindowSizeChangedCallback([this](int width, int height, bool fromUser) {
+    impl->windowContainer->setContainerSizeChangedCallback([this](int width, int height, bool fromUser) {
         if (fromUser)
         {
             impl->lastGeometryMode = Impl::WindowGeometryMode::UserDefined;
@@ -787,7 +788,7 @@ void ImageWindow::processKeyEvent (int keycode)
 
 zv::Rect ImageWindow::geometry () const
 {
-    return impl->windowContainer->geometry();
+    return impl->windowContainer->containerGeometry();
 }
 
 zv::Rect ImageWindow::imageWidgetGeometry () const
@@ -805,12 +806,13 @@ const CursorOverlayInfo& ImageWindow::cursorOverlayInfo() const
     return impl->cursorOverlayInfo;
 }
 
-ImageWidgetRoi ImageWindow::Impl::renderImageItem(const ModifiedImagePtr &modImagePtr,
+ImageWidgetRoi ImageWindow::Impl::renderImageItem(const FrameInfo& frameInfo,
+                                                  const ModifiedImagePtr &modImagePtr,
                                                   const ImVec2 &imageWidgetTopLeft,
                                                   const ImVec2 &imageWidgetSize,
                                                   ZoomInfo &zoom,
                                                   bool imageSmallerThanNormal,
-                                                  CursorOverlayInfo *overlayInfo)
+                                                  CursorOverlayInfo *cursorOverlayInfo)
 {
     auto& io = ImGui::GetIO();
     
@@ -863,17 +865,21 @@ ImageWidgetRoi ImageWindow::Impl::renderImageItem(const ModifiedImagePtr &modIma
 
     const auto& currentIm = *modImagePtr->data()->cpuData;
 
+    const ImVec2 mousePosInViewport = io.MousePos;
+    ImVec2 mousePosInWindow = windowContainer->viewportToImguiWindow(frameInfo, mousePosInViewport);
+
     ImVec2 mousePosInImage (0,0);
     ImVec2 mousePosInTexture (0,0);
     {
         // This 0.5 offset is important since the mouse coordinate is an integer.
         // So when we are in the center of a pixel we'll return 0,0 instead of
         // 0.5,0.5.
-        ImVec2 widgetPos = (io.MousePos + ImVec2(0.5f,0.5f)) - imageWidgetTopLeft;
+        ImVec2 widgetPos = (mousePosInWindow + ImVec2(0.5f,0.5f)) - imageWidgetTopLeft;
         ImVec2 uv_window = widgetPos / imageWidgetSize;
         mousePosInTexture = (uv1-uv0)*uv_window + uv0;
         mousePosInImage = mousePosInTexture * ImVec2(currentIm.width(), currentIm.height());
     }
+
     
     bool showCursorOverlay = false;
     const bool pointerOverTheImage = ImGui::IsItemHovered() && currentIm.contains(mousePosInImage.x, mousePosInImage.y);
@@ -885,19 +891,27 @@ ImageWidgetRoi ImageWindow::Impl::renderImageItem(const ModifiedImagePtr &modIma
             modImagePtr->item()->eventCallback(modImagePtr->item()->uniqueId, mousePosInImage.x, mousePosInImage.y, modImagePtr->item()->eventCallbackData);
         }
     }
+    
+    const float titleBarHeight = ImGui::GetFontSize() + ImGui::GetStyle().FramePadding.y * 2.0f;
 
-    if (pointerOverTheImage && overlayInfo)
+    zv_dbg("ImageWidget topLeft:%f %f size:%f %f", imageWidgetTopLeft.x, imageWidgetTopLeft.y, imageWidgetSize.x, imageWidgetSize.y);
+    zv_dbg("MousePos - titleBarHeight=%f containerOrigin:%f %f containerSize:%d %d viewport:%f %f window:%f %f image: %f %f texture: %f %f (overImage=%d)", titleBarHeight, frameInfo.containerOrigin.x, frameInfo.containerOrigin.y, frameInfo.containerWidth, frameInfo.containerHeight, mousePosInViewport.x, mousePosInViewport.y, mousePosInWindow.x, mousePosInWindow.y, mousePosInImage.x, mousePosInImage.y, mousePosInTexture.x, mousePosInTexture.y, pointerOverTheImage);
+
+    if (pointerOverTheImage && cursorOverlayInfo)
     {
-        overlayInfo->modImagePtr = modImagePtr;
-        overlayInfo->showHelp = false;
-        overlayInfo->imageWidgetSize = imageWidgetSize;
-        overlayInfo->imageWidgetTopLeft = imageWidgetTopLeft;
-        overlayInfo->uvTopLeft = uv0;
-        overlayInfo->uvBottomRight = uv1;
-        overlayInfo->roiWindowSize = ImVec2(15, 15);
-        overlayInfo->mousePos = io.MousePos;
-        overlayInfo->mousePosInTexture = mousePosInTexture;
+        cursorOverlayInfo->modImagePtr = modImagePtr;
+        cursorOverlayInfo->showHelp = false;
+        cursorOverlayInfo->imageWidgetSize = imageWidgetSize;
+        cursorOverlayInfo->imageWidgetTopLeft = imageWidgetTopLeft;
+        cursorOverlayInfo->uvTopLeft = uv0;
+        cursorOverlayInfo->uvBottomRight = uv1;
+        cursorOverlayInfo->roiWindowSize = ImVec2(15, 15);
+        cursorOverlayInfo->mousePosInViewport = io.MousePos;
+        cursorOverlayInfo->mousePosInWindow = windowContainer->viewportToImguiWindow(frameInfo, cursorOverlayInfo->mousePosInViewport);
+        cursorOverlayInfo->mousePosInTexture = mousePosInTexture;
     }
+
+    // zv_dbg("Cursor overlay info: pointerOverTheImage=%d mouseWindow=%f %f inTexture=%f %f", pointerOverTheImage, cursorOverlayInfo->mousePosInWindow.x, cursorOverlayInfo->mousePosInWindow.y, cursorOverlayInfo->mousePosInTexture.x, cursorOverlayInfo->mousePosInTexture.y);
 
     if (ImGui::IsItemClicked(ImGuiMouseButton_Left) && io.KeyAlt)
     {
@@ -999,13 +1013,15 @@ void ImageWindow::renderFrame ()
     const auto frameInfo = impl->windowContainer->beginFrame ();
     const auto& controlsWindowState = impl->viewer->controlsWindow()->inputState();
     
+    zv_dbg("frameInfo: %f %f %f %f", frameInfo.containerOrigin.x, frameInfo.containerOrigin.y, frameInfo.containerWidth, frameInfo.containerHeight);
+
     // If we do not have a pending resize request, then adjust the content size to the
     // actual window size. The framebuffer might be bigger depending on the retina scale
     // factor.
     if (!impl->shouldUpdateWindowSize)
     {
-        impl->imageWidgetRect.current.size.x = frameInfo.windowContentWidth;
-        impl->imageWidgetRect.current.size.y = frameInfo.windowContentHeight;
+        impl->imageWidgetRect.current.size.x = frameInfo.containerWidth;
+        impl->imageWidgetRect.current.size.y = frameInfo.containerHeight;
     }
   
     auto& io = ImGui::GetIO();
@@ -1036,7 +1052,7 @@ void ImageWindow::renderFrame ()
         impl->shouldUpdateWindowSize = false;
     }
     
-    zv::Rect platformWindowGeometry = impl->windowContainer->geometry();
+    zv::Rect platformWindowGeometry = impl->windowContainer->containerGeometry();
     impl->imageWidgetRect.current.origin.x = platformWindowGeometry.origin.x + impl->windowBorderSize*2;
     impl->imageWidgetRect.current.origin.y = platformWindowGeometry.origin.y + impl->windowBorderSize*2;
 
@@ -1054,17 +1070,18 @@ void ImageWindow::renderFrame ()
     std::string mainWindowName = "zv - " + impl->currentImages[firstValidImageIndex]->item()->prettyName;
     if (impl->currentImages[firstValidImageIndex]->hasPendingChanges())
         mainWindowName += " [edited]";
-    impl->windowContainer->setWindowTitle(mainWindowName);
+    impl->windowContainer->setContainerTitle(mainWindowName);
 
     ImGuiWindowFlags extraFlags = 0;
     
     if (impl->windowContainer->ImGuiBegin(frameInfo, nullptr, extraFlags))
     {
-        const ImVec2 globalImageWidgetTopLeft = ImGui::GetCursorScreenPos();
         const auto globalImageWidgetSize = imSize(impl->imageWidgetRect.current);
         const auto globalImageWidgetContentSize = globalImageWidgetSize - ImVec2(impl->currentLayout.config.numCols-1, impl->currentLayout.config.numRows-1)*impl->gridPadding;
         const bool imageSmallerThanNormal = int(impl->imageWidgetRect.current.size.x) < int(impl->imageWidgetRect.normal.size.x);
         
+        // These geometries are relative to the ImGui Window, NOT the window container
+        // It's the same when using ImguiGLFWWindow, but not when using ImguiCanvasWindow.
         std::vector<Rect> widgetGeometries (impl->currentImages.size());
 
         for (int r = 0; r < impl->currentLayout.config.numRows; ++r)
@@ -1096,7 +1113,7 @@ void ImageWindow::renderFrame ()
             
             if (!impl->currentImages[idx]->data()->cpuData->hasData())
             {
-                ImGui::SetCursorScreenPos (imVec2(widgetGeometries[idx].topLeft()));
+                ImGui::SetCursorPos (imVec2(widgetGeometries[idx].topLeft()));
                 switch (impl->currentImages[idx]->data()->status)
                 {
                     case ImageItemData::Status::FailedToLoad: {
@@ -1118,7 +1135,8 @@ void ImageWindow::renderFrame ()
             }
             else
             {
-                ImageWidgetRoi uvRoi = impl->renderImageItem(impl->currentImages[idx],
+                ImageWidgetRoi uvRoi = impl->renderImageItem(frameInfo,
+                                                             impl->currentImages[idx],
                                                              imPos(widgetGeometries[idx]),
                                                              imSize(widgetGeometries[idx]),
                                                              impl->zoom,
@@ -1150,11 +1168,12 @@ void ImageWindow::renderFrame ()
                 if (impl->cursorOverlayInfo.modImagePtr->item()->uniqueId == impl->currentImages[idx]->item()->uniqueId)
                     continue;
                 
-                ImVec2 deltaFromTopLeft = impl->cursorOverlayInfo.mousePos - impl->cursorOverlayInfo.imageWidgetTopLeft;
+                ImVec2 deltaFromTopLeft = impl->cursorOverlayInfo.mousePosInWindow - impl->cursorOverlayInfo.imageWidgetTopLeft;
                 // FIXME: replace this with an image of a cross-hair texture. Filled black with a white outline.
-                ImGui::GetForegroundDrawList()->AddCircle(imPos(widgetGeometries[idx]) + deltaFromTopLeft, 4.0, IM_COL32(255,255,255,180), 0, 2.0f);
-                ImGui::GetForegroundDrawList()->AddCircle(imPos(widgetGeometries[idx]) + deltaFromTopLeft, 5.0, IM_COL32(0,0,0,180), 0, 1.f);
-                ImGui::GetForegroundDrawList()->AddCircle(imPos(widgetGeometries[idx]) + deltaFromTopLeft, 3.0, IM_COL32(0,0,0,180), 0, 1.f);
+                ImVec2 circleTopLeftInScreen = impl->windowContainer->imguiWindowToDrawList(frameInfo, imVec2(widgetGeometries[idx].topLeft()) + deltaFromTopLeft);
+                ImGui::GetForegroundDrawList()->AddCircle(circleTopLeftInScreen, 4.0, IM_COL32(255,255,255,180), 0, 2.0f);
+                ImGui::GetForegroundDrawList()->AddCircle(circleTopLeftInScreen + deltaFromTopLeft, 5.0, IM_COL32(0,0,0,180), 0, 1.f);
+                ImGui::GetForegroundDrawList()->AddCircle(circleTopLeftInScreen + deltaFromTopLeft, 3.0, IM_COL32(0,0,0,180), 0, 1.f);
             }
 
             // const bool showStatusBar = (impl->mutableState.inputState.shiftIsPressed || controlsWindowState.shiftIsPressed);
@@ -1164,7 +1183,7 @@ void ImageWindow::renderFrame ()
             {
                 ImGui_PushMonoSpaceFont(io);
 
-                float mouseYinWidget = (impl->cursorOverlayInfo.mousePos.y - impl->cursorOverlayInfo.imageWidgetTopLeft.y);
+                float mouseYinWidget = (impl->cursorOverlayInfo.mousePosInWindow.y - impl->cursorOverlayInfo.imageWidgetTopLeft.y);
                 const bool showOnBottom = (impl->cursorOverlayInfo.imageWidgetSize.y - mouseYinWidget) > monoFontSize*2.2;
 
                 for (int idx = 0; idx < impl->currentImages.size(); ++idx)
@@ -1209,6 +1228,10 @@ void ImageWindow::renderFrame ()
                         textAreaEnd = textAreaStart + ImVec2(widgetGeometries[idx].size.x, monoFontSize*2.2);
                     }
                     
+                    // Convert to screen coordinates for the draw list API
+                    textAreaStart = impl->windowContainer->imguiWindowToDrawList(frameInfo, textAreaStart);
+                    textAreaEnd = impl->windowContainer->imguiWindowToDrawList(frameInfo, textAreaEnd);
+
                     auto* drawList = ImGui::GetWindowDrawList();
                     ImVec4 clip_rect(textAreaStart.x, textAreaStart.y, textAreaEnd.x, textAreaEnd.y);
                     drawList->AddRectFilled(textAreaStart, textAreaEnd, IM_COL32(0,0,0,127));
@@ -1227,7 +1250,7 @@ void ImageWindow::renderFrame ()
         }
     }
         
-    ImGui::End();
+    impl->windowContainer->ImGuiEnd ();
     ImGui::PopStyleVar();
     ImGui::PopStyleColor();
 
@@ -1242,10 +1265,10 @@ void ImageWindow::renderFrame ()
             setEnabled(true);
             // Make sure that even if the viewer was already enabled, then we'll focus it.
             impl->windowContainer->focus();
-            impl->windowContainer->setWindowPos(impl->updateAfterContentSwitch.targetWindowGeometry.origin.x,
+            impl->windowContainer->setContainerPos(impl->updateAfterContentSwitch.targetWindowGeometry.origin.x,
                                                impl->updateAfterContentSwitch.targetWindowGeometry.origin.y);
-            impl->windowContainer->setWindowSize (impl->updateAfterContentSwitch.targetWindowGeometry.size.x, 
-                                                 impl->updateAfterContentSwitch.targetWindowGeometry.size.y);
+            impl->windowContainer->setContainerSize (impl->updateAfterContentSwitch.targetWindowGeometry.size.x, 
+                                                     impl->updateAfterContentSwitch.targetWindowGeometry.size.y);
             impl->updateAfterContentSwitch.setCompleted();
         }
     }

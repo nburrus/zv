@@ -10,7 +10,7 @@
 #include <libzv/PlatformSpecific.h>
 #include <libzv/Prefs.h>
 #include <libzv/Utils.h>
-#include <libzv/ImguiCanvasContainer.h>
+#include <libzv/ImguiCanvasWindow.h>
 
 #include <libzv/ImageList.h>
 #include <libzv/ImageWindow.h>

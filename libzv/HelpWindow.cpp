@@ -9,7 +9,7 @@
 #include <libzv/OpenGL.h>
 #include <libzv/ImguiUtils.h>
 #include <libzv/ImguiGLFWWindow.h>
-#include <libzv/ImguiCanvasContainer.h>
+#include <libzv/ImguiCanvasWindow.h>
 #include <libzv/Prefs.h>
 #include <libzv/PlatformSpecific.h>
 
@@ -41,7 +41,7 @@ struct HelpWindow::Impl
     Impl()
     {
 #if ZV_IMGUI_WINDOW_CONTAINER_TYPE_CANVAS
-        windowContainer = std::make_unique<ImguiCanvasContainer>();
+        windowContainer = std::make_unique<ImguiCanvasWindow>();
 #else
         windowContainer = std::make_unique<ImguiGLFWWindow>();
 #endif
@@ -82,8 +82,8 @@ bool HelpWindow::initialize (GLFWwindow* parentWindow)
 
     bool ok = false;
 #if ZV_IMGUI_WINDOW_CONTAINER_TYPE_CANVAS
-    ImguiCanvasContainer* imguiCanvasContainer = dynamic_cast<ImguiCanvasContainer*>(impl->windowContainer.get());
-    zv_assert (imguiCanvasContainer, "ImguiCanvasContainer is expected.");
+    ImguiCanvasWindow* imguiCanvasContainer = dynamic_cast<ImguiCanvasWindow*>(impl->windowContainer.get());
+    zv_assert (imguiCanvasContainer, "ImguiCanvasWindow is expected.");
     ok = imguiCanvasContainer->initialize ("zv Help", geometry);
 #else
     ImguiGLFWWindow* imguiGlfwWindow = dynamic_cast<ImguiGLFWWindow*>(impl->windowContainer.get());
@@ -161,8 +161,8 @@ void HelpWindow::renderFrame ()
         TextURL("Report issues", "https://github.com/nburrus/zv", false, true);
         ImGui::EndChild();
     }
-    ImGui::End();
     
+    impl->windowContainer->ImGuiEnd ();    
     impl->windowContainer->endFrame ();
 }
 

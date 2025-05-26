@@ -294,6 +294,9 @@ namespace zv
 
     struct Padding
     {
+        Point topLeft() const { return Point(left, top); }
+        Point bottomRight() const { return Point(right, bottom); }
+
         double left = NAN;
         double right = NAN;
         double top = NAN;
