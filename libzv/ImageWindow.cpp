@@ -8,6 +8,7 @@
 
 #include "ImageWindow.h"
 #include "ImageWindowState.h"
+#include "WebClipboard.h"
 
 #include <libzv/Platform.h>
 #include <libzv/Viewer.h>
@@ -1305,6 +1306,9 @@ void ImageWindow::renderFrame ()
 
 void copyToClipboard (const ImageSRGBA& im)
 {
+#if PLATFORM_EMSCRIPTEN
+    WebClipboard::copyImageToClipboard(im.rawBytes(), im.width(), im.height());
+#else
     clip::image_spec spec;
     spec.width = im.width();
     spec.height = im.height();
@@ -1319,6 +1323,7 @@ void copyToClipboard (const ImageSRGBA& im)
     spec.blue_shift = 8*2;
     spec.alpha_shift = 8*3;
     clip::set_image (clip::image(im.rawBytes(), spec));
+#endif
 }
 
 void ImageWindow::runAction (const ImageWindowAction& action)
@@ -1596,8 +1601,11 @@ void ImageWindow::runAction (const ImageWindowAction& action)
             PixelXYZ xyz = convertToXYZ(sRgb);
             clipboardText += formatted("XYZ %.1f %.1f %.1f\n", xyz.x, xyz.y, xyz.z);
 
-            // glfwSetClipboardString(nullptr, clipboardText.c_str());
+#if PLATFORM_EMSCRIPTEN
+            WebClipboard::copyTextToClipboard(clipboardText);
+#else
             clip::set_text(clipboardText.c_str());
+#endif
             impl->cursorOverlayInfo.timeOfLastCopyToClipboard = currentDateInSeconds();
             break;
         }

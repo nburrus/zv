@@ -5,6 +5,7 @@
 //
 
 #include "Viewer.h"
+#include "WebClipboard.h"
 
 #include <libzv/Platform.h>
 #include <libzv/PlatformSpecific.h>
@@ -365,6 +366,25 @@ void Viewer::refreshPrettyFileNames ()
 
 ImageId Viewer::addPastedImage ()
 {
+#if PLATFORM_EMSCRIPTEN
+    void* imageData = nullptr;
+    int width = 0, height = 0;
+    
+    if (!WebClipboard::pasteFromClipboard(&imageData, &width, &height)) {
+        zv_dbg("No image in clipboard or failed to paste");
+        return -1;
+    }
+    
+    // Create image from the pasted data
+    ImageSRGBA im;
+    im.ensureAllocatedBufferForSize(width, height);
+    memcpy(im.rawBytes(), imageData, width * height * 4);
+    free(imageData);
+    
+    addImageData(im, "(pasted)", 0, false /* don't replace */);
+    selectImageIndex(0);
+    return 0;
+#else
     // Keep that old code around for now.
     if (!clip::has(clip::image_format()))
     {
@@ -461,7 +481,8 @@ ImageId Viewer::addPastedImage ()
     }
     }
 
-        return -1;
+    return -1;
+#endif
 }
 
 void Viewer::setGlobalEventCallback (const GlobalEventCallbackType& callback, void* userData)
