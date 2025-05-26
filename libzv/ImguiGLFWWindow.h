@@ -48,6 +48,7 @@ public:
     void setContainerTitle (const std::string& title) override;
     void setContainerPos (int x, int y) override;
     void setContainerContentSize (int width, int height) override;    
+    void setContainerBorderSize (int borderSize) override {} // do nothing
     
     void onContainerSizeChanged (int width, int height) override;
     using WindowSizeChangedCb = std::function<void(int,int,bool /* from user interaction */)>;

@@ -574,6 +574,9 @@ bool ImageWindow::initialize (GLFWwindow* parentWindow, Viewer* viewer)
     impl->monitorSize = imVec2(impl->windowContainer->canvasSize());
     zv_dbg ("Primary monitor size = %f x %f", impl->monitorSize.x, impl->monitorSize.y);    
 
+    // No border for the image window
+    impl->windowContainer->setContainerBorderSize(0);
+
     // Create window with graphics context.
     // glfwWindowHint(GLFW_RESIZABLE, false); // fixed size.
 
@@ -894,8 +897,8 @@ ImageWidgetRoi ImageWindow::Impl::renderImageItem(const FrameInfo& frameInfo,
     
     const float titleBarHeight = ImGui::GetFontSize() + ImGui::GetStyle().FramePadding.y * 2.0f;
 
-    zv_dbg("ImageWidget topLeft:%f %f size:%f %f", imageWidgetTopLeft.x, imageWidgetTopLeft.y, imageWidgetSize.x, imageWidgetSize.y);
-    zv_dbg("MousePos - titleBarHeight=%f containerOrigin:%f %f containerSize:%d %d viewport:%f %f window:%f %f image: %f %f texture: %f %f (overImage=%d)", titleBarHeight, frameInfo.contentOriginInWindow.x, frameInfo.contentOriginInWindow.y, frameInfo.contentWidth, frameInfo.contentHeight, mousePosInViewport.x, mousePosInViewport.y, mousePosInWindow.x, mousePosInWindow.y, mousePosInImage.x, mousePosInImage.y, mousePosInTexture.x, mousePosInTexture.y, pointerOverTheImage);
+    // zv_dbg("ImageWidget topLeft:%f %f size:%f %f", imageWidgetTopLeft.x, imageWidgetTopLeft.y, imageWidgetSize.x, imageWidgetSize.y);
+    // zv_dbg("MousePos - titleBarHeight=%f containerOrigin:%f %f containerSize:%d %d viewport:%f %f window:%f %f image: %f %f texture: %f %f (overImage=%d)", titleBarHeight, frameInfo.contentOriginInWindow.x, frameInfo.contentOriginInWindow.y, frameInfo.contentWidth, frameInfo.contentHeight, mousePosInViewport.x, mousePosInViewport.y, mousePosInWindow.x, mousePosInWindow.y, mousePosInImage.x, mousePosInImage.y, mousePosInTexture.x, mousePosInTexture.y, pointerOverTheImage);
 
     if (pointerOverTheImage && cursorOverlayInfo)
     {
@@ -1013,7 +1016,7 @@ void ImageWindow::renderFrame ()
     const auto frameInfo = impl->windowContainer->beginFrame ();
     const auto& controlsWindowState = impl->viewer->controlsWindow()->inputState();
     
-    zv_dbg("frameInfo: %f %f %f %f", frameInfo.contentOriginInWindow.x, frameInfo.contentOriginInWindow.y, frameInfo.contentWidth, frameInfo.contentHeight);
+    // zv_dbg("frameInfo: %f %f %f %f", frameInfo.contentOriginInWindow.x, frameInfo.contentOriginInWindow.y, frameInfo.contentWidth, frameInfo.contentHeight);
 
     // If we do not have a pending resize request, then adjust the content size to the
     // actual window size. The framebuffer might be bigger depending on the retina scale
@@ -1173,13 +1176,13 @@ void ImageWindow::renderFrame ()
                 
                 ImVec2 deltaFromTopLeft = impl->cursorOverlayInfo.mousePosInWindow - impl->cursorOverlayInfo.imageWidgetTopLeft;
 
-                zv_dbg("deltaFromTopLeft: %f %f", deltaFromTopLeft.x, deltaFromTopLeft.y);
-                zv_dbg("[%d] topleft=%f %f", idx, widgetGeometries[idx].topLeft().x, widgetGeometries[idx].topLeft().y);
+                // zv_dbg("deltaFromTopLeft: %f %f", deltaFromTopLeft.x, deltaFromTopLeft.y);
+                // zv_dbg("[%d] topleft=%f %f", idx, widgetGeometries[idx].topLeft().x, widgetGeometries[idx].topLeft().y);
 
                 // FIXME: replace this with an image of a cross-hair texture. Filled black with a white outline.
                 ImVec2 circleTopLeftInScreen = impl->windowContainer->imguiWindowToDrawList(frameInfo, imVec2(widgetGeometries[idx].topLeft()) + deltaFromTopLeft);
 
-                zv_dbg("[%d] circleTopLeftInScreen: %f %f", idx, circleTopLeftInScreen.x, circleTopLeftInScreen.y);
+                // zv_dbg("[%d] circleTopLeftInScreen: %f %f", idx, circleTopLeftInScreen.x, circleTopLeftInScreen.y);
 
                 ImGui::GetForegroundDrawList()->AddCircle(circleTopLeftInScreen, 4.0, IM_COL32(255,255,255,180), 0, 2.0f);
                 ImGui::GetForegroundDrawList()->AddCircle(circleTopLeftInScreen, 5.0, IM_COL32(0,0,0,180), 0, 1.f);
@@ -1238,14 +1241,14 @@ void ImageWindow::renderFrame ()
                         textAreaEnd = textAreaStart + ImVec2(widgetGeometries[idx].size.x, monoFontSize*2.2);
                     }
                     
-                    zv_dbg("Window: textAreaStart: %f %f textAreaEnd: %f %f", textAreaStart.x, textAreaStart.y, textAreaEnd.x, textAreaEnd.y);
+                    // zv_dbg("Window: textAreaStart: %f %f textAreaEnd: %f %f", textAreaStart.x, textAreaStart.y, textAreaEnd.x, textAreaEnd.y);
 
                     // Convert to screen coordinates for the draw list API
                     textAreaStart = impl->windowContainer->imguiWindowToDrawList(frameInfo, textAreaStart);
                     textAreaEnd = impl->windowContainer->imguiWindowToDrawList(frameInfo, textAreaEnd);
                     textStart = impl->windowContainer->imguiWindowToDrawList(frameInfo, textStart);
 
-                    zv_dbg("Viewport: textAreaStart: %f %f textAreaEnd: %f %f", textAreaStart.x, textAreaStart.y, textAreaEnd.x, textAreaEnd.y);
+                    // zv_dbg("Viewport: textAreaStart: %f %f textAreaEnd: %f %f", textAreaStart.x, textAreaStart.y, textAreaEnd.x, textAreaEnd.y);
 
                     auto* drawList = ImGui::GetWindowDrawList();
                     ImVec4 clip_rect(textAreaStart.x, textAreaStart.y, textAreaEnd.x, textAreaEnd.y);

@@ -82,6 +82,7 @@ public:
     virtual void setContainerTitle (const std::string& title) = 0;
     virtual void setContainerPos (int x, int y) = 0;
     virtual void setContainerContentSize (int width, int height) = 0;    
+    virtual void setContainerBorderSize (int borderSize) = 0;
     
     virtual void onContainerSizeChanged (int width, int height) = 0;
     using ContainerSizeChangedCb = std::function<void(int,int,bool /* from user interaction */)>;

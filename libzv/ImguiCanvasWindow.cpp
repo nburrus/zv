@@ -99,6 +99,7 @@ struct ImguiCanvasWindow::Impl
     std::string title;
 
     float contentDpiScale = 1.f;
+    int windowBorderSize = 1;
 
     ImguiCanvasWindow::WindowSizeChangedCb windowSizeChangedCb;
 };
@@ -177,6 +178,11 @@ void ImguiCanvasWindow::setContainerContentSize (int width, int height)
 {
     zv_dbg("[CanvasContainer] setWindowSize %d %d", width, height);
     impl->nextContainerContentSize = zv::Point(width, height);
+}
+
+void ImguiCanvasWindow::setContainerBorderSize (int borderSize)
+{
+    impl->windowBorderSize = borderSize;
 }
 
 zv::Rect ImguiCanvasWindow::containerGeometry() const
@@ -280,6 +286,8 @@ void ImguiCanvasWindow::disableContexts ()
 
 FrameInfo ImguiCanvasWindow::beginFrame ()
 {
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, impl->windowBorderSize);
+
     // Use ImGui style values for window decorations
     const ImGuiStyle& style = ImGui::GetStyle();
     const float titleBarHeight = ImGui::GetFontSize() + style.FramePadding.y * 2.0f;
@@ -303,6 +311,7 @@ FrameInfo ImguiCanvasWindow::beginFrame ()
 
 void ImguiCanvasWindow::endFrame ()
 {
+    ImGui::PopStyleVar(); // window border size
 }
 
 bool ImguiCanvasWindow::ImGuiBegin (const FrameInfo& frameInfo, bool* p_open, ImGuiWindowFlags extraFlags)
@@ -428,6 +437,9 @@ void ImguiCanvas::initialize()
     {
         const zv::Point dpiScale = ImGui_primaryMonitorContentDpiScale();
         const zv::Point retinaScaleFactor = ImGui_primaryMonitorRetinaFrameBufferScale();
+
+        zv_dbg("dpiScale: %f %f", dpiScale.x, dpiScale.y);
+        zv_dbg("retinaScaleFactor: %f %f", retinaScaleFactor.x, retinaScaleFactor.y);
 
         static const ImWchar ranges[] = {
             0x0020, 0x00FF, // Basic Latin + Latin Supplement

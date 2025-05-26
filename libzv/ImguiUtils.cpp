@@ -28,7 +28,7 @@ zv::Point ImGui_primaryMonitorContentDpiScale ()
 
     // On macOS, content scaling will be done automatically. Instead the
     // framebuffers will get resized.
-#if !PLATFORM_MACOS
+#if !PLATFORM_MACOS && !PLATFORM_EMSCRIPTEN
     GLFWmonitor* monitor = glfwGetPrimaryMonitor();
     glfwGetMonitorContentScale(monitor, &dpiScale_x, &dpiScale_y);
 #endif
@@ -41,7 +41,7 @@ zv::Point ImGui_primaryMonitorRetinaFrameBufferScale ()
     float dpiScale_x = 1.f, dpiScale_y = 1.f;
 
     // This framebuffer scaling only happens on macOS.
-#if PLATFORM_MACOS
+#if PLATFORM_MACOS || PLATFORM_EMSCRIPTEN
     GLFWmonitor* monitor = glfwGetPrimaryMonitor();
     glfwGetMonitorContentScale(monitor, &dpiScale_x, &dpiScale_y);
 #endif
