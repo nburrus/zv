@@ -504,11 +504,11 @@ void ControlsWindow::Impl::renderMenu ()
             }
             if (ImGui::MenuItem("Copy to clipboard", CtrlOrCmd_Str "+c", false))
             {
-                imageWindow->processKeyEvent(GLFW_KEY_C);
+                imageWindow->addCommand(ImageWindow::actionCommand(ImageWindowAction::Kind::Edit_CopyImageToClipboard));
             }
             if (ImGui::MenuItem("Paste from clipboard", CtrlOrCmd_Str "+v", false))
             {
-                imageWindow->processKeyEvent(GLFW_KEY_V);
+                imageWindow->addCommand(ImageWindow::actionCommand(ImageWindowAction::Kind::Edit_PasteImageFromClipboard));
             }
             ImGui::EndMenu();
         }
