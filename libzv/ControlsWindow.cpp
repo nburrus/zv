@@ -846,7 +846,7 @@ void ControlsWindow::renderFrame ()
         {
             ImVec2 center = ImGui::GetMainViewport()->GetCenter();
             ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
-            ImGui::SetNextWindowSize(ImVec2(frameInfo.containerWidth, frameInfo.containerHeight)*0.8, ImGuiCond_Appearing);
+            ImGui::SetNextWindowSize(ImVec2(frameInfo.contentWidth, frameInfo.contentHeight)*0.8, ImGuiCond_Appearing);
             ImGui::OpenPopup(impl->currentActionToConfirm.title.c_str());
             if (ImGui::BeginPopupModal(impl->currentActionToConfirm.title.c_str(), nullptr, ImGuiWindowFlags_AlwaysAutoResize))
             {

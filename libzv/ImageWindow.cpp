@@ -224,7 +224,7 @@ struct ImageWindow::Impl
     
     void onImageWidgetAreaChanged ()
     {
-        windowContainer->setContainerSize(imageWidgetRect.current.size.x + windowBorderSize * 2,
+        windowContainer->setContainerContentSize(imageWidgetRect.current.size.x + windowBorderSize * 2,
                                       imageWidgetRect.current.size.y + windowBorderSize * 2);
     }
 
@@ -895,7 +895,7 @@ ImageWidgetRoi ImageWindow::Impl::renderImageItem(const FrameInfo& frameInfo,
     const float titleBarHeight = ImGui::GetFontSize() + ImGui::GetStyle().FramePadding.y * 2.0f;
 
     zv_dbg("ImageWidget topLeft:%f %f size:%f %f", imageWidgetTopLeft.x, imageWidgetTopLeft.y, imageWidgetSize.x, imageWidgetSize.y);
-    zv_dbg("MousePos - titleBarHeight=%f containerOrigin:%f %f containerSize:%d %d viewport:%f %f window:%f %f image: %f %f texture: %f %f (overImage=%d)", titleBarHeight, frameInfo.containerOrigin.x, frameInfo.containerOrigin.y, frameInfo.containerWidth, frameInfo.containerHeight, mousePosInViewport.x, mousePosInViewport.y, mousePosInWindow.x, mousePosInWindow.y, mousePosInImage.x, mousePosInImage.y, mousePosInTexture.x, mousePosInTexture.y, pointerOverTheImage);
+    zv_dbg("MousePos - titleBarHeight=%f containerOrigin:%f %f containerSize:%d %d viewport:%f %f window:%f %f image: %f %f texture: %f %f (overImage=%d)", titleBarHeight, frameInfo.contentOriginInWindow.x, frameInfo.contentOriginInWindow.y, frameInfo.contentWidth, frameInfo.contentHeight, mousePosInViewport.x, mousePosInViewport.y, mousePosInWindow.x, mousePosInWindow.y, mousePosInImage.x, mousePosInImage.y, mousePosInTexture.x, mousePosInTexture.y, pointerOverTheImage);
 
     if (pointerOverTheImage && cursorOverlayInfo)
     {
@@ -1013,15 +1013,15 @@ void ImageWindow::renderFrame ()
     const auto frameInfo = impl->windowContainer->beginFrame ();
     const auto& controlsWindowState = impl->viewer->controlsWindow()->inputState();
     
-    zv_dbg("frameInfo: %f %f %f %f", frameInfo.containerOrigin.x, frameInfo.containerOrigin.y, frameInfo.containerWidth, frameInfo.containerHeight);
+    zv_dbg("frameInfo: %f %f %f %f", frameInfo.contentOriginInWindow.x, frameInfo.contentOriginInWindow.y, frameInfo.contentWidth, frameInfo.contentHeight);
 
     // If we do not have a pending resize request, then adjust the content size to the
     // actual window size. The framebuffer might be bigger depending on the retina scale
     // factor.
     if (!impl->shouldUpdateWindowSize)
     {
-        impl->imageWidgetRect.current.size.x = frameInfo.containerWidth;
-        impl->imageWidgetRect.current.size.y = frameInfo.containerHeight;
+        impl->imageWidgetRect.current.size.x = frameInfo.contentWidth;
+        impl->imageWidgetRect.current.size.y = frameInfo.contentHeight;
     }
   
     auto& io = ImGui::GetIO();
@@ -1084,6 +1084,8 @@ void ImageWindow::renderFrame ()
         // It's the same when using ImguiGLFWWindow, but not when using ImguiCanvasWindow.
         std::vector<Rect> widgetGeometries (impl->currentImages.size());
 
+        const Point globalImageWidgetTopLeft = frameInfo.contentOriginInWindow;
+
         for (int r = 0; r < impl->currentLayout.config.numRows; ++r)
         for (int c = 0; c < impl->currentLayout.config.numCols; ++c)
         {
@@ -1093,8 +1095,9 @@ void ImageWindow::renderFrame ()
                 const auto& rect = impl->currentLayout.imageRects[idx];
                 const Point imageWidgetSize = Point(globalImageWidgetContentSize.x * rect.size.x,
                                                       globalImageWidgetContentSize.y * rect.size.y);
-                const Point imageWidgetTopLeft = Point(globalImageWidgetContentSize.x * rect.origin.x + c*impl->gridPadding,
-                                                         globalImageWidgetContentSize.y * rect.origin.y + r*impl->gridPadding);
+                const Point imageWidgetTopLeft = globalImageWidgetTopLeft + 
+                                                 Point(globalImageWidgetContentSize.x * rect.origin.x + c*impl->gridPadding,
+                                                       globalImageWidgetContentSize.y * rect.origin.y + r*impl->gridPadding);
                 widgetGeometries[idx].origin = imageWidgetTopLeft;
                 widgetGeometries[idx].size = imageWidgetSize;
             }
@@ -1228,9 +1231,14 @@ void ImageWindow::renderFrame ()
                         textAreaEnd = textAreaStart + ImVec2(widgetGeometries[idx].size.x, monoFontSize*2.2);
                     }
                     
+                    zv_dbg("Window: textAreaStart: %f %f textAreaEnd: %f %f", textAreaStart.x, textAreaStart.y, textAreaEnd.x, textAreaEnd.y);
+
                     // Convert to screen coordinates for the draw list API
                     textAreaStart = impl->windowContainer->imguiWindowToDrawList(frameInfo, textAreaStart);
                     textAreaEnd = impl->windowContainer->imguiWindowToDrawList(frameInfo, textAreaEnd);
+                    textStart = impl->windowContainer->imguiWindowToDrawList(frameInfo, textStart);
+
+                    zv_dbg("Viewport: textAreaStart: %f %f textAreaEnd: %f %f", textAreaStart.x, textAreaStart.y, textAreaEnd.x, textAreaEnd.y);
 
                     auto* drawList = ImGui::GetWindowDrawList();
                     ImVec4 clip_rect(textAreaStart.x, textAreaStart.y, textAreaEnd.x, textAreaEnd.y);
@@ -1267,7 +1275,7 @@ void ImageWindow::renderFrame ()
             impl->windowContainer->focus();
             impl->windowContainer->setContainerPos(impl->updateAfterContentSwitch.targetWindowGeometry.origin.x,
                                                impl->updateAfterContentSwitch.targetWindowGeometry.origin.y);
-            impl->windowContainer->setContainerSize (impl->updateAfterContentSwitch.targetWindowGeometry.size.x, 
+            impl->windowContainer->setContainerContentSize (impl->updateAfterContentSwitch.targetWindowGeometry.size.x, 
                                                      impl->updateAfterContentSwitch.targetWindowGeometry.size.y);
             impl->updateAfterContentSwitch.setCompleted();
         }

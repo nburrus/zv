@@ -6,6 +6,7 @@
 
 #include "ImguiUtils.h"
 
+#include <libzv/Platform.h>
 #include <libzv/Utils.h>
 #include <libzv/PlatformSpecific.h>
 

@@ -16,7 +16,7 @@
 #include <string>
 
 // Temporarily use canvas everywhere.
-#if true || PLATFORM_EMSCRIPTEN
+#if PLATFORM_EMSCRIPTEN
 #define ZV_IMGUI_WINDOW_CONTAINER_TYPE_CANVAS 1
 #else
 #define ZV_IMGUI_WINDOW_CONTAINER_TYPE_CANVAS 0
@@ -35,10 +35,16 @@ struct Rect;
 
 struct FrameInfo
 {
-    Point containerOrigin = Point(0,0);
-    Padding containerDecorationSize = zv::Padding{0,0,0,0};
-    int containerWidth = -1;
-    int containerHeight = -1;
+    Padding windowDecorationSize = zv::Padding{0,0,0,0};
+    
+    // ImGui window origin and size in viewport coordinates
+    Point windowOriginInViewport;
+    Point windowSize;
+
+    Point contentOriginInWindow;
+    int contentWidth = -1;
+    int contentHeight = -1;
+
     int frameBufferWidth = -1;
     int frameBufferHeight = -1;
     float contentDpiScale = 1.f;
@@ -75,7 +81,7 @@ public:
     // Set the container properties etc. in the canvas
     virtual void setContainerTitle (const std::string& title) = 0;
     virtual void setContainerPos (int x, int y) = 0;
-    virtual void setContainerSize (int width, int height) = 0;    
+    virtual void setContainerContentSize (int width, int height) = 0;    
     
     virtual void onContainerSizeChanged (int width, int height) = 0;
     using ContainerSizeChangedCb = std::function<void(int,int,bool /* from user interaction */)>;

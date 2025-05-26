@@ -288,7 +288,7 @@ void ImguiGLFWWindow::setContainerPos (int x, int y)
     glfwSetWindowPos (impl->window, x, y);
 }
 
-void ImguiGLFWWindow::setContainerSize (int width, int height)
+void ImguiGLFWWindow::setContainerContentSize (int width, int height)
 {
     impl->lastSizeRequest = ImGui::GetFrameCount();
     // Some window managers might maximize automatically
@@ -562,8 +562,16 @@ FrameInfo ImguiGLFWWindow::beginFrame ()
     enableContexts ();
 
     glfwGetFramebufferSize(impl->window, &(impl->currentFrameInfo.frameBufferWidth), &(impl->currentFrameInfo.frameBufferHeight));
-    glfwGetWindowSize(impl->window, &(impl->currentFrameInfo.containerWidth), &(impl->currentFrameInfo.containerHeight));
+    glfwGetWindowSize(impl->window, &(impl->currentFrameInfo.contentWidth), &(impl->currentFrameInfo.contentHeight));
     impl->currentFrameInfo.contentDpiScale = impl->contentDpiScale;
+
+    impl->currentFrameInfo.windowOriginInViewport = Point(0, 0);
+    impl->currentFrameInfo.windowSize = Point(impl->currentFrameInfo.contentWidth, impl->currentFrameInfo.contentHeight);
+    impl->currentFrameInfo.contentOriginInWindow = Point(0, 0);
+    impl->currentFrameInfo.windowDecorationSize.left = 0;
+    impl->currentFrameInfo.windowDecorationSize.right = 0;
+    impl->currentFrameInfo.windowDecorationSize.top = 0;
+    impl->currentFrameInfo.windowDecorationSize.bottom = 0;
 
     glfwPollEvents();
     
@@ -609,7 +617,7 @@ bool ImguiGLFWWindow::ImGuiBegin (const FrameInfo& frameInfo, bool* p_open, ImGu
     flags |= extraFlags;
 
     ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2(frameInfo.containerWidth, frameInfo.containerHeight), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(frameInfo.contentWidth, frameInfo.contentHeight), ImGuiCond_Always);
     return ImGui::Begin(impl->title.c_str(), p_open, flags);
 }
 

@@ -173,7 +173,7 @@ void ImguiCanvasWindow::setContainerPos (int x, int y)
     impl->nextWindowPos = zv::Point(x, y);
 }
 
-void ImguiCanvasWindow::setContainerSize (int width, int height)
+void ImguiCanvasWindow::setContainerContentSize (int width, int height)
 {
     zv_dbg("[CanvasContainer] setWindowSize %d %d", width, height);
     impl->nextContainerContentSize = zv::Point(width, height);
@@ -245,17 +245,17 @@ zv::Point ImguiCanvasWindow::canvasSize () const
 
 ImVec2 ImguiCanvasWindow::imguiWindowToDrawList (const FrameInfo& frameInfo, const ImVec2& p) const
 {
-    return p + imVec2(frameInfo.containerOrigin);
+    return p + imVec2(frameInfo.windowOriginInViewport);
 }
 
 ImVec2 ImguiCanvasWindow::drawListToImguiWindow (const FrameInfo& frameInfo, const ImVec2& p) const
 {
-    return p - imVec2(frameInfo.containerOrigin);
+    return p - imVec2(frameInfo.windowOriginInViewport);
 }
 
 ImVec2 ImguiCanvasWindow::viewportToImguiWindow (const FrameInfo& frameInfo, const ImVec2& p) const
 {
-    return p - imVec2(frameInfo.containerOrigin) - ImVec2(frameInfo.containerDecorationSize.left, frameInfo.containerDecorationSize.top);
+    return p - imVec2(frameInfo.windowOriginInViewport);
 }
 
 void ImguiCanvasWindow::focus ()
@@ -280,19 +280,24 @@ void ImguiCanvasWindow::disableContexts ()
 
 FrameInfo ImguiCanvasWindow::beginFrame ()
 {
-        // Use ImGui style values for window decorations
+    // Use ImGui style values for window decorations
     const ImGuiStyle& style = ImGui::GetStyle();
-    impl->currentFrameInfo.containerDecorationSize.left = 0; // style.WindowPadding.x + style.WindowBorderSize;
-    impl->currentFrameInfo.containerDecorationSize.right = 0; //style.WindowPadding.x + style.WindowBorderSize;
-    impl->currentFrameInfo.containerDecorationSize.top = ImGui::GetFontSize() + style.FramePadding.y * 2.0f;
-    impl->currentFrameInfo.containerDecorationSize.bottom = 0; //style.WindowPadding.y + style.WindowBorderSize;
+    const float titleBarHeight = ImGui::GetFontSize() + style.FramePadding.y * 2.0f;
 
-    impl->currentFrameInfo.containerOrigin = impl->windowPos;
-    impl->currentFrameInfo.containerWidth = impl->windowSize.x;
-    impl->currentFrameInfo.containerHeight = impl->windowSize.y;
-    impl->currentFrameInfo.frameBufferWidth = impl->windowSize.x;
-    impl->currentFrameInfo.frameBufferHeight = impl->windowSize.y;
-    impl->currentFrameInfo.contentDpiScale = impl->contentDpiScale;    
+    impl->currentFrameInfo.windowOriginInViewport = impl->windowPos;
+    impl->currentFrameInfo.windowSize = impl->windowSize;
+
+    impl->currentFrameInfo.windowDecorationSize.left = style.WindowBorderSize;
+    impl->currentFrameInfo.windowDecorationSize.right = style.WindowBorderSize;
+    impl->currentFrameInfo.windowDecorationSize.top = titleBarHeight + style.WindowBorderSize;
+    impl->currentFrameInfo.windowDecorationSize.bottom = style.WindowBorderSize;
+
+    impl->currentFrameInfo.contentOriginInWindow = impl->currentFrameInfo.windowDecorationSize.topLeft();
+    impl->currentFrameInfo.contentWidth = impl->windowSize.x - impl->currentFrameInfo.windowDecorationSize.left - impl->currentFrameInfo.windowDecorationSize.right;
+    impl->currentFrameInfo.contentHeight = impl->windowSize.y - impl->currentFrameInfo.windowDecorationSize.top - impl->currentFrameInfo.windowDecorationSize.bottom;
+    impl->currentFrameInfo.frameBufferWidth = 0;
+    impl->currentFrameInfo.frameBufferHeight = 0;
+    impl->currentFrameInfo.contentDpiScale = impl->contentDpiScale;
     return impl->currentFrameInfo;
 }
 
@@ -325,7 +330,9 @@ bool ImguiCanvasWindow::ImGuiBegin (const FrameInfo& frameInfo, bool* p_open, Im
 
     if (impl->nextContainerContentSize.isValid())
     {
-        ImGui::SetNextWindowSize(imVec2(impl->nextContainerContentSize) + imVec2(frameInfo.containerDecorationSize.topLeft()), ImGuiCond_Always);
+        ImVec2 decorationSize = ImVec2(frameInfo.windowDecorationSize.left + frameInfo.windowDecorationSize.right, 
+                                       frameInfo.windowDecorationSize.top + frameInfo.windowDecorationSize.bottom);
+        ImGui::SetNextWindowSize(imVec2(impl->nextContainerContentSize) + decorationSize, ImGuiCond_Always);
         impl->nextContainerContentSize = zv::Point();
     }
      
@@ -383,6 +390,7 @@ void ImguiCanvas::initialize()
     // Create window with graphics context.
 #ifndef PLATFORM_EMSCRIPTEN
     impl->window = glfwCreateWindow(1280, 1024, "ZV Viewer", nullptr, nullptr);
+    onCanvasSizeChanged(1280, 1024);
 #else
     // For Emscripten, glfwCreateWindow uses the canvas element by default.
     // The size is controlled by the canvas element's dimensions.
