@@ -75,33 +75,41 @@
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
         
-        // Try to read from clipboard directly
-        navigator.clipboard.read()
-          .then(function(items) {
-            for (const item of items) {
-              if (item.types.includes('image/png')) {
-                item.getType('image/png')
-                  .then(function(blob) {
-                    const img = new Image();
-                    img.onload = function() {
-                      canvas.width = img.width;
-                      canvas.height = img.height;
-                      ctx.drawImage(img, 0, 0);
-                    };
-                    img.src = URL.createObjectURL(blob);
-                  });
-                return;
-              }
-            }
-          })
-          .catch(function(err) {
-            console.warn('Clipboard read failed:', err);
-            if (err.name === 'NotAllowedError') {
-              console.warn('Clipboard permission denied. Please ensure the page is served over HTTPS or localhost and the operation is triggered by a user gesture.');
-            }
-          });
-
-        return canvas;
+        // Return a promise that resolves with the canvas once the image is loaded
+        return new Promise((resolve, reject) => {
+            navigator.clipboard.read()
+                .then(function(items) {
+                    for (const item of items) {
+                        if (item.types.includes('image/png')) {
+                            item.getType('image/png')
+                                .then(function(blob) {
+                                    const img = new Image();
+                                    img.onload = function() {
+                                        canvas.width = img.width;
+                                        canvas.height = img.height;
+                                        ctx.drawImage(img, 0, 0);
+                                        console.log("js_pasteFromClipboard: Resolved with canvas");
+                                        resolve(canvas);
+                                    };
+                                    img.onerror = function() {
+                                        reject(new Error('Failed to load image'));
+                                    };
+                                    img.src = URL.createObjectURL(blob);
+                                })
+                                .catch(reject);
+                            return;
+                        }
+                    }
+                    reject(new Error('No image found in clipboard'));
+                })
+                .catch(function(err) {
+                    console.warn('Clipboard read failed:', err);
+                    if (err.name === 'NotAllowedError') {
+                        console.warn('Clipboard permission denied. Please ensure the page is served over HTTPS or localhost and the operation is triggered by a user gesture.');
+                    }
+                    reject(err);
+                });
+        });
       }
 
       window.addEventListener('resize', js_resizeCanvasToFitWindow, false);

@@ -47,7 +47,18 @@ bool WebClipboard::copyImageToClipboard(const void* imageData, int width, int he
 bool WebClipboard::pasteFromClipboard(void** imageData, int* width, int* height) {
 #if PLATFORM_EMSCRIPTEN
     try {
-        emscripten::val result = emscripten::val::global("js_pasteFromClipboard").call<emscripten::val>("call", emscripten::val::null());
+        // Call the async function directly
+        emscripten::val result = emscripten::val::global("js_pasteFromClipboard")();
+        
+        // Check if we got a Promise by checking if it has a 'then' method
+        if (!result.hasOwnProperty("then")) {
+            zv_dbg("No Promise returned from js_pasteFromClipboard");
+            return false;
+        }
+
+        // Wait for the Promise to resolve
+        result = result.await();
+        
         if (result.isNull()) {
             zv_dbg("No image data in clipboard or paste operation failed");
             return false;
