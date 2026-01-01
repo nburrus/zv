@@ -30,3 +30,9 @@ Imported from https://github.com/libjpeg-turbo/libjpeg-turbo.git
 Copied and removed the testimages + unused simd architectures.
 
 Last update: Nov 23, 2022 commit 74d5b168f7a00250c1dc0001527d10175e00b779 .
+
+# doctest
+
+Header-only testing framework from https://github.com/doctest/doctest.git
+
+Only the single header file `doctest.h` is included in `deps/doctest/`.
