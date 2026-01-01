@@ -231,6 +231,15 @@ namespace zv
             // Reach the beginning of the path.
             if (edges.size() == 0)
             {
+                // Multiple paths reached root - prepend first component to differentiate
+                if (pathIndices.size() > 1)
+                {
+                    for (int i = 0; i < pathIndices.size(); ++i)
+                    {
+                        int pathIdx = pathIndices[i];
+                        prepend(names[pathIdx], paths[pathIdx].begin()->string() + "/");
+                    }
+                }
                 return;
             }
 
