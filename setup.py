@@ -2,9 +2,13 @@ import os
 import re
 import subprocess
 import sys
+from pathlib import Path
 
 from setuptools import Extension, setup
 from setuptools.command.build_ext import build_ext
+
+# Get the root directory (where this setup.py and CMakeLists.txt are located)
+_ROOT_DIR = Path(__file__).parent.absolute()
 
 # Convert distutils Windows platform specifiers to CMake -A arguments
 PLAT_TO_CMAKE = {
@@ -14,10 +18,12 @@ PLAT_TO_CMAKE = {
     "win-arm64": "ARM64",
 }
 
-# A CMakeExtension needs a sourcedir instead of a file list.
-# The name must be the _single_ output extension from the CMake build.
-# If you need multiple extensions, see scikit-build.
+
 class CMakeExtension(Extension):
+    """A CMakeExtension needs a sourcedir instead of a file list.
+    The name must be the _single_ output extension from the CMake build.
+    """
+
     def __init__(self, name, sourcedir=""):
         Extension.__init__(self, name, sources=[])
         self.sourcedir = os.path.abspath(sourcedir)
@@ -39,8 +45,6 @@ class CMakeBuild(build_ext):
         cmake_generator = os.environ.get("CMAKE_GENERATOR", "")
 
         # Set Python_EXECUTABLE instead if you use PYBIND11_FINDPYTHON
-        # EXAMPLE_VERSION_INFO shows you how to pass a value into the C++ code
-        # from Python.
         cmake_args = [
             "-DBUILD_PYTHON=ON",
             f"-DCMAKE_LIBRARY_OUTPUT_DIRECTORY={extdir}",
@@ -53,15 +57,14 @@ class CMakeBuild(build_ext):
         if "CMAKE_ARGS" in os.environ:
             cmake_args += [item for item in os.environ["CMAKE_ARGS"].split(" ") if item]
 
-        # In this example, we pass in the version to C++. You might not need to.
+        # Pass version to C++
         cmake_args += [f"-DPYTHON_VERSION_INFO={self.distribution.get_version()}"]
 
         if self.compiler.compiler_type != "msvc":
             # Using Ninja-build since it a) is available as a wheel and b)
             # multithreads automatically. MSVC would require all variables be
             # exported for Ninja to pick it up, which is a little tricky to do.
-            # Users can override the generator with CMAKE_GENERATOR in CMake
-            # 3.15+.
+            # Users can override the generator with CMAKE_GENERATOR in CMake 3.15+.
             if not cmake_generator:
                 try:
                     import ninja  # noqa: F401
@@ -71,7 +74,6 @@ class CMakeBuild(build_ext):
                     pass
 
         else:
-
             # Single config generators are handled "normally"
             single_config = any(x in cmake_generator for x in {"NMake", "Ninja"})
 
@@ -116,24 +118,16 @@ class CMakeBuild(build_ext):
         subprocess.check_call(
             ["cmake", "--build", "."] + build_args, cwd=self.build_temp
         )
-        print ("Build done")
+        print("Build done")
 
 
-# The information here can also be placed in setup.cfg - better separation of
-# logic and declaration, and simpler if you include description/version in a file.
+# All metadata is now in pyproject.toml (PEP 621)
+# This setup() call only provides the CMake extension configuration and scripts
 setup(
-    name="zv-python",
-    version="0.1.0",
-    author="Nicolas Burrus",
-    author_email="nicolas@burrus.name",
-    description="ZV image viewer python interface.",
-    long_description="",
-    ext_modules=[CMakeExtension("_zv")],
+    ext_modules=[CMakeExtension("_zv", sourcedir=str(_ROOT_DIR))],
     cmdclass={"build_ext": CMakeBuild},
-    package_dir = {'': 'python'},
-    packages=['zv'],
-    scripts=['python/scripts/zv-logserver', 'python/scripts/zv-python'],
-    zip_safe=False,
-    extras_require={"test": ["pytest>=6.0"]},
-    python_requires=">=3.7",
+    scripts=[
+        "python/scripts/zv-logserver",
+        "python/scripts/zv-python",
+    ],
 )

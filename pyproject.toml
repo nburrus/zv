@@ -1,11 +1,45 @@
 [build-system]
 requires = [
-    "setuptools>=42",
+    "setuptools>=61.0",
     "wheel",
     "ninja",
     "cmake>=3.12",
 ]
 build-backend = "setuptools.build_meta"
+
+[project]
+name = "zv-python"
+version = "0.1.0"
+description = "ZV image viewer python interface."
+readme = "README.md"
+requires-python = ">=3.7"
+authors = [
+    {name = "Nicolas Burrus", email = "nicolas@burrus.name"},
+]
+license = {text = "BSD"}
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: BSD License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.7",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: C++",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=6.0"]
+
+[tool.setuptools]
+package-dir = {"" = "python"}
+zip-safe = false
+
+[tool.setuptools.packages.find]
+where = ["python"]
 
 [tool.isort]
 profile = "black"
@@ -15,10 +49,10 @@ minversion = "6.0"
 addopts = ["-ra", "--showlocals", "--strict-markers", "--strict-config"]
 xfail_strict = true
 filterwarnings = ["error"]
-testpaths = ["tests"]
+testpaths = ["python/tests"]
 
 [tool.cibuildwheel]
-test-command = "pytest {project}/tests"
+test-command = "pytest {project}/python/tests"
 test-extras = ["test"]
 test-skip = ["*universal2:arm64"]
 # Setuptools bug causes collision between pypy and cpython artifacts
