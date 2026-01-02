@@ -41,6 +41,11 @@ bool lock::impl::set_data(format f, const char* buf, size_t len) {
   if (buf && len > 0)
     std::copy(buf, buf+len, dst.begin());
 
+  if (f == text_format() &&
+      len > 0 && dst.back() != 0) {
+    dst.push_back(0);
+  }
+
   return true;
 }
 
@@ -62,6 +67,8 @@ size_t lock::impl::get_data_length(format f) const {
     return 0;
 }
 
+#if CLIP_ENABLE_IMAGE
+
 bool lock::impl::set_image(const image& image) {
   return false;               // TODO
 }
@@ -73,6 +80,8 @@ bool lock::impl::get_image(image& image) const {
 bool lock::impl::get_image_spec(image_spec& spec) const {
   return false;               // TODO
 }
+
+#endif // CLIP_ENABLE_IMAGE
 
 format register_format(const std::string& name) {
   return g_last_format++;
