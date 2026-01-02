@@ -45,11 +45,14 @@ class CMakeBuild(build_ext):
         cmake_generator = os.environ.get("CMAKE_GENERATOR", "")
 
         # Set Python_EXECUTABLE instead if you use PYBIND11_FINDPYTHON
+        # Use CMAKE_POLICY_VERSION_MINIMUM to allow older cmake_minimum_required
+        # in external dependencies without modifying their CMakeLists.txt
         cmake_args = [
             "-DBUILD_PYTHON=ON",
             f"-DCMAKE_LIBRARY_OUTPUT_DIRECTORY={extdir}",
             f"-DPYTHON_EXECUTABLE={sys.executable}",
             f"-DCMAKE_BUILD_TYPE={cfg}",  # not used on MSVC, but no harm
+            "-DCMAKE_POLICY_VERSION_MINIMUM=3.5",  # Allow external deps with older cmake_minimum_required
         ]
         build_args = []
         # Adding CMake arguments set as environment variable
