@@ -86,6 +86,8 @@ ExternalProject_Add(clip-deps
 add_library(clip STATIC IMPORTED)
 set_target_properties(clip PROPERTIES IMPORTED_LOCATION ${PRECOMPILED_FOLDER}/clip/lib/${CLIP_LIBRARY_FILENAME})
 include_directories(clip PROPERTIES IMPORTED_LOCATION ${CMAKE_CURRENT_SOURCE_DIR}/deps)
+# Propagate CLIP_ENABLE_IMAGE compile definition since clip is built with image support enabled
+set_target_properties(clip PROPERTIES INTERFACE_COMPILE_DEFINITIONS "CLIP_ENABLE_IMAGE=1")
 if (WIN32)
   target_link_libraries(clip INTERFACE Shlwapi)
 endif()
