@@ -5,10 +5,11 @@
 
 #include <client/zv/Client.h>
 
-#include <pybind11/pybind11.h>
-#include <pybind11/stl.h>
-#include <pybind11/functional.h>
-#include <pybind11/numpy.h>
+#include <nanobind/nanobind.h>
+#include <nanobind/stl/string.h>
+#include <nanobind/stl/vector.h>
+#include <nanobind/stl/function.h>
+#include <nanobind/ndarray.h>
 
 #include <imgui/imgui.h>
 
@@ -17,75 +18,78 @@ using namespace zv;
 #define STRINGIFY(x) #x
 #define MACRO_STRINGIFY(x) STRINGIFY(x)
 
-namespace py = pybind11;
+namespace nb = nanobind;
+using namespace nb::literals;
 
-void register_App (py::module& m)
+void register_App (nb::module_& m)
 {
-    py::class_<App>(m, "App")
-        .def(py::init<>())
+    nb::class_<App>(m, "App")
+        .def(nb::init<>())
 
         .def("initialize", [](App& app, const std::vector<std::string>& argv) {
             return app.initialize (argv);
-        }, py::arg("argv") = std::vector<std::string>({"zv"}))
+        }, "argv"_a = std::vector<std::string>({"zv"}))
 
-        .def_property_readonly("numViewers", &App::numViewers)
+        .def_prop_ro("numViewers", &App::numViewers)
 
-        // return_value_policy::reference_internal) is required for those,
+        // rv_policy::reference_internal is required for those,
         // since the returned objects are still owned by the app.
 
         // The viewer is only guaranteed to stay alive until the next
         // call to updateOnce.
         .def("getViewer", [](App& app, const std::string& name) {
                 return app.getViewer (name);
-            }, py::arg("name") = "default", 
-            py::return_value_policy::reference_internal)
+            }, "name"_a = "default",
+            nb::rv_policy::reference_internal)
 
         // The viewer is only guaranteed to stay alive until the next
         // call to updateOnce.
-        .def("createViewer", &App::createViewer, 
-            py::return_value_policy::reference_internal)
+        .def("createViewer", &App::createViewer,
+            nb::rv_policy::reference_internal)
 
         .def("removeViewer", &App::removeViewer)
 
         .def("updateOnce", [](App& app, double minDuration) {
             app.updateOnce(minDuration);
-        }, py::arg("minDuration") = 0.0);
+        }, "minDuration"_a = 0.0);
 }
 
-ImageSRGBA imageFromPythonArray (py::array buffer)
+ImageSRGBA imageFromPythonArray (nb::ndarray<> buffer)
 {
-    /* Request a buffer descriptor from Python */
-    py::buffer_info info = buffer.request();
-
     ImageSRGBA image;
 
-    if (info.ndim != 2 && info.ndim != 3)
+    size_t ndim = buffer.ndim();
+    if (ndim != 2 && ndim != 3)
         throw std::runtime_error("Image dimension must be 2 (grayscale) or 3 (color)");
 
-    if (!(buffer.flags() & py::array::c_style))
+    // Check for C-contiguous layout
+    if (buffer.stride(0) < 0 || (ndim == 3 && buffer.stride(1) < 0))
     {
         throw std::runtime_error("Input image must be contiguous and c_style. You might want to use np.ascontiguousarray().");
     }
 
     // (H,W,1) is the same as (H,W), treat it as grayscale.
-    int actual_dims = info.ndim;
-    if (info.ndim == 3 && info.shape[2] == 1)
+    size_t actual_dims = ndim;
+    if (ndim == 3 && buffer.shape(2) == 1)
         actual_dims = 2;
 
-    const int numRows = info.shape[0];
-    const int numCols = info.shape[1];
+    const int numRows = static_cast<int>(buffer.shape(0));
+    const int numCols = static_cast<int>(buffer.shape(1));
+
+    // Get dtype
+    nb::dlpack::dtype dtype = buffer.dtype();
 
     switch (actual_dims)
     {
     case 2:
     {
-        if (info.format == py::format_descriptor<uint8_t>::format())
+        if (dtype.code == (uint8_t)nb::dlpack::dtype_code::UInt && dtype.bits == 8)
         {
-            image = srgbaFromGray((uint8_t *)info.ptr, numCols, numRows, info.strides[0]);
+            image = srgbaFromGray((uint8_t *)buffer.data(), numCols, numRows, buffer.stride(0));
         }
-        else if (info.format == py::format_descriptor<float>::format())
+        else if (dtype.code == (uint8_t)nb::dlpack::dtype_code::Float && dtype.bits == 32)
         {
-            image = srgbaFromFloatGray((uint8_t *)info.ptr, numCols, numRows, info.strides[0]);
+            image = srgbaFromFloatGray((uint8_t *)buffer.data(), numCols, numRows, buffer.stride(0));
         }
         else
         {
@@ -96,7 +100,7 @@ ImageSRGBA imageFromPythonArray (py::array buffer)
 
     case 3:
     {
-        const int numChannels = info.shape[2];
+        const int numChannels = static_cast<int>(buffer.shape(2));
         if (numChannels != 3 && numChannels != 4)
             throw std::runtime_error("Channel size must be 3 (RGB) or 4 (RGBA)");
 
@@ -104,13 +108,13 @@ ImageSRGBA imageFromPythonArray (py::array buffer)
         {
         case 3:
         {
-            if (info.format == py::format_descriptor<uint8_t>::format())
+            if (dtype.code == (uint8_t)nb::dlpack::dtype_code::UInt && dtype.bits == 8)
             {
-                image = srgbaFromSrgb((uint8_t *)info.ptr, numCols, numRows, info.strides[0]);
+                image = srgbaFromSrgb((uint8_t *)buffer.data(), numCols, numRows, buffer.stride(0));
             }
-            else if (info.format == py::format_descriptor<float>::format())
+            else if (dtype.code == (uint8_t)nb::dlpack::dtype_code::Float && dtype.bits == 32)
             {
-                image = srgbaFromFloatSrgb((uint8_t *)info.ptr, numCols, numRows, info.strides[0]);
+                image = srgbaFromFloatSrgb((uint8_t *)buffer.data(), numCols, numRows, buffer.stride(0));
             }
             else
             {
@@ -121,13 +125,13 @@ ImageSRGBA imageFromPythonArray (py::array buffer)
 
         case 4:
         {
-            if (info.format == py::format_descriptor<uint8_t>::format())
+            if (dtype.code == (uint8_t)nb::dlpack::dtype_code::UInt && dtype.bits == 8)
             {
-                image = ImageSRGBA((uint8_t *)info.ptr, numCols, numRows, info.strides[0], ImageSRGBA::noopReleaseFunc());
+                image = ImageSRGBA((uint8_t *)buffer.data(), numCols, numRows, buffer.stride(0), ImageSRGBA::noopReleaseFunc());
             }
-            else if (info.format == py::format_descriptor<float>::format())
+            else if (dtype.code == (uint8_t)nb::dlpack::dtype_code::Float && dtype.bits == 32)
             {
-                image = srgbaFromFloatSrgba((uint8_t *)info.ptr, numCols, numRows, info.strides[0]);
+                image = srgbaFromFloatSrgba((uint8_t *)buffer.data(), numCols, numRows, buffer.stride(0));
             }
             else
             {
@@ -142,23 +146,23 @@ ImageSRGBA imageFromPythonArray (py::array buffer)
     return image;
 }
 
-void register_Viewer (py::module& m)
+void register_Viewer (nb::module_& m)
 {
-    py::class_<ImageItem, ImageItemPtr>(m, "ImageItem")
-        .def_readonly("sourceImagePath", &ImageItem::sourceImagePath)
-        .def_readonly("prettyName", &ImageItem::prettyName);
-    
-    py::class_<Viewer>(m, "Viewer")
-        .def_property_readonly("selectedImage", &Viewer::selectedImage)
-        
+    nb::class_<ImageItem>(m, "ImageItem")
+        .def_prop_ro("sourceImagePath", [](const ImageItem& self) { return self.sourceImagePath; })
+        .def_prop_ro("prettyName", [](const ImageItem& self) { return self.prettyName; });
+
+    nb::class_<Viewer>(m, "Viewer")
+        .def_prop_ro("selectedImage", &Viewer::selectedImage)
+
         .def("addImageFromFile", &Viewer::addImageFromFile)
 
-        .def("addImage", [](Viewer& viewer, const std::string& name, py::array buffer, int position, bool replace) {
+        .def("addImage", [](Viewer& viewer, const std::string& name, nb::ndarray<> buffer, int position, bool replace) {
             ImageSRGBA im = imageFromPythonArray (buffer);
             if (im.hasData())
                 return viewer.addImageData (im, name, position, replace);
             return int64_t(-1);
-        }, py::arg("name"), py::arg("buffer"), py::arg("position") = -1, py::arg("replace") = true)
+        }, "name"_a, "buffer"_a, "position"_a = -1, "replace"_a = true)
 
         .def("getImageItem", &Viewer::getImageItem)
 
@@ -168,18 +172,18 @@ void register_Viewer (py::module& m)
         .def("setGlobalEventCallback", &Viewer::setGlobalEventCallback)
 
         .def("setLayout", &Viewer::setLayout)
-        .def("runAction", [](Viewer& viewer, ImageWindowAction::Kind kind) { 
+        .def("runAction", [](Viewer& viewer, ImageWindowAction::Kind kind) {
             viewer.runAction (ImageWindowAction(kind));
         });
 
-    py::enum_<ImageWindowAction::Kind>(m, "ImageWindowAction")
+    nb::enum_<ImageWindowAction::Kind>(m, "ImageWindowAction")
         .value ("Zoom_Normal", ImageWindowAction::Kind::Zoom_Normal)
         .value ("Zoom_RestoreAspectRatio", ImageWindowAction::Kind::Zoom_RestoreAspectRatio)
         .value ("Zoom_x2", ImageWindowAction::Kind::Zoom_x2)
         .value ("Zoom_div2", ImageWindowAction::Kind::Zoom_div2)
         .value ("Zoom_Inc10p", ImageWindowAction::Kind::Zoom_Inc10p)
         .value ("Zoom_Dec10p", ImageWindowAction::Kind::Zoom_Dec10p)
-        .value ("Zoom_Maxspect", ImageWindowAction::Kind::Zoom_Maxspect)        
+        .value ("Zoom_Maxspect", ImageWindowAction::Kind::Zoom_Maxspect)
         .value ("File_OpenImage", ImageWindowAction::Kind::File_OpenImage)
         .value ("File_SaveImage", ImageWindowAction::Kind::File_SaveImage)
         .value ("View_ToggleOverlay", ImageWindowAction::Kind::View_ToggleOverlay)
@@ -187,21 +191,21 @@ void register_Viewer (py::module& m)
         .value ("View_PrevImage", ImageWindowAction::Kind::View_PrevImage);
 }
 
-void register_ImGui (py::module& zv_module)
+void register_ImGui (nb::module_& zv_module)
 {
-    py::module_ m = zv_module.def_submodule("imgui", "zv GUI submodule.");
-    
-    py::enum_<ImGuiMouseButton_>(m, "MouseButton")
+    nb::module_ m = zv_module.def_submodule("imgui", "zv GUI submodule.");
+
+    nb::enum_<ImGuiMouseButton_>(m, "MouseButton")
         .value ("Left", ImGuiMouseButton_Left)
         .value ("Right", ImGuiMouseButton_Right)
         .value ("Middle", ImGuiMouseButton_Middle);
-    
+
     m.def ("IsMouseDown", &ImGui::IsMouseDown);
     m.def ("IsMouseClicked", &ImGui::IsMouseClicked);
     m.def ("IsKeyDown", &ImGui::IsKeyDown);
     m.def ("IsKeyPressed", &ImGui::IsKeyPressed);
 
-    py::enum_<ImGuiKey_>(m, "Key")
+    nb::enum_<ImGuiKey_>(m, "Key")
         .value("Tab", ImGuiKey_Tab)
         .value("LeftArrow", ImGuiKey_LeftArrow)
         .value("RightArrow", ImGuiKey_RightArrow)
@@ -253,15 +257,15 @@ void register_ImGui (py::module& zv_module)
         .value("KeypadEqual", ImGuiKey_KeypadEqual);
 }
 
-void register_Client (py::module& m)
+void register_Client (nb::module_& m)
 {
-    py::class_<Client>(m, "Client")
-        .def(py::init<>())
+    nb::class_<Client>(m, "Client")
+        .def(nb::init<>())
         .def ("connect", &Client::connect)
-        .def_property_readonly("connected", &Client::isConnected)
+        .def_prop_ro("connected", &Client::isConnected)
         .def("waitUntilDisconnected", &Client::waitUntilDisconnected)
         .def("disconnect", &Client::disconnect)
-        .def("addImage", [](Client& client, const std::string& name, py::array buffer, const std::string& viewerName) {
+        .def("addImage", [](Client& client, const std::string& name, nb::ndarray<> buffer, const std::string& viewerName) {
             ImageSRGBA im = imageFromPythonArray (buffer);
             ClientImageBuffer clientBuffer (im.rawBytes(), im.width(), im.height(), im.bytesPerRow());
             if (!im.hasData())
@@ -270,7 +274,7 @@ void register_Client (py::module& m)
         });
 }
 
-PYBIND11_MODULE(_zv, m) {
+NB_MODULE(_zv, m) {
     m.doc() = R"pbdoc(
         zv python module
         -----------------------

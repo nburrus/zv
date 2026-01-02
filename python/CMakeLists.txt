@@ -1,6 +1,6 @@
-# Create an extension module using pybind11 helper
+# Create an extension module using nanobind helper
 # This handles platform-specific extension suffix (.cpython-310-darwin.so, etc.)
-pybind11_add_module(_zv MODULE zv_python.cpp ../client/zv/Client.cpp)
+nanobind_add_module(_zv MODULE zv_python.cpp ../client/zv/Client.cpp)
 target_link_libraries(_zv PRIVATE zv)
 
 # Set output directory if specified (used by setup.py for pip install)

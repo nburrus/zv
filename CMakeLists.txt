@@ -172,7 +172,40 @@ add_subdirectory(client)
 
 option(BUILD_PYTHON "Build the Python module" OFF)
 if (BUILD_PYTHON)
-  add_subdirectory(deps/pybind11)
+  # Prefer the venv Python (Python_EXECUTABLE should be set by setup.py)
+  set(Python_FIND_VIRTUALENV FIRST)
+  
+  # If Python_EXECUTABLE is set, use it to find include/library paths
+  if (Python_EXECUTABLE)
+    execute_process(
+      COMMAND "${Python_EXECUTABLE}" -c "import sysconfig; print(sysconfig.get_path('include'))"
+      OUTPUT_STRIP_TRAILING_WHITESPACE
+      OUTPUT_VARIABLE Python_INCLUDE_DIR
+    )
+    if (Python_INCLUDE_DIR)
+      set(Python_INCLUDE_DIRS "${Python_INCLUDE_DIR}" CACHE PATH "Python include directory")
+    endif()
+  endif()
+  
+  # Find Python with Development component
+  # Use Development instead of Development.Module for better compatibility
+  # Development.Module requires additional setup that may not be available with all Python installations
+  find_package(Python 3.7 COMPONENTS Interpreter Development REQUIRED)
+  
+  # Detect nanobind from pip installation
+  execute_process(
+    COMMAND "${Python_EXECUTABLE}" -m nanobind --cmake_dir
+    OUTPUT_STRIP_TRAILING_WHITESPACE 
+    OUTPUT_VARIABLE nanobind_DIR
+    RESULT_VARIABLE nanobind_result)
+  
+  if (nanobind_result OR NOT nanobind_DIR)
+    message(FATAL_ERROR "Failed to find nanobind. Please install it with: pip install nanobind")
+  endif()
+  
+  message(STATUS "Found nanobind at: ${nanobind_DIR}")
+  find_package(nanobind CONFIG REQUIRED)
+  
   add_subdirectory(python)
 endif()
 

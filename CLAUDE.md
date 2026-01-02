@@ -6,7 +6,7 @@
 
 - **Status**: Pre-alpha (daily use, rough edges)
 - **License**: BSD
-- **Languages**: C++17 (core), Python (bindings via pybind11)
+- **Languages**: C++17 (core), Python (bindings via nanobind)
 - **Build**: CMake 3.5.1+
 
 **Goals**: Fast startup, lazy loading, pixel-level inspection, multi-image comparison, remote ML server visualization
@@ -33,7 +33,7 @@ libzv/          # Core library (60 files, ~20k lines)
 zv/             # Desktop app entry point
 zv-client/      # CLI client for remote connections
 client/zv/      # Standalone C/C++ client library
-python/         # Python bindings (pybind11)
+python/         # Python bindings (nanobind)
 deps/           # All dependencies vendored (GLFW, ImGui, libjpeg-turbo, STB, etc.)
 tests/          # Test suite
 ```
@@ -43,7 +43,7 @@ tests/          # Test suite
 - **Graphics**: OpenGL 3.3+, GLFW, Dear ImGui
 - **Image I/O**: STB Image, libjpeg-turbo
 - **Network**: znet (header-only TCP)
-- **Python**: pybind11
+- **Python**: nanobind
 - **Dependencies**: All vendored in `deps/` (no package manager needed)
 
 ## Build

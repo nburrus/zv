@@ -4,6 +4,8 @@ requires = [
     "wheel",
     "ninja",
     "cmake>=3.12",
+    "nanobind",
+    "pip"
 ]
 build-backend = "setuptools.build_meta"
 
@@ -12,7 +14,7 @@ name = "zv-python"
 version = "0.1.0"
 description = "ZV image viewer python interface."
 readme = "README.md"
-requires-python = ">=3.7"
+requires-python = ">=3.10"
 authors = [
     {name = "Nicolas Burrus", email = "nicolas@burrus.name"},
 ]
