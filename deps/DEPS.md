@@ -20,9 +20,6 @@ Tweaked to add an install target.
 # CppUserPrefs
 git subtree add --prefix deps/cppuserprefs git@github.com:nburrus/cppuserprefs.git main --squash
 
-# pybind11
-git subtree add --prefix deps/pybind11 git@github.com:pybind/pybind11.git stable --squash
-
 # libjpeg-turbo
 
 Imported from https://github.com/libjpeg-turbo/libjpeg-turbo.git 
@@ -36,3 +33,10 @@ Last update: Nov 23, 2022 commit 74d5b168f7a00250c1dc0001527d10175e00b779 .
 Header-only testing framework from https://github.com/doctest/doctest.git
 
 Only the single header file `doctest.h` is included in `deps/doctest/`.
+
+# nanobind
+
+Python bindings library from https://github.com/wjakob/nanobind
+
+NOT vendored in this repository. Installed via pip as a Python package dependency.
+Used for generating the Python bindings in the `python/` directory.

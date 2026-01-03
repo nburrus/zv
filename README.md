@@ -118,6 +118,6 @@ There are no external dependencies to install as they are all snapshotted in the
 - [cppuserprefs](https://github.com/nburrus/cppuserprefs): storage of user preferences.
 - [gl3w](https://github.com/skaslev/gl3w): tiny OpenGL loader.
 - [ImGuiFileDialog](https://github.com/aiekick/ImGuiFileDialog): pure ImGui file dialogs.
-- [pybind11](https://github.com/pybind/pybind11): generate Python bindings.
+- [nanobind](https://github.com/wjakob/nanobind): generate Python bindings.
 
 A lot of the visualization code was adapted from [DaltonLens](https://github.com/DaltonLens/DaltonLens).
