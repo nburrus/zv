@@ -54,6 +54,21 @@ mkdir build && cd build && cmake -G Ninja .. && ninja
 
 **Outputs**: `libzv` (static lib), `zv` (GUI), `zv-client` (CLI), `_zv` (Python module)
 
+### Python module
+
+Incrementally:
+
+```bash
+# Incremental build of the C++ lib
+cd build && ninja _zv
+
+# Test the import
+source .venv/bin/activate && python -c "import _zv"
+
+# Build and install the full module
+source .venv/bin/activate && uv pip install -e .
+```
+
 ## Code Conventions
 
 - **Naming**: Classes PascalCase, methods camelCase, members `m_` prefix
