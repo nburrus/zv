@@ -154,6 +154,7 @@ public:
     ImageItemPtr imageItemFromId (ImageId imageId);
 
     void swapItems (int idx1, int idx2);
+    void moveItem (int fromIndex, int toIndex);
 
     // Takes ownership.
     ImageId addImage (std::unique_ptr<ImageItem> image, int position, bool replaceExisting);

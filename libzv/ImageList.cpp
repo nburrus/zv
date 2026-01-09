@@ -485,4 +485,23 @@ void ImageList::swapItems (int idx1, int idx2)
     std::swap (impl->entries[idx1], impl->entries[idx2]);
 }
 
+void ImageList::moveItem (int fromIndex, int toIndex)
+{
+    if (fromIndex == toIndex) return;
+    if (fromIndex < 0 || fromIndex >= impl->entries.size()) return;
+    if (toIndex < 0 || toIndex > impl->entries.size()) return;
+
+    auto item = std::move(impl->entries[fromIndex]);
+    impl->entries.erase(impl->entries.begin() + fromIndex);
+
+    if (toIndex > fromIndex)
+    {
+        toIndex--;
+    }
+
+    impl->entries.insert(impl->entries.begin() + toIndex, std::move(item));
+    impl->applyFilter();
+}
+
+
 } // zv

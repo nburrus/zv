@@ -342,7 +342,13 @@ void ControlsWindow::Impl::renderImageList (float cursorOverlayHeight)
         ImGui::TableSetupColumn("Size", ImGuiTableColumnFlags_WidthFixed);
         ImGui::TableHeadersRow();
 
-        std::pair<int,int> dragAndDropped { -1, -1 };
+        // Drag and drop state: source index, target index, insert after target?
+        struct DragDropResult { int sourceIdx = -1; int targetIdx = -1; bool insertAfter = false; };
+        DragDropResult dragDropResult;
+
+        // Track insertion line drawing info
+        struct InsertionIndicator { ImVec2 start; ImVec2 end; bool valid = false; };
+        InsertionIndicator insertionIndicator;
 
         for (int idx = 0; idx < imageList.numImages(); ++idx)
         {
@@ -374,6 +380,11 @@ void ControlsWindow::Impl::renderImageList (float cursorOverlayHeight)
                 this->lastSelectedIdx = idx;
             }
 
+            // Get item rect for determining top/bottom half
+            ImVec2 itemMin = ImGui::GetItemRectMin();
+            ImVec2 itemMax = ImGui::GetItemRectMax();
+            float itemMidY = (itemMin.y + itemMax.y) * 0.5f;
+
             if (ImGui::BeginDragDropSource())
             {
                 ImGui::SetDragDropPayload("_IMAGE_ITEM", reinterpret_cast<void*>(&idx), sizeof(int));
@@ -383,12 +394,26 @@ void ControlsWindow::Impl::renderImageList (float cursorOverlayHeight)
 
             if (ImGui::BeginDragDropTarget())
             {
-                if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("_IMAGE_ITEM"))
+                // Check if we have a pending payload (even before drop)
+                if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("_IMAGE_ITEM", ImGuiDragDropFlags_AcceptPeekOnly))
                 {
-                    IM_ASSERT(payload->DataSize == sizeof(int));
                     int sourceIndex = *reinterpret_cast<int*>(payload->Data);
-                    dragAndDropped.first = sourceIndex;
-                    dragAndDropped.second = idx;
+                    ImVec2 mousePos = ImGui::GetMousePos();
+                    bool inBottomHalf = mousePos.y > itemMidY;
+
+                    // Draw insertion indicator line across full table width
+                    float lineY = inBottomHalf ? itemMax.y : itemMin.y;
+                    insertionIndicator.start = ImVec2(itemMin.x, lineY);
+                    insertionIndicator.end = ImVec2(itemMin.x + availableWidth, lineY);
+                    insertionIndicator.valid = true;
+
+                    // If actually dropped (not just peeking)
+                    if (payload->IsDelivery())
+                    {
+                        dragDropResult.sourceIdx = sourceIndex;
+                        dragDropResult.targetIdx = idx;
+                        dragDropResult.insertAfter = inBottomHalf;
+                    }
                 }
                 ImGui::EndDragDropTarget();
             }
@@ -416,11 +441,36 @@ void ControlsWindow::Impl::renderImageList (float cursorOverlayHeight)
             }            
         }
 
-        if (dragAndDropped.first >= 0)
+
+
+        // Handle the drop
+        if (dragDropResult.sourceIdx >= 0)
         {
-            imageList.swapItems (dragAndDropped.first, dragAndDropped.second);
+            int targetIdx = dragDropResult.targetIdx;
+            if (dragDropResult.insertAfter)
+            {
+                targetIdx++;
+            }
+            // Adjust for the fact that moveItem expects the final position
+            // If moving down (source < target), the target index is already correct after removal
+            // If moving up (source > target), we insert at targetIdx directly
+            if (dragDropResult.sourceIdx < targetIdx)
+            {
+                // Moving down: after removing source, indices shift, so we need target - 1
+                // But we want to insert AFTER original target, so it cancels out
+                // Just pass targetIdx as-is
+            }
+            imageList.moveItem(dragDropResult.sourceIdx, targetIdx);
         }
         ImGui::EndTable();
+
+        // Draw insertion indicator line
+        if (insertionIndicator.valid)
+        {
+            ImDrawList* drawList = ImGui::GetForegroundDrawList();
+            ImU32 lineColor = IM_COL32(100, 150, 255, 255);
+            drawList->AddLine(insertionIndicator.start, insertionIndicator.end, lineColor, 2.0f);
+        }
     }
 }
 
