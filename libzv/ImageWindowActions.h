@@ -37,6 +37,7 @@ struct ImageWindowAction
         File_OpenImage,
         File_SaveImage,
         File_SaveImageAs,
+        File_RefreshImageFromDisk,
         File_DeleteImageOnDisk,
         File_DeleteImageOnDisk_Confirmed,
         File_CloseImage,

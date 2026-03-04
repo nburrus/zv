@@ -466,6 +466,11 @@ ImageItemDataPtr ImageList::getData (ImageItem* entry)
     return impl->cache.getData (entry);
 }
 
+void ImageList::invalidateCachedData (const ImageItem* entry)
+{
+    impl->cache.removeItem (entry);
+}
+
 const ImageItemPtr& ImageList::imageItemFromIndex (int index) const
 {
     zv_assert (index < impl->entries.size(), "Image index out of bounds");

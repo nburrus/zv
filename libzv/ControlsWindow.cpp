@@ -502,8 +502,20 @@ void ControlsWindow::Impl::renderMenu ()
 {
     auto* imageWindow = this->viewer->imageWindow();
     auto& imageWindowState = imageWindow->mutableState();
+    auto& imageList = this->viewer->imageList();
 
     const bool hasChanges = imageWindow->getFirstValidImage(true /* modified only */) != nullptr;
+    bool hasSelectedImageFromDisk = false;
+    for (const int selectedImageIndex : imageList.selectedRange().indices)
+    {
+        if (selectedImageIndex < 0 || selectedImageIndex >= imageList.numImages())
+            continue;
+        if (imageList.imageItemFromIndex(selectedImageIndex)->source == ImageItem::Source::FilePath)
+        {
+            hasSelectedImageFromDisk = true;
+            break;
+        }
+    }
 
     if (ImGui::BeginMenuBar())
     {
@@ -522,6 +534,11 @@ void ControlsWindow::Impl::renderMenu ()
             if (ImGui::MenuItem("Save Image As...", CtrlOrCmd_Str "+Shift+s", false))
             {
                 imageWindow->addCommand(ImageWindow::actionCommand(ImageWindowAction::Kind::File_SaveImageAs));
+            }
+
+            if (ImGui::MenuItem("Refresh from Disk", "F5 / " CtrlOrCmd_Str "+r", false, hasSelectedImageFromDisk))
+            {
+                imageWindow->addCommand(ImageWindow::actionCommand(ImageWindowAction::Kind::File_RefreshImageFromDisk));
             }
 
             if (ImGui::MenuItem("Close Image", "DEL", false))

@@ -642,7 +642,7 @@ void ImageWindow::checkImguiGlobalImageKeyEvents ()
     for (const auto code : {
             GLFW_KEY_1, GLFW_KEY_2, GLFW_KEY_3, GLFW_KEY_4, 
             GLFW_KEY_UP, GLFW_KEY_DOWN, GLFW_KEY_LEFT, GLFW_KEY_RIGHT, GLFW_KEY_PAGE_UP, GLFW_KEY_PAGE_DOWN,
-            GLFW_KEY_O, GLFW_KEY_S, GLFW_KEY_W, 
+            GLFW_KEY_O, GLFW_KEY_S, GLFW_KEY_W, GLFW_KEY_R, GLFW_KEY_F5,
             GLFW_KEY_N, GLFW_KEY_A, GLFW_KEY_V, GLFW_KEY_PERIOD, GLFW_KEY_COMMA, GLFW_KEY_M,
             GLFW_KEY_C, GLFW_KEY_Z,            
             GLFW_KEY_SPACE, GLFW_KEY_BACKSPACE, GLFW_KEY_DELETE,
@@ -729,6 +729,16 @@ void ImageWindow::processKeyEvent (int keycode)
                     enqueueAction (ImageWindowAction::Kind::File_SaveImageAs);
                 else
                     enqueueAction (ImageWindowAction::Kind::File_SaveImage);
+            }
+            break;
+        }
+
+        case GLFW_KEY_F5:
+        case GLFW_KEY_R:
+        {
+            if (keycode == GLFW_KEY_F5 || CtrlOrCmd(io))
+            {
+                enqueueAction (ImageWindowAction::Kind::File_RefreshImageFromDisk);
             }
             break;
         }
@@ -1398,6 +1408,41 @@ void ImageWindow::runAction (const ImageWindowAction& action)
 
         case ImageWindowAction::Kind::File_SaveImageAs: {
             impl->viewer->onSavePendingChangesConfirmed(Confirmation::Ok, true /* force path selection */);
+            break;
+        }
+
+        case ImageWindowAction::Kind::File_RefreshImageFromDisk: {
+            impl->runAfterCheckingPendingChanges ([this]() {
+                auto& imageList = impl->viewer->imageList();
+                const auto& range = imageList.selectedRange();
+
+                bool reloadedAtLeastOneImage = false;
+                for (int i = 0; i < range.indices.size(); ++i)
+                {
+                    const int imageIndex = range.indices[i];
+                    if (imageIndex < 0 || imageIndex >= imageList.numImages())
+                        continue;
+
+                    const auto& itemPtr = imageList.imageItemFromIndex(imageIndex);
+                    if (itemPtr->source != ImageItem::Source::FilePath)
+                        continue;
+
+                    imageList.invalidateCachedData(itemPtr.get());
+                    reloadedAtLeastOneImage = true;
+
+                    if (i < impl->currentImages.size()
+                        && impl->currentImages[i]
+                        && impl->currentImages[i]->item()->uniqueId == itemPtr->uniqueId)
+                    {
+                        impl->currentImages[i] = nullptr;
+                    }
+                }
+
+                if (reloadedAtLeastOneImage)
+                {
+                    impl->cursorOverlayInfo.clear();
+                }
+            });
             break;
         }
         
