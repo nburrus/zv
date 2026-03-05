@@ -223,8 +223,9 @@ Rect CropImageModifier::Params::validImageRectForSize(int width, int height) con
     alignedRect.origin.x = keepInRange(alignedRect.origin.x, 0., width-2.);
     alignedRect.origin.y = keepInRange(alignedRect.origin.y, 0., height-2.);
     Point br = alignedRect.bottomRight();
-    br.x = keepInRange(br.x, alignedRect.origin.x + 1., width - 1.);
-    br.y = keepInRange(br.y, alignedRect.origin.y + 1., height - 1.);
+    // Rect bottom-right is exclusive (origin + size), so max extent is width/height.
+    br.x = keepInRange(br.x, alignedRect.origin.x + 1., double(width));
+    br.y = keepInRange(br.y, alignedRect.origin.y + 1., double(height));
     alignedRect.size.x = br.x - alignedRect.origin.x;
     alignedRect.size.y = br.y - alignedRect.origin.y;
     return alignedRect;
