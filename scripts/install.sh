@@ -93,21 +93,23 @@ verify_checksum() {
     checksum_file="$1"
     archive_file="$2"
     archive_name="$(basename "$archive_file")"
+    expected="$(awk -v archive_name="$archive_name" '$2 == archive_name || $2 == ("./" archive_name) { print $1; exit }' "$checksum_file")"
 
-    if command -v sha256sum >/dev/null 2>&1; then
-        (cd "$(dirname "$archive_file")" && grep " ${archive_name}\$" "$checksum_file" | sha256sum -c -) >/dev/null 2>&1 || fail "checksum verification failed"
-        return 0
-    fi
+    [ -n "$expected" ] || fail "missing checksum entry for ${archive_name}"
 
     if command -v shasum >/dev/null 2>&1; then
-        expected="$(awk "/ ${archive_name}\$/ {print \$1}" "$checksum_file")"
-        [ -n "$expected" ] || fail "missing checksum entry for ${archive_name}"
         actual="$(shasum -a 256 "$archive_file" | awk '{print $1}')"
         [ "$expected" = "$actual" ] || fail "checksum verification failed"
         return 0
     fi
 
-    fail "missing required command: sha256sum or shasum"
+    if command -v sha256sum >/dev/null 2>&1; then
+        actual="$(sha256sum "$archive_file" | awk '{print $1}')"
+        [ "$expected" = "$actual" ] || fail "checksum verification failed"
+        return 0
+    fi
+
+    fail "missing required command: shasum or sha256sum"
 }
 
 while [ "$#" -gt 0 ]; do
