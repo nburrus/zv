@@ -1,0 +1,113 @@
+name: Release Installers
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+env:
+  BUILD_TYPE: Release
+  DEBIAN_FRONTEND: noninteractive
+
+jobs:
+  build-release-artifact:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            target: linux-x86_64
+            cmake_extra_args: ""
+          - os: macos-14
+            target: macos-arm64
+            cmake_extra_args: -DCMAKE_OSX_ARCHITECTURES=arm64
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        lfs: true
+
+    - name: Install Ninja
+      uses: seanmiddleditch/gha-setup-ninja@master
+
+    - name: Install Linux dependencies
+      if: startsWith(matrix.os, 'ubuntu-')
+      run: |
+        sudo --preserve-env=DEBIAN_FRONTEND apt-get update
+        sudo --preserve-env=DEBIAN_FRONTEND apt-get install -y \
+          cmake \
+          libgl-dev \
+          libpng-dev \
+          libx11-dev \
+          libxcb1-dev \
+          libxcursor-dev \
+          libxi-dev \
+          libxinerama-dev \
+          libxrandr-dev \
+          nasm
+
+    - name: Install macOS dependencies
+      if: startsWith(matrix.os, 'macos-')
+      run: brew install nasm
+
+    - name: Configure CMake
+      run: >
+        cmake -G Ninja -B "${{ github.workspace }}/build"
+        -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
+        ${{ matrix.cmake_extra_args }}
+
+    - name: Build zv
+      run: |
+        cmake --build "${{ github.workspace }}/build" --config "${{ env.BUILD_TYPE }}" --target glfw-deps clip-deps libjpeg-turbo-deps
+        cmake --build "${{ github.workspace }}/build" --config "${{ env.BUILD_TYPE }}" --target zvbin
+
+    - name: Stage release files
+      env:
+        TARGET: ${{ matrix.target }}
+        VERSION: ${{ github.ref_name }}
+      run: |
+        mkdir -p "${{ github.workspace }}/dist"
+        cp "${{ github.workspace }}/build/zv/zv" "${{ github.workspace }}/dist/zv"
+        cp "${{ github.workspace }}/LICENSE" "${{ github.workspace }}/dist/LICENSE"
+        cp "${{ github.workspace }}/docs/release/README-install.txt" "${{ github.workspace }}/dist/README-install.txt"
+        tar -C "${{ github.workspace }}/dist" -czf "${{ github.workspace }}/zv-${VERSION}-${TARGET}.tar.gz" zv LICENSE README-install.txt
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.target }}
+        path: ${{ github.workspace }}/zv-${{ github.ref_name }}-${{ matrix.target }}.tar.gz
+        if-no-files-found: error
+
+  publish-release:
+    name: Publish GitHub release
+    needs: build-release-artifact
+    runs-on: ubuntu-22.04
+
+    steps:
+    - name: Download build artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: ${{ github.workspace }}/release-assets
+
+    - name: Collect release files
+      run: |
+        mkdir -p "${{ github.workspace }}/release-upload"
+        find "${{ github.workspace }}/release-assets" -type f -name '*.tar.gz' -exec cp {} "${{ github.workspace }}/release-upload/" \;
+        cd "${{ github.workspace }}/release-upload"
+        sha256sum ./*.tar.gz > SHA256SUMS
+
+    - name: Publish release
+      uses: softprops/action-gh-release@v2
+      with:
+        files: |
+          ${{ github.workspace }}/release-upload/*.tar.gz
+          ${{ github.workspace }}/release-upload/SHA256SUMS
+        generate_release_notes: true

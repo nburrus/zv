@@ -59,6 +59,41 @@ It also has a standalone C and Python API to be used as an alternative to OpenCV
 - Only tested on Linux and macOS so far, but it should be straightforward to
   build on Windows later on as all the dependencies are cross-platform.
 
+## Install
+
+Single-command install for the latest release:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/nburrus/zv/main/scripts/install.sh | bash
+```
+
+Install a specific version:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/nburrus/zv/main/scripts/install.sh | bash -s -- --version v0.1.0
+```
+
+By default, the installer places `zv` in `~/.local/bin`. Override that with:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/nburrus/zv/main/scripts/install.sh | bash -s -- --install-dir ~/bin
+```
+
+Currently supported installer targets:
+
+- macOS arm64
+- Linux x86_64
+
+Manual install is also straightforward: download the matching release tarball, extract it, and copy `zv` into a directory on your `PATH`, for example `~/.local/bin`.
+
+On Linux, `zv` is distributed as a single binary, but it still relies on system graphics and windowing libraries such as OpenGL and X11.
+
+To uninstall:
+
+```bash
+rm -f ~/.local/bin/zv
+```
+
 ## Python API (standalone mode)
 
 Creating a zv viewer directly from Python.
