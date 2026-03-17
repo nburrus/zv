@@ -93,15 +93,10 @@ if (WIN32)
   target_link_libraries(clip INTERFACE Shlwapi)
 endif()
 
-# Specify a default value, for some reason libjpeg-turbo can't find it in the PATH.
+# Resolve NASM explicitly before configuring libjpeg-turbo. Relying on a
+# hard-coded path is brittle across CI runners and local setups.
 if (NOT CMAKE_ASM_NASM_COMPILER)
-  if (WIN32)
-    set (CMAKE_ASM_NASM_COMPILER "C:/Program Files/NASM/nasm.exe")
-  elseif (APPLE)
-    set (CMAKE_ASM_NASM_COMPILER "/usr/bin/nasm")
-  else()
-    set (CMAKE_ASM_NASM_COMPILER "/usr/bin/nasm")
-  endif()
+  find_program(CMAKE_ASM_NASM_COMPILER NAMES nasm)
 endif()
 
 ExternalProject_Add(libjpeg-turbo-deps
@@ -212,4 +207,3 @@ endif()
 
 enable_testing()
 add_subdirectory(tests)
-
