@@ -367,9 +367,9 @@ namespace zv
     using ImageXYZ = Image<PixelXYZ>;
     using ImageLMS = Image<PixelLMS>;
     
-    bool readImageFile (const std::string& inputFileName, ImageSRGBA& outputImage);
+    bool readImageFile (const std::string& inputFileName, ImageSRGBA& outputImage, std::string* errorMessage = nullptr);
     
-    bool readJpegFile (const std::string& inputFilename, ImageSRGBA& outputImage);
+    bool readJpegFile (const std::string& inputFilename, ImageSRGBA& outputImage, std::string* errorMessage = nullptr);
 
     bool writeImageFile (const std::string& filePath, const ImageSRGBA& image);
 

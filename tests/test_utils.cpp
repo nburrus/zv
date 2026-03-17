@@ -2,8 +2,10 @@
 #include "doctest.h"
 
 #include <libzv/Utils.h>
+#include <libzv/Image.h>
 #include <libzv/MathUtils.h>
 #include <set>
+#include <filesystem>
 
 TEST_CASE("uniquePrettyNames with already unique names") {
     std::vector<std::string> inputPaths = {
@@ -97,4 +99,18 @@ TEST_CASE("uniquePrettyNames with single-letter prefixes") {
     for (size_t i = 0; i < expectedOutput.size(); ++i) {
         CHECK(outputNames[i] == expectedOutput[i]);
     }
+}
+
+TEST_CASE("readImageFile loads content even when extension is misleading") {
+    zv::ImageSRGBA image;
+    std::string errorMessage;
+    const auto imagePath = (std::filesystem::path(__FILE__).parent_path() / "rgbgrid_wrong_ext.jpg").string();
+
+    const bool couldLoad = zv::readImageFile(imagePath, image, &errorMessage);
+
+    CHECK(couldLoad);
+    CHECK(image.hasData());
+    CHECK(image.width() == 216);
+    CHECK(image.height() == 216);
+    CHECK(errorMessage.empty());
 }

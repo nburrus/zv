@@ -10,6 +10,7 @@
 #include <libzv/lrucache.hpp>
 
 #include <unordered_map>
+#include <iostream>
 
 #include <filesystem>
 namespace fs = std::filesystem;
@@ -110,10 +111,15 @@ std::unique_ptr<ImageItemData> loadImageData(ImageItem& input)
             staticData->cpuData = std::make_shared<ImageSRGBA>();
 
             Profiler tc (formatted("Load %s", input.sourceImagePath.c_str()).c_str());
-            bool couldLoad = readImageFile (input.sourceImagePath, *staticData->cpuData);
+            bool couldLoad = readImageFile (input.sourceImagePath, *staticData->cpuData, &input.errorString);
             if (!couldLoad)
             {
-                zv_dbg("Could not load %s", input.sourceImagePath.c_str());
+                std::cerr << "ERROR: could not load image '" << input.sourceImagePath << "'";
+                if (!input.errorString.empty())
+                {
+                    std::cerr << ": " << input.errorString;
+                }
+                std::cerr << std::endl;
                 staticData->status = ImageItemData::Status::FailedToLoad;
             }
             tc.stop ();

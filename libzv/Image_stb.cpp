@@ -14,6 +14,7 @@
 
 #include <fstream>
 #include <vector>
+#include <string>
 
 namespace zv
 {    
@@ -32,27 +33,56 @@ namespace zv
         return ends_with(lowerFilename, ".jpg") || ends_with(lowerFilename, ".jpeg");
     }
 
-    bool readImageFile (const std::string& inputFileName, ImageSRGBA& outputImage)
+    bool readImageFile (const std::string& inputFileName, ImageSRGBA& outputImage, std::string* errorMessage)
     {
         if (fileHasJpegExtension(inputFileName))
         {
-            return readJpegFile (inputFileName, outputImage);
+            std::string jpegError;
+            if (readJpegFile(inputFileName, outputImage, &jpegError))
+            {
+                return true;
+            }
+
+            int width = -1, height = -1, channels = -1;
+            uint8_t* data = stbi_load(inputFileName.c_str(), &width, &height, &channels, 4);
+            if (data)
+            {
+                outputImage.ensureAllocatedBufferForSize (width, height);
+                outputImage.copyDataFrom (data, width*4, width, height);
+                stbi_image_free(data);
+                return true;
+            }
+
+            if (errorMessage)
+            {
+                const char* stbError = stbi_failure_reason();
+                *errorMessage = formatted("TurboJPEG: %s; stb_image: %s",
+                                          jpegError.empty() ? "unknown error" : jpegError.c_str(),
+                                          stbError ? stbError : "unknown error");
+            }
+            return false;
         }
 
         int width = -1, height = -1, channels = -1;
         uint8_t* data = stbi_load(inputFileName.c_str(), &width, &height, &channels, 4);
         if (!data)
         {
+            if (errorMessage)
+            {
+                const char* stbError = stbi_failure_reason();
+                *errorMessage = stbError ? stbError : "unknown error";
+            }
             return false;
         }
         // channels can be anything (corresponding to the input image), but we requested 4
         // so the output data will always have 4.
         outputImage.ensureAllocatedBufferForSize (width, height);
         outputImage.copyDataFrom (data, width*4, width, height);
+        stbi_image_free(data);
         return true;
     }
 
-    bool readJpegFile (const std::string& inputFilename, ImageSRGBA& outputImage)
+    bool readJpegFile (const std::string& inputFilename, ImageSRGBA& outputImage, std::string* errorMessage)
     {
         static thread_local tjhandle tjdecompressor = nullptr;
         if (!tjdecompressor)
@@ -62,13 +92,30 @@ namespace zv
         zv_assert (tjdecompressor != nullptr, "Could not initialize a decompressor");
 
         std::ifstream file (inputFilename, std::ios::binary | std::ios::ate);
+        if (!file.is_open())
+        {
+            if (errorMessage)
+                *errorMessage = "could not open file";
+            return false;
+        }
+
         std::streamsize size = file.tellg();
+        if (size <= 0)
+        {
+            if (errorMessage)
+                *errorMessage = "file is empty or unreadable";
+            return false;
+        }
         file.seekg(0, std::ios::beg);
 
         std::vector<char> buffer(size);
         file.read(buffer.data(), size);
         if (!file.good())
+        {
+            if (errorMessage)
+                *errorMessage = "failed to read file contents";
             return false;
+        }
 
         int width = -1;
         int height = -1;
@@ -77,6 +124,8 @@ namespace zv
         int ret = tjDecompressHeader3(tjdecompressor, (unsigned char*)buffer.data(), buffer.size(), &width, &height, &inSubsamp, &inColorspace);
         if (ret < 0)
         {
+            if (errorMessage)
+                *errorMessage = tjGetErrorStr();
             zv_dbg ("Invalid JPEG header");
             return false;
         }
@@ -85,6 +134,8 @@ namespace zv
         ret = tjDecompress2 (tjdecompressor, (unsigned char*)buffer.data(), buffer.size(), outputImage.rawBytes(), width, outputImage.bytesPerRow(), height, TJPF_RGBA, /*flags=*/ 0);
         if (ret < 0)
         {
+            if (errorMessage)
+                *errorMessage = tjGetErrorStr();
             zv_dbg ("Failed to decompress");
             return false;
         }
@@ -137,4 +188,3 @@ namespace zv
     }
     
 } // zv
-
