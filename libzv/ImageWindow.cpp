@@ -397,12 +397,15 @@ void ImageWindow::Impl::adjustForNewSelection ()
             this->currentImages[i] = {};
         }
     }
+
+    imageList.preloadNextDataFromSelection();
     
     Point firstImSizeInRectBefore = this->currentLayout.firstImSizeInRect (this->imageWidgetRect.current.size, gridPadding);
     bool layoutChanged = this->currentLayout.adjustForConfig(this->mutableState.layoutConfig);
         
-    // The first image will decide for all the other sizes.
-    const auto& firstIm = *this->currentImages[firstValidSelectionIndex]->data()->cpuData;
+    const auto& firstImageData = this->currentImages[firstValidSelectionIndex]->data();
+    const auto& firstIm = *firstImageData->cpuData;
+    const bool firstImageStillLoading = !firstIm.hasData() && firstImageData->status == ImageItemData::Status::StillLoading;
 
     if (!this->imageWidgetRect.normal.origin.isValid())
     {
@@ -410,10 +413,23 @@ void ImageWindow::Impl::adjustForNewSelection ()
         this->imageWidgetRect.normal.origin.y = this->monitorSize.y * 0.10;
     }
 
-    // Handle the case there the cpuImage is empty (e.g. failed to load the file).
-    int firstImWidth = firstIm.width() > 0 ? firstIm.width() : 256;
-    int firstImHeight = firstIm.height() > 0 ? firstIm.height() : 256;
-    this->imageWidgetRect.normal.size = this->currentLayout.widgetRectForImageSize(Point(firstImWidth, firstImHeight), gridPadding);
+    // Keep the current window geometry while the image is still loading to avoid
+    // resize flicker between placeholder and final image dimensions.
+    if (!firstImageStillLoading)
+    {
+        // Handle the case there the cpuImage is empty (e.g. failed to load the file).
+        int firstImWidth = firstIm.width() > 0 ? firstIm.width() : 256;
+        int firstImHeight = firstIm.height() > 0 ? firstIm.height() : 256;
+        this->imageWidgetRect.normal.size = this->currentLayout.widgetRectForImageSize(Point(firstImWidth, firstImHeight), gridPadding);
+    }
+    else if (this->imageWidgetRect.current.origin.isValid())
+    {
+        this->imageWidgetRect.normal.size = this->imageWidgetRect.current.size;
+    }
+    else
+    {
+        this->imageWidgetRect.normal.size = this->imguiGlfwWindow.geometry().size;
+    }
 
     this->mutableState.activeMode = ViewerMode::Original;
 
@@ -435,6 +451,10 @@ void ImageWindow::Impl::adjustForNewSelection ()
     {
         this->imageWidgetRect.current.size = this->currentLayout.widgetRectForImageSize(firstImSizeInRectBefore, gridPadding);
         this->shouldUpdateWindowSize = true;
+    }
+    else if (firstImageStillLoading)
+    {
+        // Keep the previous geometry while data is pending.
     }
     else
     {
@@ -1114,7 +1134,6 @@ void ImageWindow::renderFrame ()
                     }
 
                     case ImageItemData::Status::StillLoading: {
-                        ImGui::TextColored(ImVec4(1, 0, 0, 1), "Loading the image...");
                         break;
                     }
                     

@@ -164,6 +164,7 @@ public:
 
     // Important to call this with a GL context set as it may release some GL textures.
     ImageItemDataPtr getData (ImageItem* entry);
+    void preloadNextDataFromSelection ();
 
     // Remove a single image from the CPU/GPU cache so the next getData() reloads it.
     // Important to call this with a GL context set as it may release some GL textures.

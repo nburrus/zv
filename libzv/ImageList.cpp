@@ -181,8 +181,12 @@ public:
         }
     }
     
-    // For later.
-    void asyncPreload (ImageItem* entry) {}
+    void asyncPreload (ImageItem* entry)
+    {
+        if (!entry || entry->source != ImageItem::Source::Callback)
+            return;
+        getData(entry);
+    }
 
 private:
     lru_cache<uint64_t, ImageItemDataPtr> _lruCache;
@@ -470,6 +474,27 @@ void ImageList::removeImage (int index)
 ImageItemDataPtr ImageList::getData (ImageItem* entry)
 {
     return impl->cache.getData (entry);
+}
+
+void ImageList::preloadNextDataFromSelection ()
+{
+    if (impl->enabledEntries.empty())
+        return;
+
+    int nextSelectionStart = impl->selectionStart + impl->selectionCount;
+    while (nextSelectionStart >= (int)impl->enabledEntries.size())
+    {
+        nextSelectionStart -= impl->selectionCount;
+    }
+
+    if (nextSelectionStart < 0 || nextSelectionStart >= (int)impl->enabledEntries.size())
+        return;
+
+    const int nextEntryIndex = impl->enabledEntries[nextSelectionStart];
+    if (nextEntryIndex < 0 || nextEntryIndex >= (int)impl->entries.size())
+        return;
+
+    impl->cache.asyncPreload(impl->entries[nextEntryIndex].get());
 }
 
 void ImageList::invalidateCachedData (const ImageItem* entry)
