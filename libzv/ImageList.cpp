@@ -440,7 +440,7 @@ ImageId ImageList::addImage (std::unique_ptr<ImageItem> image, int insertPositio
     if (replaceExisting)
     {
         auto existing_element = std::find_if(impl->entries.begin(), impl->entries.end(), [&](const ImageItemPtr& e) {
-            if (image->source == ImageItem::Source::FilePath && e->source == ImageItem::Source::FilePath)
+            if (!image->sourceImagePath.empty() && !e->sourceImagePath.empty())
                 return e->sourceImagePath == image->sourceImagePath;
             return e->prettyName == image->prettyName;
         });

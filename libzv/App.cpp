@@ -46,7 +46,8 @@ struct App::Impl
             {
                 viewer = that.createViewer (imageItem->viewerName);
             }
-            viewer->addImageItem (std::move(imageItem), -1, replace); 
+            viewer->addImageItem (std::move(imageItem), -1, replace);
+            viewer->refreshPrettyFileNames();
         });
 
         std::vector<std::string> viewersToRemove;

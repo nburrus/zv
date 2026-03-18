@@ -3,6 +3,7 @@
 
 #include <libzv/Utils.h>
 #include <libzv/Image.h>
+#include <libzv/ImageList.h>
 #include <libzv/MathUtils.h>
 #include <set>
 #include <filesystem>
@@ -113,4 +114,46 @@ TEST_CASE("readImageFile loads content even when extension is misleading") {
     CHECK(image.width() == 216);
     CHECK(image.height() == 216);
     CHECK(errorMessage.empty());
+}
+
+TEST_CASE("ImageList keeps remote images with identical basenames but different paths") {
+    zv::ImageList imageList;
+
+    auto makeRemoteImage = [](const std::string& path) {
+        auto entry = std::make_unique<zv::ImageItem>();
+        entry->uniqueId = zv::UniqueId::newId();
+        entry->source = zv::ImageItem::Source::Callback;
+        entry->sourceImagePath = path;
+        entry->prettyName = std::filesystem::path(path).filename().string();
+        entry->loadDataCallback = []() {
+            return std::make_unique<zv::ImageItemData>();
+        };
+        return entry;
+    };
+
+    imageList.addImage(makeRemoteImage("/tmp/folder_a/shared.png"), -1, true);
+    imageList.addImage(makeRemoteImage("/tmp/folder_b/shared.png"), -1, true);
+
+    CHECK(imageList.numImages() == 2);
+}
+
+TEST_CASE("ImageList still replaces remote images that point to the same path") {
+    zv::ImageList imageList;
+
+    auto makeRemoteImage = [](const std::string& path) {
+        auto entry = std::make_unique<zv::ImageItem>();
+        entry->uniqueId = zv::UniqueId::newId();
+        entry->source = zv::ImageItem::Source::Callback;
+        entry->sourceImagePath = path;
+        entry->prettyName = std::filesystem::path(path).filename().string();
+        entry->loadDataCallback = []() {
+            return std::make_unique<zv::ImageItemData>();
+        };
+        return entry;
+    };
+
+    imageList.addImage(makeRemoteImage("/tmp/folder/shared.png"), -1, true);
+    imageList.addImage(makeRemoteImage("/tmp/folder/shared.png"), -1, true);
+
+    CHECK(imageList.numImages() == 1);
 }
