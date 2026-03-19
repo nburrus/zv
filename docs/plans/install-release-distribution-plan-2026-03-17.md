@@ -2,7 +2,7 @@
 
 ## Goal
 
-Provide a simple, single-command install flow for `zv` on macOS and Linux based on GitHub release artifacts and a small installer script that installs `zv` into `~/.local/bin` by default.
+Provide a simple, single-command install flow for `zv` on macOS and Linux based on GitHub release artifacts and a small installer script that installs `zv` and `zv-client` into `~/.local/bin` by default.
 
 The intended user-facing flow is:
 
@@ -13,6 +13,7 @@ curl -fsSL https://raw.githubusercontent.com/nburrus/zv/main/scripts/install.sh 
 ## Constraints And Current State
 
 - `zv` already builds as a single executable target named `zv`.
+- `zv-client` is also built as a separate executable target and should ship in the same release archive.
 - CI currently builds and tests the project, but does not publish installable release artifacts.
 - Linux is not fully static in the strict sense because platform libraries such as X11/OpenGL/XCB are still linked dynamically.
 - The first version should optimize for a reliable install path, not for full package-manager integration.
@@ -33,7 +34,7 @@ Defer Linux arm64 until the basic flow is working end-to-end.
 Implement:
 
 - A tag-triggered GitHub Actions release workflow
-- Per-platform release archives containing the `zv` binary
+- Per-platform release archives containing the `zv` and `zv-client` binaries
 - A `SHA256SUMS` file for published artifacts
 - A POSIX shell installer script at `scripts/install.sh`
 - README installation documentation
@@ -69,6 +70,7 @@ Suggested filenames:
 Each tarball should contain:
 
 - `zv`
+- `zv-client`
 - `LICENSE`
 - `README-install.txt`
 
@@ -115,9 +117,9 @@ Fail with a clear error for unsupported combinations.
 3. Download the tarball
 4. Download `SHA256SUMS`
 5. Verify the tarball checksum
-6. Extract `zv`
-7. Install into `${ZV_INSTALL_DIR:-$HOME/.local/bin}`
-8. Mark executable
+6. Extract `zv` and `zv-client`
+7. Install all shipped binaries into `${ZV_INSTALL_DIR:-$HOME/.local/bin}`
+8. Mark executables
 9. Print a concise success message and PATH guidance if needed
 
 ### Tooling assumptions
@@ -160,8 +162,8 @@ Each matrix job should:
 1. Check out the repository
 2. Install build dependencies needed for that runner
 3. Configure a `Release` build
-4. Build `zv`
-5. Stage a release directory with `zv` and `LICENSE`
+4. Build `zv` and `zv-client`
+5. Stage a release directory with `zv`, `zv-client`, and `LICENSE`
 6. Create the target tarball with the standard filename
 7. Upload the tarball as a workflow artifact
 
@@ -189,6 +191,7 @@ Update `README.md` with a short installation section that includes:
 
 ```bash
 rm -f ~/.local/bin/zv
+rm -f ~/.local/bin/zv-client
 ```
 
 ## Verification Plan
@@ -238,6 +241,7 @@ Validate:
 - Done: add tag-driven release workflow
 - Done: generate and publish `SHA256SUMS`
 - Done: update `README.md`
+- Done: add README example for `zv-client` + `zv-proxy` + `ssh -R`
 - Pending: validate the full flow against a real GitHub tag and release
 
 ## Open Decisions

@@ -73,7 +73,7 @@ Install a specific version:
 curl -fsSL https://raw.githubusercontent.com/nburrus/zv/main/scripts/install.sh | bash -s -- --version v0.1.0
 ```
 
-By default, the installer places `zv` in `~/.local/bin`. Override that with:
+By default, the installer places `zv` and `zv-client` in `~/.local/bin`. Override that with:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/nburrus/zv/main/scripts/install.sh | bash -s -- --install-dir ~/bin
@@ -84,7 +84,7 @@ Currently supported installer targets:
 - macOS arm64
 - Linux x86_64
 
-Manual install is also straightforward: download the matching release tarball, extract it, and copy `zv` into a directory on your `PATH`, for example `~/.local/bin`.
+Manual install is also straightforward: download the matching release tarball, extract it, and copy `zv` and `zv-client` into a directory on your `PATH`, for example `~/.local/bin`.
 
 On Linux, `zv` is distributed as a single binary, but it still relies on system graphics and windowing libraries such as OpenGL and X11.
 
@@ -92,6 +92,7 @@ To uninstall:
 
 ```bash
 rm -f ~/.local/bin/zv
+rm -f ~/.local/bin/zv-client
 ```
 
 ## Python API (standalone mode)
@@ -133,6 +134,78 @@ zvlog.waitUntilWindowsAreClosed()
 ```
 
 A similar logging API is available in C/C++, without external dependencies, but the zv binary needs to be in the PATH.
+
+## Remote usage with zv-client, zv, zv-proxy, and ssh -R
+
+If you want to browse images that live on a remote machine while keeping the GUI on your local machine, use:
+
+- `zv-client` on the remote machine
+- either `zv` or `zv-proxy` on the local machine
+- `ssh -R` to expose the local proxy port back to the remote machine
+
+### Step 1: direct connection to a local zv instance
+
+If a single forwarded session is enough, you can connect the remote client directly to a local `zv` server.
+
+In the common case, the defaults already line up:
+
+- `zv` listens on `127.0.0.1:4207`
+- `zv-client` connects to `127.0.0.1:4207`
+
+So in practice you usually only need:
+
+1. On your local machine:
+
+```bash
+zv
+```
+
+2. From your local machine:
+
+```bash
+ssh -R 4207:127.0.0.1:4207 user@remote-host
+```
+
+3. On the remote machine:
+
+```bash
+zv-client /path/to/image1.png /path/to/image2.jpg
+```
+
+In this setup:
+
+- `zv-client` connects to `127.0.0.1:4207` on the remote machine
+- `ssh -R` forwards that connection to `127.0.0.1:4207` on your local machine
+- the local `zv` process receives the images and displays them
+- if you need to customize this, `zv` exposes `--interface`, `--port`, and `--require-server`, and `zv-client` exposes `--host` and `--port`
+
+### Step 2: use zv-proxy to spawn a dedicated local zv per connection
+
+If you want each remote client connection to create its own local `zv` instance automatically, insert `zv-proxy` between the SSH tunnel and `zv`.
+
+Again, the defaults are set up so the minimal version is usually enough:
+
+1. On your local machine:
+
+```bash
+uv run python/zv-proxy.py
+```
+
+2. Reuse the same `ssh -R` and `zv-client` steps as above.
+
+End-to-end flow:
+
+- `zv-client` connects to `127.0.0.1:4207` on the remote machine
+- `ssh -R` forwards that connection to `127.0.0.1:4207` on your local machine
+- `zv-proxy` accepts the connection, starts a local `zv -p <ephemeral-port> --require-server`, and proxies the traffic
+- the images are then displayed by a local `zv` window on your machine
+- if you need to customize this, `zv-proxy` exposes `--listen-host`, `--listen-port`, `--zv-host`, and `--zv-cmd`, while `zv-client` still exposes `--host` and `--port`
+
+Notes:
+
+- `zv-proxy` lives at `python/zv-proxy.py` in this repository and currently expects `uv run`.
+- If `zv` is not on your local `PATH`, replace `--zv-cmd "zv"` with the full path to the binary.
+- The proxy handles multiple client connections and spawns one separate local `zv` process per connection.
 
 ## Building
 

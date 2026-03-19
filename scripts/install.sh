@@ -170,9 +170,22 @@ verify_checksum "$CHECKSUMS_PATH" "$ARCHIVE_PATH"
 mkdir -p "$INSTALL_DIR"
 tar -xzf "$ARCHIVE_PATH" -C "$TMP_DIR"
 [ -f "${TMP_DIR}/zv" ] || fail "archive did not contain zv"
-install_path="${INSTALL_DIR}/zv"
-cp "${TMP_DIR}/zv" "$install_path"
-chmod 755 "$install_path"
+
+installed_binaries=""
+for binary in zv zv-client; do
+    if [ -f "${TMP_DIR}/${binary}" ]; then
+        install_path="${INSTALL_DIR}/${binary}"
+        cp "${TMP_DIR}/${binary}" "$install_path"
+        chmod 755 "$install_path"
+        if [ -n "$installed_binaries" ]; then
+            installed_binaries="${installed_binaries}, ${install_path}"
+        else
+            installed_binaries="${install_path}"
+        fi
+    fi
+done
+
+[ -n "$installed_binaries" ] || fail "archive did not contain any installable binaries"
 
 case ":$PATH:" in
     *":${INSTALL_DIR}:"*)
@@ -183,7 +196,7 @@ case ":$PATH:" in
         ;;
 esac
 
-echo "Installed ${install_path}"
+echo "Installed ${installed_binaries}"
 if [ -n "$path_message" ]; then
     echo "$path_message"
 fi
