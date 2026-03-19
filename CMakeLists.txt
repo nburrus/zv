@@ -3,7 +3,8 @@ cmake_minimum_required(VERSION 3.10)
 project(zv)
 set(PROJECT_VERSION_MAJOR 0)
 set(PROJECT_VERSION_MINOR 1)
-set(PROJECT_VERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR})
+set(PROJECT_VERSION_PATCH 1)
+set(PROJECT_VERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}.${PROJECT_VERSION_PATCH})
 
 # Get the current commit as a version variable.
 # Make sure that we'll re-run configure if the commit changes.

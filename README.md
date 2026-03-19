@@ -70,7 +70,7 @@ curl -fsSL https://raw.githubusercontent.com/nburrus/zv/main/scripts/install.sh 
 Install a specific version:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/nburrus/zv/main/scripts/install.sh | bash -s -- --version v0.1.0
+curl -fsSL https://raw.githubusercontent.com/nburrus/zv/main/scripts/install.sh | bash -s -- --version v0.1.1
 ```
 
 By default, the installer places `zv` and `zv-client` in `~/.local/bin`. Override that with:
