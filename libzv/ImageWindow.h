@@ -87,6 +87,8 @@ public:
 
     static Command actionCommand (const ImageWindowAction& action);
 
+    static Command autoLayoutCommand(int maxImages = 128);
+    static Command layoutCommand(const LayoutConfig& config);
     static Command layoutCommand(int nrows, int ncols);
 
 public:

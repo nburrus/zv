@@ -10,6 +10,9 @@
 #include <libzv/InteractiveTool.h>
 #include <libzv/ImguiUtils.h>
 
+#include <string>
+#include <vector>
+
 namespace zv
 {
 
@@ -34,6 +37,18 @@ struct LayoutConfig
     }
     bool operator!=(const LayoutConfig& rhs) const { return !(*this == rhs); }
 };
+
+struct LayoutMenuEntry
+{
+    const char* label = "";
+    const char* shortcut = nullptr;
+    LayoutConfig config;
+};
+
+LayoutConfig bestLayoutForImageCount(int numImages, int maxImages = 128, float targetAspectRatio = 4.f / 3.f);
+LayoutConfig shortcutLayoutForImageCount(int numImages);
+std::string layoutLabel(const LayoutConfig& config);
+const std::vector<LayoutMenuEntry>& layoutMenuEntries();
 
 struct ActiveToolState
 {

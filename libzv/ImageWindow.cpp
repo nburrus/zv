@@ -42,6 +42,7 @@
 
 #include <clip/clip.h>
 
+#include <algorithm>
 #include <deque>
 #include <cstdio>
 #include <filesystem>
@@ -660,7 +661,9 @@ void ImageWindow::checkImguiGlobalImageKeyEvents ()
         return;
 
     for (const auto code : {
-            GLFW_KEY_1, GLFW_KEY_2, GLFW_KEY_3, GLFW_KEY_4, 
+            GLFW_KEY_0,
+            GLFW_KEY_1, GLFW_KEY_2, GLFW_KEY_3, GLFW_KEY_4, GLFW_KEY_5,
+            GLFW_KEY_6, GLFW_KEY_7, GLFW_KEY_8, GLFW_KEY_9,
             GLFW_KEY_UP, GLFW_KEY_DOWN, GLFW_KEY_LEFT, GLFW_KEY_RIGHT, GLFW_KEY_PAGE_UP, GLFW_KEY_PAGE_DOWN,
             GLFW_KEY_O, GLFW_KEY_S, GLFW_KEY_W, GLFW_KEY_R, GLFW_KEY_F5,
             GLFW_KEY_N, GLFW_KEY_A, GLFW_KEY_V, GLFW_KEY_PERIOD, GLFW_KEY_COMMA, GLFW_KEY_M,
@@ -693,6 +696,18 @@ inline bool CtrlOrCmd(ImGuiIO& io)
 void ImageWindow::processKeyEvent (int keycode)
 {
     auto& io = ImGui::GetIO();
+
+    if (keycode == GLFW_KEY_0)
+    {
+        addCommand(ImageWindow::autoLayoutCommand());
+        return;
+    }
+
+    if (keycode >= GLFW_KEY_1 && keycode <= GLFW_KEY_9)
+    {
+        addCommand(ImageWindow::layoutCommand(shortcutLayoutForImageCount(keycode - GLFW_KEY_0)));
+        return;
+    }
 
     switch (keycode)
     {
@@ -784,12 +799,6 @@ void ImageWindow::processKeyEvent (int keycode)
         case GLFW_KEY_COMMA: enqueueAction (ImageWindowAction::Kind::Zoom_Dec10p); break;
         case '<': enqueueAction (ImageWindowAction::Kind::Zoom_div2); break;
         case '>': enqueueAction (ImageWindowAction::Kind::Zoom_x2); break;
-
-        // Layout
-        case GLFW_KEY_1: addCommand(ImageWindow::layoutCommand(1,1)); break;
-        case GLFW_KEY_2: addCommand(ImageWindow::layoutCommand(1,2)); break;
-        case GLFW_KEY_3: addCommand(ImageWindow::layoutCommand(1,3)); break;
-        case GLFW_KEY_4: addCommand(ImageWindow::layoutCommand(2,2)); break;
 
     }
 }
@@ -1675,6 +1684,27 @@ ImageWindow::Command ImageWindow::actionCommand (const ImageWindowAction& action
     return Command([action](ImageWindow& window) {
         window.runAction (action);
     });
+}
+
+ImageWindow::Command ImageWindow::autoLayoutCommand(int maxImages)
+{
+    return Command([maxImages](ImageWindow &window) {
+        auto& imageList = window.impl->viewer->imageList();
+        const int numImages = std::min(imageList.numImages(), maxImages);
+        if (numImages <= 0)
+            return;
+
+        const auto config = bestLayoutForImageCount(numImages, maxImages);
+        window.impl->runAfterCheckingPendingChanges([config, &window]() {
+            window.impl->mutableState.layoutConfig = config;
+            window.impl->viewer->imageList().setSelectionCount(config.numImages());
+        });
+    });
+}
+
+ImageWindow::Command ImageWindow::layoutCommand(const LayoutConfig& config)
+{
+    return layoutCommand(config.numRows, config.numCols);
 }
 
 ImageWindow::Command ImageWindow::layoutCommand(int numRows, int numCols)

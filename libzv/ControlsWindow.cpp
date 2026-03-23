@@ -642,37 +642,16 @@ void ControlsWindow::Impl::renderMenu ()
             }
             if (ImGui::BeginMenu("Layout"))
             {
-                if (ImGui::MenuItem("Single image", "1"))
+                if (ImGui::MenuItem("Automatic mosaic", "0"))
                 {
-                    imageWindow->addCommand(ImageWindow::layoutCommand(1, 1));
+                    imageWindow->addCommand(ImageWindow::autoLayoutCommand());
                 }
-                if (ImGui::MenuItem("2 columns", "2"))
+                for (const auto& entry : layoutMenuEntries())
                 {
-                    imageWindow->addCommand(ImageWindow::layoutCommand(1, 2));
-                }
-                if (ImGui::MenuItem("3 columns", "3"))
-                {
-                    imageWindow->addCommand(ImageWindow::layoutCommand(1, 3));
-                }
-                if (ImGui::MenuItem("2 rows"))
-                {
-                    imageWindow->addCommand(ImageWindow::layoutCommand(2, 1));
-                }
-                if (ImGui::MenuItem("3 rows"))
-                {
-                    imageWindow->addCommand(ImageWindow::layoutCommand(3, 1));
-                }
-                if (ImGui::MenuItem("2x2"))
-                {
-                    imageWindow->addCommand(ImageWindow::layoutCommand(2, 2));
-                }
-                if (ImGui::MenuItem("2x3"))
-                {
-                    imageWindow->addCommand(ImageWindow::layoutCommand(2, 3));
-                }
-                if (ImGui::MenuItem("3x4"))
-                {
-                    imageWindow->addCommand(ImageWindow::layoutCommand(3, 4));
+                    if (ImGui::MenuItem(entry.label, entry.shortcut))
+                    {
+                        imageWindow->addCommand(ImageWindow::layoutCommand(entry.config));
+                    }
                 }
                 ImGui::EndMenu();
             }
