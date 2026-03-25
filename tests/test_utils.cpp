@@ -4,6 +4,7 @@
 #include <libzv/Utils.h>
 #include <libzv/Image.h>
 #include <libzv/ImageList.h>
+#include <libzv/ImageWindowState.h>
 #include <libzv/MathUtils.h>
 #include <set>
 #include <filesystem>
@@ -156,4 +157,12 @@ TEST_CASE("ImageList still replaces remote images that point to the same path") 
     imageList.addImage(makeRemoteImage("/tmp/folder/shared.png"), -1, true);
 
     CHECK(imageList.numImages() == 1);
+}
+
+TEST_CASE("bestLayoutForImageCount minimizes blank cells before aspect ratio") {
+    const auto layout = zv::bestLayoutForImageCount(6);
+
+    CHECK(layout.numRows == 2);
+    CHECK(layout.numCols == 3);
+    CHECK(layout.numImages() == 6);
 }

@@ -20,8 +20,8 @@ LayoutConfig bestLayoutForImageCount(int numImages, int maxImages, float targetA
         return bestConfig;
 
     const int cappedNumImages = std::min(numImages, maxImages);
-    float bestAspectError = std::numeric_limits<float>::infinity();
     int bestWaste = std::numeric_limits<int>::max();
+    float bestAspectError = std::numeric_limits<float>::infinity();
 
     for (int numRows = 1; numRows <= cappedNumImages; ++numRows)
     {
@@ -35,13 +35,13 @@ LayoutConfig bestLayoutForImageCount(int numImages, int maxImages, float targetA
             const float aspectRatio = static_cast<float>(numCols) / numRows;
             const float aspectError = std::abs(std::log(aspectRatio / targetAspectRatio));
 
-            if (aspectError < bestAspectError
-                || (aspectError == bestAspectError && waste < bestWaste)
-                || (aspectError == bestAspectError && waste == bestWaste
+            if (waste < bestWaste
+                || (waste == bestWaste && aspectError < bestAspectError)
+                || (waste == bestWaste && aspectError == bestAspectError
                     && layoutSize < bestConfig.numImages()))
             {
-                bestAspectError = aspectError;
                 bestWaste = waste;
+                bestAspectError = aspectError;
                 bestConfig.numRows = numRows;
                 bestConfig.numCols = numCols;
             }
