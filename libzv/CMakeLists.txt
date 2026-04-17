@@ -11,6 +11,12 @@ set (zv_deps_sources
     ${IMGUI_DIR}/backends/imgui_impl_opengl3.cpp
     ${IMGUI_DIR}/backends/imgui_impl_glfw.cpp
 
+    ${IMPLOT_DIR}/implot.cpp
+    ${IMPLOT_DIR}/implot.h
+    ${IMPLOT_DIR}/implot_internal.h
+    ${IMPLOT_DIR}/implot_items.cpp
+    ${IMPLOT_DIR}/implot_demo.cpp
+
     ${DEPS_DIR}/nativefiledialog-extended/src/include/nfd.h
     ${DEPS_DIR}/nativefiledialog-extended/src/include/nfd.hpp
 

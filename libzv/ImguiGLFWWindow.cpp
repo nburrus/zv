@@ -25,6 +25,7 @@
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl3.h"
 #include "imgui_internal.h"
+#include "implot.h"
 #include <imgui/misc/freetype/imgui_freetype.h>
 
 #include <GL/gl3w.h>
@@ -43,6 +44,7 @@ float ImguiGLFWWindow::s_smallMonoFontPixelSize = 15.f;
 struct ImguiGLFWWindow::Impl
 {
     ImGuiContext* imGuiContext = nullptr;
+    ImPlotContext* imPlotContext = nullptr;
 
     GLFWwindow* window = nullptr;
     bool enabled = false;
@@ -68,22 +70,25 @@ public:
     {
         void* ptr = glfwGetWindowUserPointer(w);
         _imguiGLFWWindow = reinterpret_cast<ImguiGLFWWindow*>(ptr);
-        initialize (_imguiGLFWWindow->impl->imGuiContext);
+        initialize (_imguiGLFWWindow->impl->imGuiContext, _imguiGLFWWindow->impl->imPlotContext);
     }
     
     ImGuiScopedContext (ImGuiContext* context)
     {
-        initialize (context);
+        initialize (context, nullptr);
     }
     
-    void initialize (ImGuiContext* context)
+    void initialize (ImGuiContext* context, ImPlotContext* imPlotContext)
     {
+        prevImPlotContext = ImPlot::GetCurrentContext();
         prevContext = ImGui::GetCurrentContext();
         ImGui::SetCurrentContext (context);
+        ImPlot::SetCurrentContext(imPlotContext);
     }
     
     ~ImGuiScopedContext ()
     {
+        ImPlot::SetCurrentContext(prevImPlotContext);
         ImGui::SetCurrentContext(prevContext);
     }
 
@@ -91,7 +96,8 @@ public:
     
 private:
     ImGuiContext* prevContext;
-    ImguiGLFWWindow* _imguiGLFWWindow;
+    ImPlotContext* prevImPlotContext;
+    ImguiGLFWWindow* _imguiGLFWWindow = nullptr;
 };
 
 // Singleton class to keep track of all the contexts.
@@ -297,6 +303,8 @@ void ImguiGLFWWindow::shutdown()
         ImGui_ImplOpenGL3_Shutdown();
         ImGui_ImplGlfw_Shutdown();
         ImGuiContextTracker::instance()->removeContext(impl->imGuiContext);
+        ImPlot::DestroyContext(impl->imPlotContext);
+        impl->imPlotContext = nullptr;
         ImGui::DestroyContext(impl->imGuiContext);
         impl->imGuiContext = nullptr;
 
@@ -400,6 +408,8 @@ bool ImguiGLFWWindow::initialize (GLFWwindow* parentWindow,
     impl->imGuiContext->IO.IniFilename = nullptr;
     ImGuiContextTracker::instance()->addContext(impl->imGuiContext);
     ImGui::SetCurrentContext(impl->imGuiContext);
+    impl->imPlotContext = ImPlot::CreateContext();
+    ImPlot::SetCurrentContext(impl->imPlotContext);
 
     ImGuiIO &io = ImGui::GetIO();
 
@@ -528,11 +538,13 @@ static void TextURL( const char* name_, const char* URL_, bool SameLineBefore_, 
 void ImguiGLFWWindow::enableContexts ()
 {
     ImGui::SetCurrentContext(impl->imGuiContext);
+    ImPlot::SetCurrentContext(impl->imPlotContext);
     glfwMakeContextCurrent(impl->window);
 }
 
 void ImguiGLFWWindow::disableContexts ()
 {
+    ImPlot::SetCurrentContext(nullptr);
     ImGui::SetCurrentContext(nullptr);
 }
 

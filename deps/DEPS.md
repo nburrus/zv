@@ -4,6 +4,9 @@ git subtree add --prefix deps/glfw https://github.com/glfw/glfw.git master --squ
 # ImGui
 git subtree add --prefix deps/imgui https://github.com/ocornut/imgui.git master --squash
 
+# ImPlot
+git subtree add --prefix deps/implot https://github.com/epezent/implot.git v0.17 --squash
+
 # gl3w
 deps/gl3w taken from Imgui 1.83, before they removed it.
 

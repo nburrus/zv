@@ -147,9 +147,11 @@ set(CMAKE_CONFIGURATION_TYPES "Debug" "Release" "RelWithDebInfo" "DebugFast")
 set (DEPS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/deps")
 
 set (IMGUI_DIR "${DEPS_DIR}/imgui")
+set (IMPLOT_DIR "${DEPS_DIR}/implot")
 include_directories(
     ${IMGUI_DIR} 
     ${IMGUI_DIR}/backends 
+    ${IMPLOT_DIR}
     ${DEPS_DIR}/gl3w
 )
 
