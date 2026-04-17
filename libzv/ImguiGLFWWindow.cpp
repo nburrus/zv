@@ -21,7 +21,6 @@
 
 #include "PlatformSpecific.h"
 
-#define IMGUI_DEFINE_MATH_OPERATORS 1
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl3.h"
@@ -38,6 +37,9 @@
 
 namespace zv
 {
+
+float ImguiGLFWWindow::s_monoFontPixelSize = 16.f;
+float ImguiGLFWWindow::s_smallMonoFontPixelSize = 15.f;
 struct ImguiGLFWWindow::Impl
 {
     ImGuiContext* imGuiContext = nullptr;
@@ -317,12 +319,13 @@ static void windowPosCallback(GLFWwindow* w, int x, int y)
 
 void ImguiGLFWWindow::PushMonoSpaceFont (const ImGuiIO& io, bool small)
 {
-    ImGui::PushFont(io.Fonts->Fonts[small ? 2 : 1]); 
+    const float size = small ? s_smallMonoFontPixelSize : s_monoFontPixelSize;
+    ImGui::PushFont(io.Fonts->Fonts[1], size);
 }
 
 float ImguiGLFWWindow::monoFontSize (const ImGuiIO& io)
 {
-    return io.Fonts->Fonts[1]->FontSize * io.Fonts->Fonts[1]->Scale;
+    return s_monoFontPixelSize;
 }
 
 bool ImguiGLFWWindow::isInitialized () const
@@ -435,7 +438,7 @@ bool ImguiGLFWWindow::initialize (GLFWwindow* parentWindow,
             ImFontConfig config;
             config.MergeMode = true;
             config.GlyphOffset.y = 3.0*dpiScale.x; // so icons are centered in buttons.
-            config.FontBuilderFlags = ImGuiFreeTypeBuilderFlags_LightHinting;
+            config.FontLoaderFlags = ImGuiFreeTypeBuilderFlags_LightHinting;
             // config.GlyphMinAdvanceX = 15.0f; // Use if you want to make the icon monospaced
             static const ImWchar icon_ranges[] = { ICON_MIN, ICON_MAX, 0 };
             font = io.Fonts->AddFontFromMemoryCompressedTTF(zv::Icomoon_compressed_data, zv::Icomoon_compressed_size, 17.0f * retinaScaleFactor.x * dpiScale.x, &config, icon_ranges);
@@ -449,17 +452,9 @@ bool ImguiGLFWWindow::initialize (GLFWwindow* parentWindow,
 
         // Generated from https://github.com/bluescan/proggyfonts
         {
+            s_monoFontPixelSize = 16.0f * dpiScale.x;
+            s_smallMonoFontPixelSize = 15.0f * dpiScale.x;
             auto* font = io.Fonts->AddFontFromMemoryCompressedTTF(zv::ProggyVector_compressed_data, zv::ProggyVector_compressed_size, 16.0f * retinaScaleFactor.x * dpiScale.x);
-            font->Scale /= retinaScaleFactor.x;
-        }
-        
-        // Third font, small monospace
-        {
-            auto* font = io.Fonts->AddFontFromMemoryCompressedTTF(zv::ProggyVector_compressed_data,
-                                                                  zv::ProggyVector_compressed_size,
-                                                                  15.0f * retinaScaleFactor.x * dpiScale.x,
-                                                                  nullptr,
-                                                                  ranges);
             font->Scale /= retinaScaleFactor.x;
         }
 

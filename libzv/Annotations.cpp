@@ -9,7 +9,6 @@
 #include <libzv/ImguiUtils.h>
 #include <libzv/Utils.h>
 
-#define IMGUI_DEFINE_MATH_OPERATORS 1
 #include <imgui.h>
 #include "imgui_impl_opengl3.h"
 #include "imgui_internal.h"
@@ -51,6 +50,8 @@ void AnnotationRenderer::shutdown ()
 {
     if (impl->_sharedImguiContext)
     {
+        impl->_sharedImguiContext->IO.BackendRendererUserData = nullptr;
+        impl->_sharedImguiContext->IO.BackendPlatformUserData = nullptr;
         ImGui::DestroyContext(impl->_sharedImguiContext);
         impl->_sharedImguiContext = nullptr;
     }

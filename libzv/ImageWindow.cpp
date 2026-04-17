@@ -18,7 +18,6 @@
 #include <libzv/ControlsWindow.h>
 #include <libzv/Prefs.h>
 
-#define IMGUI_DEFINE_MATH_OPERATORS 1
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl3.h"
@@ -660,28 +659,27 @@ void ImageWindow::checkImguiGlobalImageKeyEvents ()
     if (io.WantCaptureKeyboard)
         return;
 
-    for (const auto code : {
-            GLFW_KEY_0,
-            GLFW_KEY_1, GLFW_KEY_2, GLFW_KEY_3, GLFW_KEY_4, GLFW_KEY_5,
-            GLFW_KEY_6, GLFW_KEY_7, GLFW_KEY_8, GLFW_KEY_9,
-            GLFW_KEY_UP, GLFW_KEY_DOWN, GLFW_KEY_LEFT, GLFW_KEY_RIGHT, GLFW_KEY_PAGE_UP, GLFW_KEY_PAGE_DOWN,
-            GLFW_KEY_O, GLFW_KEY_S, GLFW_KEY_W, GLFW_KEY_R, GLFW_KEY_F5,
-            GLFW_KEY_N, GLFW_KEY_A, GLFW_KEY_V, GLFW_KEY_PERIOD, GLFW_KEY_COMMA, GLFW_KEY_M,
-            GLFW_KEY_C, GLFW_KEY_Z,            
-            GLFW_KEY_SPACE, GLFW_KEY_BACKSPACE, GLFW_KEY_DELETE,
-            GLFW_KEY_ESCAPE, GLFW_KEY_ENTER,
+    for (const ImGuiKey key : {
+            ImGuiKey_0,
+            ImGuiKey_1, ImGuiKey_2, ImGuiKey_3, ImGuiKey_4, ImGuiKey_5,
+            ImGuiKey_6, ImGuiKey_7, ImGuiKey_8, ImGuiKey_9,
+            ImGuiKey_UpArrow, ImGuiKey_DownArrow, ImGuiKey_LeftArrow, ImGuiKey_RightArrow,
+            ImGuiKey_PageUp, ImGuiKey_PageDown,
+            ImGuiKey_O, ImGuiKey_S, ImGuiKey_W, ImGuiKey_R, ImGuiKey_F5,
+            ImGuiKey_N, ImGuiKey_A, ImGuiKey_V, ImGuiKey_Period, ImGuiKey_Comma, ImGuiKey_M,
+            ImGuiKey_C, ImGuiKey_Z,
+            ImGuiKey_Space, ImGuiKey_Backspace, ImGuiKey_Delete,
+            ImGuiKey_Escape, ImGuiKey_Enter,
         })
     {
-        if (ImGui::IsKeyPressed(code))
-            processKeyEvent(code);
+        if (ImGui::IsKeyPressed(key))
+            processKeyEvent(key);
     }
 
-    // Those don't have direct GLFW keycodes for some reason.
-    for (const auto c : {'<', '>'})
-    {
-        if (io.InputQueueCharacters.contains(c))
-            processKeyEvent(c);
-    }
+    if (io.InputQueueCharacters.contains('<'))
+        enqueueAction(ImageWindowAction::Kind::Zoom_div2);
+    if (io.InputQueueCharacters.contains('>'))
+        enqueueAction(ImageWindowAction::Kind::Zoom_x2);
 }
 
 inline bool CtrlOrCmd(ImGuiIO& io)
@@ -693,113 +691,93 @@ inline bool CtrlOrCmd(ImGuiIO& io)
 #endif
 }
 
-void ImageWindow::processKeyEvent (int keycode)
+void ImageWindow::processKeyEvent (ImGuiKey keycode)
 {
     auto& io = ImGui::GetIO();
 
-    if (keycode == GLFW_KEY_0)
+    if (keycode == ImGuiKey_0)
     {
         addCommand(ImageWindow::autoLayoutCommand());
         return;
     }
 
-    if (keycode >= GLFW_KEY_1 && keycode <= GLFW_KEY_9)
+    if (keycode >= ImGuiKey_1 && keycode <= ImGuiKey_9)
     {
-        addCommand(ImageWindow::layoutCommand(shortcutLayoutForImageCount(keycode - GLFW_KEY_0)));
+        addCommand(ImageWindow::layoutCommand(shortcutLayoutForImageCount(keycode - ImGuiKey_0)));
         return;
     }
 
     switch (keycode)
     {
-        case GLFW_KEY_ESCAPE: enqueueAction(ImageWindowAction::Kind::CancelCurrentTool); break;
-        case GLFW_KEY_ENTER: enqueueAction(ImageWindowAction::Kind::ApplyCurrentTool); break;
-        
-        case GLFW_KEY_UP:
-        case GLFW_KEY_BACKSPACE: enqueueAction(ImageWindowAction::Kind::View_PrevImage); break;
+        case ImGuiKey_Escape: enqueueAction(ImageWindowAction::Kind::CancelCurrentTool); break;
+        case ImGuiKey_Enter: enqueueAction(ImageWindowAction::Kind::ApplyCurrentTool); break;
 
-        case GLFW_KEY_DELETE: {
-            if (io.KeyShift) 
+        case ImGuiKey_UpArrow:
+        case ImGuiKey_Backspace: enqueueAction(ImageWindowAction::Kind::View_PrevImage); break;
+
+        case ImGuiKey_Delete: {
+            if (io.KeyShift)
                 enqueueAction(ImageWindowAction::Kind::File_DeleteImageOnDisk);
-            else 
+            else
                 enqueueAction(ImageWindowAction::Kind::File_CloseImage);
             break;
         }
 
-        case GLFW_KEY_PAGE_DOWN: enqueueAction(ImageWindowAction::Kind::View_NextPageOfImage); break;
-        case GLFW_KEY_PAGE_UP: enqueueAction(ImageWindowAction::Kind::View_PrevPageOfImage); break;
-        
-        case GLFW_KEY_DOWN:
-        case GLFW_KEY_SPACE: enqueueAction(ImageWindowAction::Kind::View_NextImage); break;
+        case ImGuiKey_PageDown: enqueueAction(ImageWindowAction::Kind::View_NextPageOfImage); break;
+        case ImGuiKey_PageUp: enqueueAction(ImageWindowAction::Kind::View_PrevPageOfImage); break;
 
-        case GLFW_KEY_Z: if (CtrlOrCmd(io)) enqueueAction(ImageWindowAction::Kind::Edit_Undo); break;
+        case ImGuiKey_DownArrow:
+        case ImGuiKey_Space: enqueueAction(ImageWindowAction::Kind::View_NextImage); break;
 
-        case GLFW_KEY_C: {
+        case ImGuiKey_Z: if (CtrlOrCmd(io)) enqueueAction(ImageWindowAction::Kind::Edit_Undo); break;
+
+        case ImGuiKey_C: {
             if (CtrlOrCmd(io))
-            {
                 enqueueAction(ImageWindowAction::Kind::Edit_CopyImageToClipboard);
-            }
             else
-            {
                 enqueueAction(ImageWindowAction::Kind::Edit_CopyCursorInfoToClipboard);
-            }            
             break;
         }
 
-        case GLFW_KEY_O:
-        {
-            // No image saving for now.
+        case ImGuiKey_O: {
             if (CtrlOrCmd(io))
-            {
-                enqueueAction (ImageWindowAction::Kind::File_OpenImage);
-            }
+                enqueueAction(ImageWindowAction::Kind::File_OpenImage);
             break;
         }
 
-        case GLFW_KEY_S:
-        {
-            // No image saving for now.
+        case ImGuiKey_S: {
             if (CtrlOrCmd(io))
             {
                 if (io.KeyShift)
-                    enqueueAction (ImageWindowAction::Kind::File_SaveImageAs);
+                    enqueueAction(ImageWindowAction::Kind::File_SaveImageAs);
                 else
-                    enqueueAction (ImageWindowAction::Kind::File_SaveImage);
+                    enqueueAction(ImageWindowAction::Kind::File_SaveImage);
             }
             break;
         }
 
-        case GLFW_KEY_F5:
-        case GLFW_KEY_R:
-        {
-            if (keycode == GLFW_KEY_F5 || CtrlOrCmd(io))
-            {
-                enqueueAction (ImageWindowAction::Kind::File_RefreshImageFromDisk);
-            }
+        case ImGuiKey_F5:
+        case ImGuiKey_R: {
+            if (keycode == ImGuiKey_F5 || CtrlOrCmd(io))
+                enqueueAction(ImageWindowAction::Kind::File_RefreshImageFromDisk);
             break;
         }
 
-        // View
-        case GLFW_KEY_V: {
+        case ImGuiKey_V: {
             if (CtrlOrCmd(io))
-            {
                 enqueueAction(ImageWindowAction::Kind::Edit_PasteImageFromClipboard);
-            }
             else
-            {
-                enqueueAction (ImageWindowAction::Kind::View_ToggleOverlay);
-            }      
+                enqueueAction(ImageWindowAction::Kind::View_ToggleOverlay);
             break;
         }
-        
-        // Zoom
-        case GLFW_KEY_N: enqueueAction(ImageWindowAction::Kind::Zoom_Normal); break;
-        case GLFW_KEY_M: enqueueAction(ImageWindowAction::Kind::Zoom_Maxspect); break;
-        case GLFW_KEY_A: enqueueAction (ImageWindowAction::Kind::Zoom_RestoreAspectRatio); break;
-        case GLFW_KEY_PERIOD: enqueueAction (ImageWindowAction::Kind::Zoom_Inc10p); break;
-        case GLFW_KEY_COMMA: enqueueAction (ImageWindowAction::Kind::Zoom_Dec10p); break;
-        case '<': enqueueAction (ImageWindowAction::Kind::Zoom_div2); break;
-        case '>': enqueueAction (ImageWindowAction::Kind::Zoom_x2); break;
 
+        case ImGuiKey_N: enqueueAction(ImageWindowAction::Kind::Zoom_Normal); break;
+        case ImGuiKey_M: enqueueAction(ImageWindowAction::Kind::Zoom_Maxspect); break;
+        case ImGuiKey_A: enqueueAction(ImageWindowAction::Kind::Zoom_RestoreAspectRatio); break;
+        case ImGuiKey_Period: enqueueAction(ImageWindowAction::Kind::Zoom_Inc10p); break;
+        case ImGuiKey_Comma: enqueueAction(ImageWindowAction::Kind::Zoom_Dec10p); break;
+
+        default: break;
     }
 }
 
@@ -864,7 +842,7 @@ ImageWidgetRoi ImageWindow::Impl::renderImageItem(const ModifiedImagePtr &modIma
                                                 imageTexture);
     }
 
-    ImGui::Image(reinterpret_cast<ImTextureID>(imageTexture->textureId()),
+    ImGui::Image((ImTextureID)(uint64_t)(imageTexture->textureId()),
                  imageWidgetSize,
                  uv0,
                  uv1);
@@ -1033,7 +1011,7 @@ void ImageWindow::renderFrame ()
 
     if (!io.WantCaptureKeyboard)
     {
-        if (ImGui::IsKeyPressed(GLFW_KEY_Q) || impl->imguiGlfwWindow.closeRequested())
+        if (ImGui::IsKeyPressed(ImGuiKey_Q) || impl->imguiGlfwWindow.closeRequested())
         {
             impl->mutableState.activeMode = ViewerMode::None;
             impl->imguiGlfwWindow.cancelCloseRequest ();

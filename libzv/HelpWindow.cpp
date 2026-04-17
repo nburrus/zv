@@ -22,7 +22,6 @@
 
 #include "PlatformSpecific.h"
 
-#define IMGUI_DEFINE_MATH_OPERATORS 1
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl3.h"
@@ -138,7 +137,7 @@ void HelpWindow::renderFrame ()
     const auto& io = ImGui::GetIO();
     const float monoFontSize = ImguiGLFWWindow::monoFontSize(io);
 
-    if (ImGui::IsKeyPressed(GLFW_KEY_Q) || ImGui::IsKeyPressed(GLFW_KEY_ESCAPE) || impl->imguiGlfwWindow.closeRequested())
+    if (ImGui::IsKeyPressed(ImGuiKey_Q) || ImGui::IsKeyPressed(ImGuiKey_Escape) || impl->imguiGlfwWindow.closeRequested())
     {
         setEnabled(false);
     }

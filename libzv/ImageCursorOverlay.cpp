@@ -15,7 +15,6 @@
 #include <GLFW/glfw3.h>
 #include <clip/clip.h>
 
-#define IMGUI_DEFINE_MATH_OPERATORS 1
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl3.h"
@@ -74,7 +73,7 @@ void ImageCursorOverlay::showTooltip(const CursorOverlayInfo& d, bool showAsTool
             ImVec2 zoom_uv1 = mousePosInOriginalTexture + zoomLen_uv*0.5f;
             
             ImVec2 zoomImageTopLeft = ImGui::GetCursorScreenPos();
-            ImGui::Image(reinterpret_cast<ImTextureID>(imageTexture.textureId()), zoomItemSize, zoom_uv0, zoom_uv1);
+            ImGui::Image((ImTextureID)(uint64_t)(imageTexture.textureId()), zoomItemSize, zoom_uv0, zoom_uv1);
             
             auto* drawList = ImGui::GetWindowDrawList();
             ImVec2 p1 = pixelSizeInZoom * (zoomLenInPixels / 2) + zoomImageTopLeft;

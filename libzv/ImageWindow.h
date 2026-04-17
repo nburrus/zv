@@ -16,6 +16,7 @@
 #include <functional>
 
 struct GLFWwindow;
+enum ImGuiKey : int;
 
 namespace zv
 {
@@ -70,7 +71,7 @@ public:
     zv::Rect imageWidgetGeometry () const;
     bool imageWidgetHasExactImageSize () const;
 
-    void processKeyEvent (int keycode);
+    void processKeyEvent (ImGuiKey keycode);
     void checkImguiGlobalImageKeyEvents ();
     void checkImguiGlobalImageMouseEvents ();
     void discardAllChanges ();

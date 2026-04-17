@@ -19,7 +19,6 @@
 
 #include <clip/clip.h>
 
-#define IMGUI_DEFINE_MATH_OPERATORS 1
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl3.h"

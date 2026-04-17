@@ -18,7 +18,6 @@
 
 #include <libzv/Utils.h>
 
-#define IMGUI_DEFINE_MATH_OPERATORS 1
 #include "imgui.h"
 
 #include <ImGuiFileDialog/ImGuiFileDialog.h>
@@ -625,19 +624,19 @@ void ControlsWindow::Impl::renderMenu ()
             if (ImGui::BeginMenu("Size"))
             {
                 if (ImGui::MenuItem("Original", "n", false))
-                    imageWindow->processKeyEvent(GLFW_KEY_N);
+                    imageWindow->processKeyEvent(ImGuiKey_N);
                 if (ImGui::MenuItem("Maxspect", "m", false))
-                    imageWindow->processKeyEvent(GLFW_KEY_M);
+                    imageWindow->processKeyEvent(ImGuiKey_M);
                 if (ImGui::MenuItem("Double size", ">", false))
-                    imageWindow->processKeyEvent('>');
+                    imageWindow->enqueueAction(ImageWindowAction::Kind::Zoom_x2);
                 if (ImGui::MenuItem("Half size", "<", false))
-                    imageWindow->processKeyEvent('<');
+                    imageWindow->enqueueAction(ImageWindowAction::Kind::Zoom_div2);
                 if (ImGui::MenuItem("10% larger", ".", false))
-                    imageWindow->processKeyEvent(GLFW_KEY_PERIOD);
+                    imageWindow->processKeyEvent(ImGuiKey_Period);
                 if (ImGui::MenuItem("10% smaller", ",", false))
-                    imageWindow->processKeyEvent(GLFW_KEY_COMMA);
+                    imageWindow->processKeyEvent(ImGuiKey_Comma);
                 if (ImGui::MenuItem("Restore aspect ratio", "a", false))
-                    imageWindow->processKeyEvent(GLFW_KEY_A);
+                    imageWindow->processKeyEvent(ImGuiKey_A);
                 ImGui::EndMenu();
             }
             if (ImGui::BeginMenu("Layout"))
@@ -834,12 +833,12 @@ void ControlsWindow::renderFrame ()
 
     if (!io.WantCaptureKeyboard)
     {
-        if (ImGui::IsKeyPressed(GLFW_KEY_Q))
+        if (ImGui::IsKeyPressed(ImGuiKey_Q))
         {
             impl->viewer->onDismissRequested();
         }
 
-        if (ImGui::IsKeyPressed(GLFW_KEY_ESCAPE))
+        if (ImGui::IsKeyPressed(ImGuiKey_Escape))
         {
             impl->viewer->onToggleControls();
         }
@@ -878,7 +877,7 @@ void ControlsWindow::renderFrame ()
         {
             ImVec2 center = ImGui::GetMainViewport()->GetCenter();
             ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
-            ImGui::SetNextWindowSize(ImVec2(frameInfo.windowContentWidth, frameInfo.windowContentHeight)*0.8, ImGuiCond_Appearing);
+            ImGui::SetNextWindowSize(ImVec2(frameInfo.windowContentWidth, frameInfo.windowContentHeight)*0.8f, ImGuiCond_Appearing);
             ImGui::OpenPopup(impl->currentActionToConfirm.title.c_str());
             if (ImGui::BeginPopupModal(impl->currentActionToConfirm.title.c_str(), nullptr, ImGuiWindowFlags_AlwaysAutoResize))
             {
@@ -993,7 +992,7 @@ void ControlsWindow::renderFrame ()
         imageWindow->checkImguiGlobalImageMouseEvents ();
         
         // Debug: show the FPS.
-        if (ImGui::IsKeyPressed(GLFW_KEY_F))
+        if (ImGui::IsKeyPressed(ImGuiKey_F))
         {
             ImGui::Text("%.1f FPS", io.Framerate);
         }

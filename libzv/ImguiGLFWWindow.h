@@ -46,6 +46,9 @@ public:
     static void PushMonoSpaceFont(const ImGuiIO& io, bool small = false);
     static float monoFontSize (const ImGuiIO& io);
 
+    static float s_monoFontPixelSize;
+    static float s_smallMonoFontPixelSize;
+
 public:
     bool initialize (GLFWwindow* parentWindow,
                      const std::string& title,
