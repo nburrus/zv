@@ -6,8 +6,6 @@
 
 #include "ColorConversion.h"
 
-#include <cmath>
-
 namespace zv
 {
     
@@ -17,32 +15,6 @@ namespace zv
         float cr =  0.70710678*srgba.r - 0.70710678*srgba.g;
         float cb = -0.40824829*srgba.r - 0.40824829*srgba.g + 0.81649658*srgba.b;
         return PixelYCbCr(y, cb, cr);
-    }
-
-    // From https://www.nayuki.io/res/srgb-transform-library
-    double srgbToLinear (double x)
-    {
-        if (x <= 0.0)
-            return 0.0;
-        else if (x >= 1.0)
-            return 1.0;
-        else if (x < 0.04045)
-            return x / 12.92;
-        else
-            return std::pow((x + 0.055) / 1.055, 2.4);
-    }
-
-    // From https://www.nayuki.io/res/srgb-transform-library
-    double linearToSrgb(double x)
-    {
-        if (x <= 0.0)
-            return 0.0;
-        else if (x >= 1.0)
-            return 1.0;
-        else if (x < 0.0031308)
-            return x * 12.92;
-        else
-            return std::pow(x, 1.0 / 2.4) * 1.055 - 0.055;
     }
 
     PixelLinearRGB convertToLinearRGB(const PixelSRGBA& srgb)

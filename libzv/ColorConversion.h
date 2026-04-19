@@ -10,10 +10,40 @@
 #include "MathUtils.h"
 
 #include <array>
+#include <cmath>
 #include <cstdint>
 
 namespace zv
 {
+
+// sRGB transfer functions. Inputs are clamped to [0, 1].
+// From https://www.nayuki.io/res/srgb-transform-library
+
+inline double srgbToLinear(double x)
+{
+    if (x <= 0.0) return 0.0;
+    if (x >= 1.0) return 1.0;
+    if (x < 0.04045) return x / 12.92;
+    return std::pow((x + 0.055) / 1.055, 2.4);
+}
+
+inline double linearToSrgb(double x)
+{
+    if (x <= 0.0) return 0.0;
+    if (x >= 1.0) return 1.0;
+    if (x < 0.0031308) return x * 12.92;
+    return std::pow(x, 1.0 / 2.4) * 1.055 - 0.055;
+}
+
+inline float srgbToLinear(float x)
+{
+    return static_cast<float>(srgbToLinear(static_cast<double>(x)));
+}
+
+inline float linearToSrgb(float x)
+{
+    return static_cast<float>(linearToSrgb(static_cast<double>(x)));
+}
     
     class RGBAToLMSConverter
     {

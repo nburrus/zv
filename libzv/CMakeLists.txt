@@ -61,6 +61,8 @@ add_library(zv
     App.h
     ColorConversion.cpp
     ColorConversion.h
+    ImageColorStats.h
+    ImageColorStats.cpp
     ControlsWindow.cpp
     ControlsWindow.h
     GLFWUtils.cpp
