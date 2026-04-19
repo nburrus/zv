@@ -926,11 +926,14 @@ void ControlsWindow::renderFrame ()
             footerHeight += cursorOverlayHeight;
         }
 
+        bool onImageListTab = false;
+
         ImGuiTabBarFlags tab_bar_flags = ImGuiTabBarFlags_None;
         if (ImGui::BeginTabBar("TabBar", tab_bar_flags))
         {
             if (ImGui::BeginTabItem("Image List"))
             {
+                onImageListTab = true;
                 impl->renderImageList (footerHeight);
                 ImGui::EndTabItem();
             }
@@ -942,10 +945,11 @@ void ControlsWindow::renderFrame ()
             ImGui::EndTabBar();
         }        
                         
-        if (showCursorOverlay)
+        if (showCursorOverlay && onImageListTab)
             impl->renderCursorInfo (cursorOverlayInfo, footerHeight, cursorOverlayHeight);
 
-        // Window size controls
+        // Window size controls (only on Image List tab)
+        if (onImageListTab)
         {
             ImGui::SetCursorPosY (ImGui::GetWindowHeight() - windowSizeWidgetsHeight);
             Rect imageRect = imageWindow->imageWidgetGeometry();
