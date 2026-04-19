@@ -114,6 +114,10 @@ viewer.add_image_window("image.jpg")
 zv.App.get().exec_()
 ```
 
+## Git Conventions
+
+- Do not add `Co-Authored-By:` lines to commit messages.
+
 ## Key Principles
 
 - Read existing code before modifying
