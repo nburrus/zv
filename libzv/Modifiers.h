@@ -9,6 +9,7 @@
 #include <libzv/ImageList.h>
 #include <libzv/MathUtils.h>
 
+#include <array>
 #include <deque>
 
 namespace zv
@@ -121,6 +122,104 @@ private:
     bool _modifiersChangedSinceLastUpdate = false;
 };
 using ModifiedImagePtr = std::shared_ptr<ModifiedImage>;
+
+enum class LevelsChannel
+{
+    Luma,
+    Red,
+    Green,
+    Blue,
+};
+
+struct LevelsParams
+{
+    int inputBlack = 0;
+    int inputWhite = 255;
+    float gamma = 1.0f;
+    int outputBlack = 0;
+    int outputWhite = 255;
+};
+
+struct LevelsAdjustmentParams
+{
+    LevelsChannel target = LevelsChannel::Luma;
+    LevelsParams lumaLevels;
+    LevelsParams redLevels;
+    LevelsParams greenLevels;
+    LevelsParams blueLevels;
+};
+
+struct CompiledLevelsLut
+{
+    std::array<uint8_t, 256> r = {};
+    std::array<uint8_t, 256> g = {};
+    std::array<uint8_t, 256> b = {};
+};
+
+CompiledLevelsLut compileLevelsLut(const LevelsAdjustmentParams& params);
+
+bool levelsParamsIdentity(const LevelsParams& p);
+LevelsParams sanitizedLevelsParams(LevelsParams p);
+
+class LevelsModifier : public ImageModifier
+{
+public:
+    LevelsModifier(const LevelsAdjustmentParams& params)
+        : _params(params)
+    {}
+
+public:
+    virtual void apply (const ImageItemData& input, ImageItemData& output, AnnotationRenderer&) override;
+
+private:
+    LevelsAdjustmentParams _params;
+};
+
+struct OneShotColorParams
+{
+    enum class Kind { Invert, Grayscale, SwapRB, SwapRG, SwapGB, HistEq, AutoLevels, LabelColorize };
+    Kind kind = Kind::Invert;
+
+    enum class InvertTarget { RGB, Red, Green, Blue };
+    InvertTarget invertTarget = InvertTarget::RGB;
+
+    enum class GrayscaleMode { LumaSRGB, Red, Green, Blue };
+    GrayscaleMode grayscaleMode = GrayscaleMode::LumaSRGB;
+
+    struct LabelColorize
+    {
+        enum class BackgroundMode { Preserve, Black, Transparent };
+
+        uint32_t seed = 1;
+        uint8_t backgroundValue = 0;
+        BackgroundMode backgroundMode = BackgroundMode::Preserve;
+    };
+    LabelColorize labelColorize;
+};
+
+class OneShotColorModifier : public ImageModifier
+{
+public:
+    OneShotColorModifier(const OneShotColorParams& params) : _params(params) {}
+
+public:
+    virtual void apply (const ImageItemData& input, ImageItemData& output, AnnotationRenderer&) override;
+
+private:
+    OneShotColorParams _params;
+};
+
+class HueShiftModifier : public ImageModifier
+{
+public:
+    HueShiftModifier(float hueDegrees) : _hueDegrees(hueDegrees) {}
+
+public:
+    virtual void apply (const ImageItemData& input, ImageItemData& output, AnnotationRenderer&) override;
+
+private:
+    float _hueDegrees;
+};
 
 class RotateImageModifier : public ImageModifier
 {

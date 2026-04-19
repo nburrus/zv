@@ -12,6 +12,12 @@
 
 #include <stb_image_resize.h>
 
+#include <algorithm>
+#include <array>
+#include <cmath>
+#include <cstdint>
+#include <random>
+
 namespace zv
 {
 
@@ -125,6 +131,413 @@ void ModifiedImage::clearIntermediateModifiersData ()
 
 namespace zv
 {
+
+bool levelsParamsIdentity(const LevelsParams& p)
+{
+    return p.inputBlack == 0 && p.inputWhite == 255 && p.gamma == 1.0f &&
+           p.outputBlack == 0 && p.outputWhite == 255;
+}
+
+LevelsParams sanitizedLevelsParams(LevelsParams p)
+{
+    p.inputBlack = std::clamp(p.inputBlack, 0, 254);
+    p.inputWhite = std::clamp(p.inputWhite, 1, 255);
+    if (p.inputBlack >= p.inputWhite)
+        p.inputBlack = p.inputWhite - 1;
+    p.gamma = std::clamp(p.gamma, 0.10f, 10.0f);
+    p.outputBlack = std::clamp(p.outputBlack, 0, 255);
+    p.outputWhite = std::clamp(p.outputWhite, 0, 255);
+    if (p.outputBlack > p.outputWhite)
+        std::swap(p.outputBlack, p.outputWhite);
+    return p;
+}
+
+static std::array<uint8_t, 256> compileLevelsChannelLut(const LevelsParams& params)
+{
+    const LevelsParams p = sanitizedLevelsParams(params);
+    std::array<uint8_t, 256> lut = {};
+    const double inBlack = static_cast<double>(p.inputBlack);
+    const double inWhite = static_cast<double>(p.inputWhite);
+    const double outBlack = static_cast<double>(p.outputBlack);
+    const double outWhite = static_cast<double>(p.outputWhite);
+    const double gamma = static_cast<double>(p.gamma);
+    const double invInputRange = 1.0 / std::max(1.0, inWhite - inBlack);
+
+    for (int i = 0; i < 256; ++i)
+    {
+        double normalized = (static_cast<double>(i) - inBlack) * invInputRange;
+        normalized = std::clamp(normalized, 0.0, 1.0);
+        normalized = std::pow(normalized, gamma);
+        const double out = outBlack + normalized * (outWhite - outBlack);
+        lut[i] = static_cast<uint8_t>(std::clamp(static_cast<int>(std::round(out)), 0, 255));
+    }
+    return lut;
+}
+
+static uint8_t lumaFromPixel(const PixelSRGBA& p)
+{
+    return uint8_t(std::round(0.2126f*p.r + 0.7152f*p.g + 0.0722f*p.b));
+}
+
+static std::array<uint8_t, 256> compileHistogramEqualizationLut(const ImageSRGBA& image)
+{
+    std::array<uint64_t, 256> histogram = {};
+    for (int r = 0; r < image.height(); ++r)
+    {
+        const PixelSRGBA* row = image.atRowPtr(r);
+        for (int c = 0; c < image.width(); ++c)
+            histogram[lumaFromPixel(row[c])]++;
+    }
+
+    std::array<uint8_t, 256> lut = {};
+    uint64_t cdfMin = 0;
+    for (int i = 0; i < 256; ++i)
+    {
+        if (histogram[i] != 0)
+        {
+            cdfMin = histogram[i];
+            break;
+        }
+    }
+
+    const uint64_t pixelCount = static_cast<uint64_t>(image.width()) * image.height();
+    if (pixelCount == 0 || cdfMin == 0 || cdfMin >= pixelCount)
+    {
+        for (int i = 0; i < 256; ++i)
+            lut[i] = static_cast<uint8_t>(i);
+        return lut;
+    }
+
+    uint64_t cdf = 0;
+    const double denom = static_cast<double>(pixelCount - cdfMin);
+    for (int i = 0; i < 256; ++i)
+    {
+        cdf += histogram[i];
+        const uint64_t adjustedCdf = (cdf > cdfMin) ? (cdf - cdfMin) : 0;
+        const double mapped = 255.0 * (static_cast<double>(adjustedCdf) / denom);
+        lut[i] = static_cast<uint8_t>(std::clamp(static_cast<int>(std::round(mapped)), 0, 255));
+    }
+    return lut;
+}
+
+static LevelsParams computeAutoLevelsParams(const ImageSRGBA& image)
+{
+    std::array<uint64_t, 256> histogram = {};
+    for (int r = 0; r < image.height(); ++r)
+    {
+        const PixelSRGBA* row = image.atRowPtr(r);
+        for (int c = 0; c < image.width(); ++c)
+            histogram[lumaFromPixel(row[c])]++;
+    }
+
+    const uint64_t pixelCount = static_cast<uint64_t>(image.width()) * image.height();
+    if (pixelCount == 0)
+        return {};
+
+    const uint64_t clipCount = static_cast<uint64_t>(std::floor(static_cast<double>(pixelCount) * 0.001));
+
+    int inputBlack = 0;
+    uint64_t cumulative = 0;
+    for (int i = 0; i < 256; ++i)
+    {
+        cumulative += histogram[i];
+        if (cumulative > clipCount)
+        {
+            inputBlack = i;
+            break;
+        }
+    }
+
+    int inputWhite = 255;
+    cumulative = 0;
+    for (int i = 255; i >= 0; --i)
+    {
+        cumulative += histogram[i];
+        if (cumulative > clipCount)
+        {
+            inputWhite = i;
+            break;
+        }
+    }
+
+    if (inputBlack >= inputWhite)
+        return {};
+
+    LevelsParams params;
+    params.inputBlack = inputBlack;
+    params.inputWhite = inputWhite;
+    return params;
+}
+
+static bool isGrayLikeLabelMap(const ImageSRGBA& image)
+{
+    const uint64_t pixelCount = static_cast<uint64_t>(image.width()) * image.height();
+    if (pixelCount == 0)
+        return false;
+
+    constexpr uint64_t targetSamples = 10000;
+    const uint64_t stride = std::max<uint64_t>(1, pixelCount / targetSamples);
+    for (uint64_t i = 0; i < pixelCount; i += stride)
+    {
+        const int row = static_cast<int>(i / static_cast<uint64_t>(image.width()));
+        const int col = static_cast<int>(i % static_cast<uint64_t>(image.width()));
+        const PixelSRGBA& p = image.atRowPtr(row)[col];
+        if (std::abs(int(p.r) - int(p.g)) > 2 ||
+            std::abs(int(p.r) - int(p.b)) > 2)
+            return false;
+    }
+    return true;
+}
+
+static std::array<PixelSRGBA, 256> compileLabelColorizePalette(uint32_t seed)
+{
+    std::array<PixelSRGBA, 256> palette = {};
+    std::mt19937 rng(seed);
+    std::uniform_int_distribution<int> hueDist(0, 359);
+    std::uniform_int_distribution<int> satDist(58, 92);
+    std::uniform_int_distribution<int> valDist(62, 96);
+
+    for (int i = 0; i < 256; ++i)
+    {
+        const float h = hueDist(rng) / 60.f;
+        const float s = satDist(rng) / 100.f;
+        const float v = valDist(rng) / 100.f;
+        const int hi = static_cast<int>(std::floor(h)) % 6;
+        const float f = h - std::floor(h);
+        const float p = v * (1.f - s);
+        const float q = v * (1.f - s * f);
+        const float t = v * (1.f - s * (1.f - f));
+
+        float r = 0.f, g = 0.f, b = 0.f;
+        switch (hi)
+        {
+            case 0: r = v; g = t; b = p; break;
+            case 1: r = q; g = v; b = p; break;
+            case 2: r = p; g = v; b = t; break;
+            case 3: r = p; g = q; b = v; break;
+            case 4: r = t; g = p; b = v; break;
+            default: r = v; g = p; b = q; break;
+        }
+        palette[i] = {uint8_t(std::round(r * 255.f)),
+                      uint8_t(std::round(g * 255.f)),
+                      uint8_t(std::round(b * 255.f)),
+                      255};
+    }
+    return palette;
+}
+
+CompiledLevelsLut compileLevelsLut(const LevelsAdjustmentParams& params)
+{
+    CompiledLevelsLut lut;
+    const auto luma = compileLevelsChannelLut(params.lumaLevels);
+    lut.r = luma;
+    lut.g = luma;
+    lut.b = luma;
+
+    if (!levelsParamsIdentity(params.redLevels))
+        lut.r = compileLevelsChannelLut(params.redLevels);
+    if (!levelsParamsIdentity(params.greenLevels))
+        lut.g = compileLevelsChannelLut(params.greenLevels);
+    if (!levelsParamsIdentity(params.blueLevels))
+        lut.b = compileLevelsChannelLut(params.blueLevels);
+
+    return lut;
+}
+
+void LevelsModifier::apply (const ImageItemData& input, ImageItemData& output, AnnotationRenderer&)
+{
+    const auto& inIm = *input.cpuData;
+    output.cpuData = std::make_shared<ImageSRGBA>(inIm.width(), inIm.height());
+    output.textureData = {};
+    output.status = ImageItemData::Status::Ready;
+
+    auto& outIm = *output.cpuData;
+    const auto lut = compileLevelsLut(_params);
+    for (int r = 0; r < inIm.height(); ++r)
+    {
+        const PixelSRGBA* inRow = inIm.atRowPtr(r);
+        PixelSRGBA* outRow = outIm.atRowPtr(r);
+        for (int c = 0; c < inIm.width(); ++c)
+        {
+            const PixelSRGBA& in = inRow[c];
+            outRow[c] = PixelSRGBA(lut.r[in.r], lut.g[in.g], lut.b[in.b], in.a);
+        }
+    }
+}
+
+void OneShotColorModifier::apply (const ImageItemData& input, ImageItemData& output, AnnotationRenderer&)
+{
+    const auto& inIm = *input.cpuData;
+    output.cpuData = std::make_shared<ImageSRGBA>(inIm.width(), inIm.height());
+    output.textureData = {};
+    output.status = ImageItemData::Status::Ready;
+    auto& outIm = *output.cpuData;
+    const bool labelColorizeCanApply = (_params.kind != OneShotColorParams::Kind::LabelColorize) ||
+                                       isGrayLikeLabelMap(inIm);
+    const auto labelPalette = (_params.kind == OneShotColorParams::Kind::LabelColorize && labelColorizeCanApply)
+        ? compileLabelColorizePalette(_params.labelColorize.seed)
+        : std::array<PixelSRGBA, 256>{};
+    const auto histEqLut = (_params.kind == OneShotColorParams::Kind::HistEq)
+        ? compileHistogramEqualizationLut(inIm)
+        : std::array<uint8_t, 256>{};
+    const auto autoLevelsLut = (_params.kind == OneShotColorParams::Kind::AutoLevels)
+        ? compileLevelsChannelLut(computeAutoLevelsParams(inIm))
+        : std::array<uint8_t, 256>{};
+
+    for (int r = 0; r < inIm.height(); ++r)
+    {
+        const PixelSRGBA* inRow = inIm.atRowPtr(r);
+        PixelSRGBA* outRow = outIm.atRowPtr(r);
+        for (int c = 0; c < inIm.width(); ++c)
+        {
+            const PixelSRGBA& in = inRow[c];
+            PixelSRGBA out = in;
+            switch (_params.kind)
+            {
+                case OneShotColorParams::Kind::Invert:
+                    switch (_params.invertTarget)
+                    {
+                        case OneShotColorParams::InvertTarget::RGB:
+                            out = {uint8_t(255-in.r), uint8_t(255-in.g), uint8_t(255-in.b), in.a};
+                            break;
+                        case OneShotColorParams::InvertTarget::Red:
+                            out = {uint8_t(255-in.r), in.g, in.b, in.a};
+                            break;
+                        case OneShotColorParams::InvertTarget::Green:
+                            out = {in.r, uint8_t(255-in.g), in.b, in.a};
+                            break;
+                        case OneShotColorParams::InvertTarget::Blue:
+                            out = {in.r, in.g, uint8_t(255-in.b), in.a};
+                            break;
+                    }
+                    break;
+                case OneShotColorParams::Kind::Grayscale:
+                {
+                    uint8_t gray = 0;
+                    switch (_params.grayscaleMode)
+                    {
+                        case OneShotColorParams::GrayscaleMode::LumaSRGB:
+                            gray = uint8_t(std::round(0.2126f*in.r + 0.7152f*in.g + 0.0722f*in.b));
+                            break;
+                        case OneShotColorParams::GrayscaleMode::Red:   gray = in.r; break;
+                        case OneShotColorParams::GrayscaleMode::Green:  gray = in.g; break;
+                        case OneShotColorParams::GrayscaleMode::Blue:   gray = in.b; break;
+                    }
+                    out = {gray, gray, gray, in.a};
+                    break;
+                }
+                case OneShotColorParams::Kind::SwapRB:
+                    out = {in.b, in.g, in.r, in.a};
+                    break;
+                case OneShotColorParams::Kind::SwapRG:
+                    out = {in.g, in.r, in.b, in.a};
+                    break;
+                case OneShotColorParams::Kind::SwapGB:
+                    out = {in.r, in.b, in.g, in.a};
+                    break;
+                case OneShotColorParams::Kind::HistEq:
+                {
+                    const uint8_t eq = histEqLut[lumaFromPixel(in)];
+                    out = {eq, eq, eq, in.a};
+                    break;
+                }
+                case OneShotColorParams::Kind::AutoLevels:
+                    out = {autoLevelsLut[in.r], autoLevelsLut[in.g], autoLevelsLut[in.b], in.a};
+                    break;
+                case OneShotColorParams::Kind::LabelColorize:
+                {
+                    if (!labelColorizeCanApply)
+                        break;
+
+                    const uint8_t label = in.r;
+                    if (label == _params.labelColorize.backgroundValue)
+                    {
+                        switch (_params.labelColorize.backgroundMode)
+                        {
+                            case OneShotColorParams::LabelColorize::BackgroundMode::Preserve:
+                                out = in;
+                                break;
+                            case OneShotColorParams::LabelColorize::BackgroundMode::Black:
+                                out = {0, 0, 0, in.a};
+                                break;
+                            case OneShotColorParams::LabelColorize::BackgroundMode::Transparent:
+                                out = {0, 0, 0, 0};
+                                break;
+                        }
+                    }
+                    else
+                    {
+                        const PixelSRGBA color = labelPalette[label];
+                        out = {color.r, color.g, color.b, in.a};
+                    }
+                    break;
+                }
+            }
+            outRow[c] = out;
+        }
+    }
+}
+
+void HueShiftModifier::apply (const ImageItemData& input, ImageItemData& output, AnnotationRenderer&)
+{
+    const auto& inIm = *input.cpuData;
+    output.cpuData = std::make_shared<ImageSRGBA>(inIm.width(), inIm.height());
+    output.textureData = {};
+    output.status = ImageItemData::Status::Ready;
+    auto& outIm = *output.cpuData;
+
+    const float shift = _hueDegrees / 360.f;
+    for (int r = 0; r < inIm.height(); ++r)
+    {
+        const PixelSRGBA* inRow = inIm.atRowPtr(r);
+        PixelSRGBA* outRow = outIm.atRowPtr(r);
+        for (int c = 0; c < inIm.width(); ++c)
+        {
+            const PixelSRGBA& in = inRow[c];
+            const float rf = in.r / 255.f, gf = in.g / 255.f, bf = in.b / 255.f;
+
+            // RGB -> HSV
+            const float maxC = std::max({rf, gf, bf});
+            const float minC = std::min({rf, gf, bf});
+            const float delta = maxC - minC;
+            float h = 0.f;
+            if (delta > 1e-6f)
+            {
+                if (maxC == rf)      h = std::fmod((gf - bf) / delta, 6.f) / 6.f;
+                else if (maxC == gf) h = ((bf - rf) / delta + 2.f) / 6.f;
+                else                 h = ((rf - gf) / delta + 4.f) / 6.f;
+                if (h < 0.f) h += 1.f;
+            }
+            const float s = (maxC > 1e-6f) ? delta / maxC : 0.f;
+            const float v = maxC;
+
+            // Shift hue
+            h = std::fmod(h + shift + 1.f, 1.f);
+
+            // HSV -> RGB
+            const float hh = h * 6.f;
+            const int   hi = static_cast<int>(hh);
+            const float ff = hh - hi;
+            const float p  = v * (1.f - s);
+            const float q2 = v * (1.f - s * ff);
+            const float t  = v * (1.f - s * (1.f - ff));
+            float ro, go, bo;
+            switch (hi % 6)
+            {
+                case 0: ro=v; go=t; bo=p; break;
+                case 1: ro=q2;go=v; bo=p; break;
+                case 2: ro=p; go=v; bo=t; break;
+                case 3: ro=p; go=q2;bo=v; break;
+                case 4: ro=t; go=p; bo=v; break;
+                default:ro=v; go=p; bo=q2;break;
+            }
+            outRow[c] = {uint8_t(std::round(ro*255.f)),
+                         uint8_t(std::round(go*255.f)),
+                         uint8_t(std::round(bo*255.f)),
+                         in.a};
+        }
+    }
+}
 
 void RotateImageModifier::apply (const ImageItemData& input, ImageItemData& output, AnnotationRenderer&)
 {
