@@ -684,11 +684,9 @@ void ImageWindow::checkImguiGlobalImageKeyEvents ()
 
 inline bool CtrlOrCmd(ImGuiIO& io)
 {
-#if PLATFORM_MACOS
-    return io.KeySuper;
-#else
+    // ImGui maps the platform shortcut modifier to KeyCtrl. On macOS,
+    // io.KeyCtrl is Command and io.KeySuper is the physical Control key.
     return io.KeyCtrl;
-#endif
 }
 
 void ImageWindow::processKeyEvent (ImGuiKey keycode)
