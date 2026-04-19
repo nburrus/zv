@@ -666,6 +666,7 @@ void ImageWindow::checkImguiGlobalImageKeyEvents ()
             ImGuiKey_UpArrow, ImGuiKey_DownArrow, ImGuiKey_LeftArrow, ImGuiKey_RightArrow,
             ImGuiKey_PageUp, ImGuiKey_PageDown,
             ImGuiKey_O, ImGuiKey_S, ImGuiKey_W, ImGuiKey_R, ImGuiKey_F5,
+            ImGuiKey_E,
             ImGuiKey_N, ImGuiKey_A, ImGuiKey_V, ImGuiKey_Period, ImGuiKey_Comma, ImGuiKey_M,
             ImGuiKey_C, ImGuiKey_Z,
             ImGuiKey_Space, ImGuiKey_Backspace, ImGuiKey_Delete,
@@ -768,7 +769,7 @@ void ImageWindow::processKeyEvent (ImGuiKey keycode)
                 enqueueAction(ImageWindowAction::Kind::View_ToggleOverlay);
             break;
         }
-
+        case ImGuiKey_E: enqueueAction(ImageWindowAction::Kind::Tools_ShowColorEditor); break;
         case ImGuiKey_N: enqueueAction(ImageWindowAction::Kind::Zoom_Normal); break;
         case ImGuiKey_M: enqueueAction(ImageWindowAction::Kind::Zoom_Maxspect); break;
         case ImGuiKey_A: enqueueAction(ImageWindowAction::Kind::Zoom_RestoreAspectRatio); break;
@@ -840,7 +841,19 @@ ImageWidgetRoi ImageWindow::Impl::renderImageItem(const ModifiedImagePtr &modIma
                                                 imageTexture);
     }
 
-    ImGui::Image((ImTextureID)(uint64_t)(imageTexture->textureId()),
+    uint32_t displayTextureId = imageTexture->textureId();
+    {
+        const auto& im = *modImagePtr->data()->cpuData;
+        ImageRenderingContext ctx;
+        ctx.textureId = displayTextureId;
+        ctx.width = im.width();
+        ctx.height = im.height();
+        auto override = mutableState.colorEditorTool.overrideImageRendering(ctx);
+        if (override.overrideTextureId != 0)
+            displayTextureId = override.overrideTextureId;
+    }
+
+    ImGui::Image((ImTextureID)(uint64_t)(displayTextureId),
                  imageWidgetSize,
                  uv0,
                  uv1);
@@ -1645,6 +1658,11 @@ void ImageWindow::runAction (const ImageWindowAction& action)
 
         case ImageWindowAction::Kind::CancelCurrentTool: {
             setActiveTool (ActiveToolState::Kind::None);
+            break;
+        }
+
+        case ImageWindowAction::Kind::Tools_ShowColorEditor: {
+            if (impl->viewer) impl->viewer->onShowColorEditor();
             break;
         }
     }

@@ -81,6 +81,7 @@ struct Viewer::Impl
         activateControls |= state.openImageRequested;
         activateControls |= state.pendingChangesConfirmationRequested;
         activateControls |= state.controlsRequestedForConfirmation;
+        activateControls |= state.showColorEditorRequested;
 
         if (activateControls)
         {
@@ -101,6 +102,12 @@ struct Viewer::Impl
             }
         }
         state.toggleControlsRequested = false;
+
+        if (state.showColorEditorRequested)
+        {
+            controlsWindow.requestColorEditorTab();
+            state.showColorEditorRequested = false;
+        }
 
         imageWindow.renderFrame();
 
@@ -238,6 +245,11 @@ void Viewer::onHelpRequested()
 void Viewer::onToggleControls()
 {
     impl->state.toggleControlsRequested = true;
+}
+
+void Viewer::onShowColorEditor()
+{
+    impl->state.showColorEditorRequested = true;
 }
 
 void Viewer::onImageWindowGeometryUpdated (const Rect& geometry)

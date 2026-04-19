@@ -60,6 +60,7 @@ public:
     void saveAllChanges (bool forcePathSelectionOnSave);
     void confirmPendingChanges ();
     void setCurrentActionToConfirm (const ActionToConfirm& actionToConfirm);
+    void requestColorEditorTab ();
     
 private:
     struct Impl;

@@ -22,8 +22,20 @@ struct InteractiveToolRenderingContext
     bool firstValidImageIndex = false;
 };
 
+struct ImageRenderingContext
+{
+    uint32_t textureId = 0;
+    int width = 0;
+    int height = 0;
+};
+
+struct ImageRenderingOverride
+{
+    uint32_t overrideTextureId = 0; // 0 = use original texture
+};
+
 class InteractiveTool
-{    
+{
 public:
     enum class Kind
     {
@@ -40,7 +52,11 @@ public:
     virtual void renderAsActiveTool (const InteractiveToolRenderingContext& context) = 0;
     virtual void renderControls (const ImageSRGBA& firstIm) = 0;
     virtual void addToImage (ModifiedImage& image) = 0;
-    
+
+    // Called before rendering each image. Override to substitute a post-processed texture.
+    virtual ImageRenderingOverride overrideImageRendering (const ImageRenderingContext&)
+    { return {}; }
+
 private:
     const Kind _kind;
 };

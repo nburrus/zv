@@ -40,7 +40,8 @@ struct ControlsWindow::Impl
     Viewer* viewer = nullptr;
 
     int lastSelectedIdx = 0;
-    
+    bool requestColorEditorTab = false;
+
     ControlsWindowInputState inputState;
 
     // Debatable, but since we don't need polymorphism I've decided to use composition
@@ -815,7 +816,12 @@ void ControlsWindow::confirmPendingChanges ()
 void ControlsWindow::setCurrentActionToConfirm (const ActionToConfirm& actionToConfirm)
 {
     zv_assert (!impl-> currentActionToConfirm.isActive(), "Already an active confirmation!");
-    impl->currentActionToConfirm = actionToConfirm;    
+    impl->currentActionToConfirm = actionToConfirm;
+}
+
+void ControlsWindow::requestColorEditorTab ()
+{
+    impl->requestColorEditorTab = true;
 }
 
 void ControlsWindow::renderFrame ()
@@ -942,6 +948,32 @@ void ControlsWindow::renderFrame ()
                 impl->renderModifiersTab (footerHeight);
                 ImGui::EndTabItem();
             }
+
+            ImGuiTabItemFlags colorEditorFlags = ImGuiTabItemFlags_None;
+            if (impl->requestColorEditorTab)
+            {
+                colorEditorFlags = ImGuiTabItemFlags_SetSelected;
+                impl->requestColorEditorTab = false;
+            }
+            if (ImGui::BeginTabItem("Color Editor", nullptr, colorEditorFlags))
+            {
+                ModifiedImagePtr firstModIm = imageWindow->getFirstValidImage(false);
+                if (firstModIm)
+                {
+                    const auto& firstIm = *(firstModIm->data()->cpuData);
+                    auto& colorEditorTool = imageWindow->mutableState().colorEditorTool;
+                    colorEditorTool.renderControls(firstIm);
+                    if (colorEditorTool.hasPendingCommitRequest())
+                    {
+                        imageWindow->applyOverValidImages(false, [&](const ModifiedImagePtr& modIm) {
+                            colorEditorTool.addToImage(*modIm);
+                        });
+                        colorEditorTool.clearPendingCommitRequest();
+                    }
+                }
+                ImGui::EndTabItem();
+            }
+
             ImGui::EndTabBar();
         }        
                         

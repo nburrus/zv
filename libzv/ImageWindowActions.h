@@ -62,6 +62,8 @@ struct ImageWindowAction
         
         ApplyCurrentTool,
         CancelCurrentTool,
+
+        Tools_ShowColorEditor,
     } kind;
 
     ImageWindowAction (Kind kind, const ParamsPtr& params = nullptr)

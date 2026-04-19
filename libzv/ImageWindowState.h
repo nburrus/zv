@@ -8,6 +8,7 @@
 
 #include <libzv/Modifiers.h>
 #include <libzv/InteractiveTool.h>
+#include <libzv/ColorEditorTool.h>
 #include <libzv/ImguiUtils.h>
 
 #include <string>
@@ -71,10 +72,10 @@ struct ActiveToolState
 struct ImageWindowState
 {
     ViewerMode activeMode = ViewerMode::None;
-    
+
     // modeForCurrentFrame can be different from activeMode
     // if the user presses the SHIFT key.
-    ViewerMode modeForCurrentFrame = ViewerMode::None;    
+    ViewerMode modeForCurrentFrame = ViewerMode::None;
 
     struct InputState
     {
@@ -83,9 +84,10 @@ struct ImageWindowState
 
     InputState controlsInputState;
     InputState inputState;
-    
+
     ActiveToolState activeToolState;
-    
+    ColorEditorTool colorEditorTool;
+
     LayoutConfig layoutConfig;
 
     bool infoOverlayEnabled = true;

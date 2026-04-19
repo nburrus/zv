@@ -30,6 +30,7 @@ struct ViewerState
 {
     bool helpRequested = false;
     bool toggleControlsRequested = false;
+    bool showColorEditorRequested = false;
     bool dismissRequested = false;
     bool openImageRequested = false;
     bool controlsRequestedForConfirmation = false;
@@ -80,6 +81,7 @@ protected:
     void onDismissRequested ();
     void onHelpRequested ();
     void onToggleControls ();
+    void onShowColorEditor ();
     void onImageWindowGeometryUpdated (const Rect& geometry);
     void onOpenImage ();
     void onControlsRequestedForConfirmation();
