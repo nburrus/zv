@@ -309,7 +309,7 @@ void ControlsWindow::Impl::renderModifiersTab (float cursorOverlayHeight)
         imageWindow->setActiveTool (ActiveToolState::Kind::Annotate_Line);
     helpMarker ("Add Text", contentSize.x * 0.8, false /* no extra question mark */);
 
-    if (!firstModIm->hasValidData())
+    if (!firstModIm || !firstModIm->hasValidData())
         return;
     
     renderActiveTool (firstModIm);
