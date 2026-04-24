@@ -129,7 +129,6 @@ bool App::initialize (const std::vector<std::string>& args)
    }
 
    Viewer *defaultViewer = createViewer("default");
-   defaultViewer->initialize();
 
    try
    {
