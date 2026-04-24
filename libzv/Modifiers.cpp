@@ -48,6 +48,14 @@ void ModifiedImage::discardChanges ()
     _modifiersChangedSinceLastUpdate = true;
 }
 
+void ModifiedImage::resetToNewData (const ImageItemDataPtr& newData)
+{
+    _originalData = newData;
+    _modifiers.clear();
+    _actions.clear();
+    _modifiersChangedSinceLastUpdate = true;
+}
+
 bool ModifiedImage::update ()
 {
     if (!_originalData)

@@ -1451,7 +1451,13 @@ void ImageWindow::runAction (const ImageWindowAction& action)
                         && impl->currentImages[i]
                         && impl->currentImages[i]->item()->uniqueId == itemPtr->uniqueId)
                     {
-                        impl->currentImages[i] = nullptr;
+                        // Reset in-place so the slot is never transiently null.
+                        // Any frame rendering between now and the next
+                        // adjustForNewSelectionOrUpdatedContent pass (e.g. the
+                        // remainder of ControlsWindow::renderFrame when this
+                        // lambda fires from a confirmation dialog) will see a
+                        // valid ModifiedImage with the freshly loaded data.
+                        impl->currentImages[i]->resetToNewData(imageList.getData(itemPtr.get()));
                     }
                 }
 

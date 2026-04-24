@@ -108,6 +108,10 @@ struct ModifiedImage
 
     bool saveChanges (const std::string& outputPath);
     void discardChanges ();
+    // Replace the base image data with a freshly loaded version, discarding
+    // any modifiers and undo history. Used by refresh-from-disk so the slot
+    // is never transiently null while the new data loads.
+    void resetToNewData (const ImageItemDataPtr& newData);
     void undoLastChange ();
 
 private:
