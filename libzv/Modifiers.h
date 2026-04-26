@@ -198,7 +198,7 @@ private:
 
 struct OneShotColorParams
 {
-    enum class Kind { Invert, Grayscale, SwapRB, SwapRG, SwapGB, HistEq, AutoLevels, LabelColorize };
+    enum class Kind { Invert, Grayscale, SwapRB, SwapRG, SwapGB, HistEq, LabelColorize };
     Kind kind = Kind::Invert;
 
     enum class InvertTarget { RGB, Red, Green, Blue };

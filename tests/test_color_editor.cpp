@@ -202,37 +202,6 @@ TEST_CASE("OneShotColorModifier - HistEq keeps flat images unchanged")
     CHECK((*out.cpuData)(1, 0) == zv::PixelSRGBA(42, 42, 42, 88));
 }
 
-TEST_CASE("OneShotColorModifier - AutoLevels stretches luma range and preserves alpha")
-{
-    auto input = std::make_shared<zv::ImageItemData>();
-    input->status = zv::ImageItemData::Status::Ready;
-    input->cpuData = std::make_shared<zv::ImageSRGBA>(4, 1);
-    (*input->cpuData)(0, 0) = {50, 50, 50, 11};
-    (*input->cpuData)(1, 0) = {100, 100, 100, 22};
-    (*input->cpuData)(2, 0) = {150, 150, 150, 33};
-    (*input->cpuData)(3, 0) = {200, 200, 200, 44};
-
-    zv::OneShotColorParams p;
-    p.kind = zv::OneShotColorParams::Kind::AutoLevels;
-    auto out = applyOneShot(input, p);
-
-    REQUIRE(out.status == zv::ImageItemData::Status::Ready);
-    CHECK((*out.cpuData)(0, 0) == zv::PixelSRGBA(0, 0, 0, 11));
-    CHECK((*out.cpuData)(1, 0) == zv::PixelSRGBA(85, 85, 85, 22));
-    CHECK((*out.cpuData)(2, 0) == zv::PixelSRGBA(170, 170, 170, 33));
-    CHECK((*out.cpuData)(3, 0) == zv::PixelSRGBA(255, 255, 255, 44));
-}
-
-TEST_CASE("OneShotColorModifier - AutoLevels keeps flat images unchanged")
-{
-    auto input = makeInputData(42, 42, 42, 77, 42, 42, 42, 88);
-    zv::OneShotColorParams p;
-    p.kind = zv::OneShotColorParams::Kind::AutoLevels;
-    auto out = applyOneShot(input, p);
-    CHECK((*out.cpuData)(0, 0) == zv::PixelSRGBA(42, 42, 42, 77));
-    CHECK((*out.cpuData)(1, 0) == zv::PixelSRGBA(42, 42, 42, 88));
-}
-
 TEST_CASE("OneShotColorModifier - LabelColorize is deterministic and preserves alpha")
 {
     auto input = makeInputData(5, 5, 5, 77, 42, 42, 42, 88);

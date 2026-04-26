@@ -446,19 +446,6 @@ void ColorEditorTool::renderLevelsButtons()
         resetAllLevels();
     if (disabled)
         ImGui::EndDisabled();
-    ImGui::SameLine();
-    const bool autoDisabled = _levelsPreviewDirty || _hueShiftPreviewDirty;
-    if (autoDisabled)
-        ImGui::BeginDisabled();
-    if (ImGui::Button("Auto"))
-    {
-        OneShotColorParams p;
-        p.kind = OneShotColorParams::Kind::AutoLevels;
-        _pendingOneShotAction = p;
-    }
-    if (autoDisabled)
-        ImGui::EndDisabled();
-    ImGui::SameLine();
     helpMarker("Drag the triangles at the bottom of the histogram to adjust the input level mapping.\n"
                "Left/right triangles set the black/white input points. Middle diamond adjusts gamma.",
                300.f);

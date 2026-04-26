@@ -353,55 +353,6 @@ static std::array<uint8_t, 256> compileHistogramEqualizationLut(const ImageSRGBA
     return lut;
 }
 
-static LevelsParams computeAutoLevelsParams(const ImageSRGBA& image)
-{
-    std::array<uint64_t, 256> histogram = {};
-    for (int r = 0; r < image.height(); ++r)
-    {
-        const PixelSRGBA* row = image.atRowPtr(r);
-        for (int c = 0; c < image.width(); ++c)
-            histogram[lumaFromPixel(row[c])]++;
-    }
-
-    const uint64_t pixelCount = static_cast<uint64_t>(image.width()) * image.height();
-    if (pixelCount == 0)
-        return {};
-
-    const uint64_t clipCount = static_cast<uint64_t>(std::floor(static_cast<double>(pixelCount) * 0.001));
-
-    int inputBlack = 0;
-    uint64_t cumulative = 0;
-    for (int i = 0; i < 256; ++i)
-    {
-        cumulative += histogram[i];
-        if (cumulative > clipCount)
-        {
-            inputBlack = i;
-            break;
-        }
-    }
-
-    int inputWhite = 255;
-    cumulative = 0;
-    for (int i = 255; i >= 0; --i)
-    {
-        cumulative += histogram[i];
-        if (cumulative > clipCount)
-        {
-            inputWhite = i;
-            break;
-        }
-    }
-
-    if (inputBlack >= inputWhite)
-        return {};
-
-    LevelsParams params;
-    params.inputBlack = inputBlack;
-    params.inputWhite = inputWhite;
-    return params;
-}
-
 static bool isGrayLikeLabelMap(const ImageSRGBA& image)
 {
     const uint64_t pixelCount = static_cast<uint64_t>(image.width()) * image.height();
@@ -513,9 +464,6 @@ void OneShotColorModifier::apply (const ImageItemData& input, ImageItemData& out
     const auto histEqLut = (_params.kind == OneShotColorParams::Kind::HistEq)
         ? compileHistogramEqualizationLut(inIm)
         : std::array<uint8_t, 256>{};
-    const auto autoLevelsLut = (_params.kind == OneShotColorParams::Kind::AutoLevels)
-        ? compileLevelsChannelLut(computeAutoLevelsParams(inIm))
-        : std::array<uint8_t, 256>{};
 
     for (int r = 0; r < inIm.height(); ++r)
     {
@@ -574,9 +522,6 @@ void OneShotColorModifier::apply (const ImageItemData& input, ImageItemData& out
                     out = {eq, eq, eq, in.a};
                     break;
                 }
-                case OneShotColorParams::Kind::AutoLevels:
-                    out = {autoLevelsLut[in.r], autoLevelsLut[in.g], autoLevelsLut[in.b], in.a};
-                    break;
                 case OneShotColorParams::Kind::LabelColorize:
                 {
                     if (!labelColorizeCanApply)
