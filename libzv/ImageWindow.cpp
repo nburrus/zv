@@ -212,7 +212,7 @@ struct ImageWindow::Impl
                                       imageWidgetRect.current.size.y + windowBorderSize * 2);
     }
 
-    void adjustForNewSelection ();
+    void adjustForNewSelectionOrUpdatedContent ();
 
     void moveWindowIfCannotFit()
     {
@@ -353,7 +353,7 @@ bool ImageWindow::Impl::runAfterCheckingPendingChanges (std::function<void(void)
     return false;
 }
 
-void ImageWindow::Impl::adjustForNewSelection ()
+void ImageWindow::Impl::adjustForNewSelectionOrUpdatedContent ()
 {
     GLFWmonitor* monitor = glfwGetPrimaryMonitor();
     const GLFWvidmode* mode = glfwGetVideoMode(monitor);
@@ -383,11 +383,11 @@ void ImageWindow::Impl::adjustForNewSelection ()
             // Overwrite the image if the ID changed. Otherwise keep the modified image
             // since it might just have been updated with new modifiers.
             if (!this->currentImages[i] || this->currentImages[i]->item()->uniqueId != itemPtr->uniqueId)
-                this->currentImages[i] = std::make_shared<ModifiedImage>(this->annotationRenderer, itemPtr, imageList.getData(itemPtr.get()));
-                
+                this->currentImages[i] = std::make_shared<ModifiedImage>(itemPtr, imageList.getData(itemPtr.get()));
+
             if (this->currentImages[i]->hasValidData())
             {
-                this->currentImages[i]->data()->ensureUploadedToGPU ();                
+                this->currentImages[i]->finalData()->ensureUploadedToGPU ();
             }
         }
         else
@@ -403,7 +403,7 @@ void ImageWindow::Impl::adjustForNewSelection ()
     Point firstImSizeInRectBefore = this->currentLayout.firstImSizeInRect (this->imageWidgetRect.current.size, gridPadding);
     bool layoutChanged = this->currentLayout.adjustForConfig(this->mutableState.layoutConfig);
         
-    const auto& firstImageData = this->currentImages[firstValidSelectionIndex]->data();
+    const auto& firstImageData = this->currentImages[firstValidSelectionIndex]->finalData();
     const auto& firstIm = *firstImageData->cpuData;
     const bool firstImageStillLoading = !firstIm.hasData() && firstImageData->status == ImageItemData::Status::StillLoading;
 
@@ -510,12 +510,16 @@ void ImageWindow::Impl::applyCurrentTool()
 {
     if (mutableState.activeToolState.kind == ActiveToolState::Kind::None)
         return;
-    
+
+    // Annotations live on the document directly, so Apply (Enter) is a no-op.
+    if (mutableState.activeToolState.kind == ActiveToolState::Kind::Annotate)
+        return;
+
     for (const auto& modImPtr : this->currentImages)
     {
         if (!modImPtr)
             continue;
-        mutableState.activeToolState.activeTool()->addToImage (*modImPtr);        
+        mutableState.activeToolState.activeTool()->addToImage (*modImPtr);
     }
 
     that.setActiveTool (ActiveToolState::Kind::None);
@@ -706,12 +710,20 @@ void ImageWindow::processKeyEvent (ImGuiKey keycode)
         return;
     }
 
+    auto* activeTool = impl->mutableState.activeToolState.activeTool();
+    if (activeTool && activeTool->handleKeyEvent(keycode, io))
+        return;
+
     switch (keycode)
     {
-        case ImGuiKey_Escape: enqueueAction(ImageWindowAction::Kind::CancelCurrentTool); break;
+        case ImGuiKey_Escape: {
+            enqueueAction(ImageWindowAction::Kind::CancelCurrentTool);
+            break;
+        }
         case ImGuiKey_Enter: enqueueAction(ImageWindowAction::Kind::ApplyCurrentTool); break;
 
-        case ImGuiKey_UpArrow:
+        case ImGuiKey_UpArrow: enqueueAction(ImageWindowAction::Kind::View_PrevImage); break;
+
         case ImGuiKey_Backspace: enqueueAction(ImageWindowAction::Kind::View_PrevImage); break;
 
         case ImGuiKey_Delete: {
@@ -826,7 +838,7 @@ ImageWidgetRoi ImageWindow::Impl::renderImageItem(const ModifiedImagePtr &modIma
     uv0 += deltaToAdd;
     uv1 += deltaToAdd;
 
-    GLTexture* imageTexture = modImagePtr->data()->textureData.get();
+    GLTexture* imageTexture = modImagePtr->finalData()->textureData.get();
 
     const bool hasZoom = zoom.zoomFactor != 1;
     const bool useLinearFiltering = imageSmallerThanNormal && !hasZoom;
@@ -843,7 +855,7 @@ ImageWidgetRoi ImageWindow::Impl::renderImageItem(const ModifiedImagePtr &modIma
 
     uint32_t displayTextureId = imageTexture->textureId();
     {
-        const auto& im = *modImagePtr->data()->cpuData;
+        const auto& im = *modImagePtr->finalData()->cpuData;
         ImageRenderingContext ctx;
         ctx.textureId = displayTextureId;
         ctx.width = im.width();
@@ -868,7 +880,7 @@ ImageWidgetRoi ImageWindow::Impl::renderImageItem(const ModifiedImagePtr &modIma
                                                 imageTexture);
     }
 
-    const auto& currentIm = *modImagePtr->data()->cpuData;
+    const auto& currentIm = *modImagePtr->finalData()->cpuData;
 
     ImVec2 mousePosInImage (0,0);
     ImVec2 mousePosInTexture (0,0);
@@ -950,11 +962,11 @@ void ImageWindow::renderFrame ()
             if (imageListIdx < 0)
             {
                 // If we have data for this guy, we need to clear it.
-                contentChanged = impl->currentImages[idx] && impl->currentImages[idx]->data();
+                contentChanged = impl->currentImages[idx] && impl->currentImages[idx]->finalData();
                 continue;
             }
             
-            if (!impl->currentImages[idx] || !impl->currentImages[idx]->data())
+            if (!impl->currentImages[idx] || !impl->currentImages[idx]->finalData())
             {
                 // Was a new image added?
                 if (imageListIdx < imageList.numImages())
@@ -981,29 +993,26 @@ void ImageWindow::renderFrame ()
     // finished, file changed..).
     for (int idx = 0; idx < impl->currentImages.size(); ++idx)
     {
-        if (impl->currentImages[idx] && impl->currentImages[idx]->update ())
+        if (!impl->currentImages[idx])
+            continue;
+
+        bool imageChanged = impl->currentImages[idx]->updateModifiers();
+        imageChanged |= impl->currentImages[idx]->updateAnnotations(impl->annotationRenderer);
+
+        if (imageChanged)
         {
-            impl->currentImages[idx]->data()->textureData.reset ();
+            impl->currentImages[idx]->finalData()->textureData.reset();
             contentChanged = true;
         }
     }
 
     if (contentChanged)
     {
-        impl->adjustForNewSelection ();
+        impl->adjustForNewSelectionOrUpdatedContent();
     }
 
-    // if (impl->updateAfterContentSwitch.needToResize)
-    // {
-    //     impl->imguiGlfwWindow.enableContexts();
+    const auto frameInfo = impl->imguiGlfwWindow.beginFrame();
 
-    //     impl->imguiGlfwWindow.setWindowSize (impl->updateAfterContentSwitch.targetWindowGeometry.size.x, 
-    //                                          impl->updateAfterContentSwitch.targetWindowGeometry.size.y);
-
-    //     impl->updateAfterContentSwitch.needToResize = false;
-    // }
-
-    const auto frameInfo = impl->imguiGlfwWindow.beginFrame ();
     const auto& controlsWindowState = impl->viewer->controlsWindow()->inputState();
     
     // If we do not have a pending resize request, then adjust the content size to the
@@ -1073,6 +1082,18 @@ void ImageWindow::renderFrame ()
     // Since we add a default image, this should never happen.
     zv_assert (firstValidImageIndex >= 0, "We should always have at least one valid image.");
 
+    if (impl->mutableState.activeToolState.kind == ActiveToolState::Kind::Annotate)
+    {
+        impl->mutableState.activeToolState.annotationTool.setApplyToVisibleImagesFunc(
+            [this](const std::function<void(ModifiedImage&)>& op) {
+                for (const auto& modImPtr : impl->currentImages)
+                {
+                    if (modImPtr && modImPtr->hasValidData())
+                        op(*modImPtr);
+                }
+            });
+    }
+
     std::string mainWindowName = "zv - " + impl->currentImages[firstValidImageIndex]->item()->prettyName;
     if (impl->currentImages[firstValidImageIndex]->hasPendingChanges())
         mainWindowName += " [edited]";
@@ -1119,10 +1140,10 @@ void ImageWindow::renderFrame ()
             if (!impl->currentImages[idx])
                 continue;
             
-            if (!impl->currentImages[idx]->data()->cpuData->hasData())
+            if (!impl->currentImages[idx]->finalData()->cpuData->hasData())
             {
                 ImGui::SetCursorScreenPos (imVec2(widgetGeometries[idx].topLeft()));
-                switch (impl->currentImages[idx]->data()->status)
+                switch (impl->currentImages[idx]->finalData()->status)
                 {
                     case ImageItemData::Status::FailedToLoad: {
                         ImGui::TextColored(ImVec4(1, 0, 0, 1), "ERROR: could not load the image %s.\nPath: %s",
@@ -1155,10 +1176,11 @@ void ImageWindow::renderFrame ()
                 {
                     InteractiveToolRenderingContext context;
                     context.widgetToImageTransform = transform;
-                    const auto &im = *impl->currentImages[idx]->data()->cpuData;
+                    const auto &im = *impl->currentImages[idx]->finalData()->cpuData;
                     context.imageWidth = im.width();
                     context.imageHeight = im.height();
                     context.firstValidImageIndex = (idx == firstValidImageIndex);
+                    context.annotationDocument = &impl->currentImages[idx]->annotations();
                     impl->mutableState.activeToolState.activeTool()->renderAsActiveTool (context);
                 }
             }
@@ -1196,7 +1218,7 @@ void ImageWindow::renderFrame ()
                     if (!impl->currentImages[idx] || !impl->currentImages[idx]->hasValidData())
                         continue;
                     
-                    const auto& im = *impl->currentImages[idx]->data()->cpuData;
+                    const auto& im = *impl->currentImages[idx]->finalData()->cpuData;
                     const ImVec2 imSize (im.width(), im.height());
                     ImVec2 mousePosInImage = impl->cursorOverlayInfo.mousePosInTexture * imSize;
                     const int cInImage = int(mousePosInImage.x);
@@ -1585,7 +1607,7 @@ void ImageWindow::runAction (const ImageWindowAction& action)
             {
                 if (impl->currentImages[i] && impl->currentImages[i]->hasValidData())
                 {                    
-                    copyToClipboard (*impl->currentImages[i]->data()->cpuData);
+                    copyToClipboard (*impl->currentImages[i]->finalData()->cpuData);
                     break;
                 }
             }
@@ -1596,7 +1618,7 @@ void ImageWindow::runAction (const ImageWindowAction& action)
             if (!impl->cursorOverlayInfo.valid())
                 break;
             
-            const auto& image = *impl->cursorOverlayInfo.modImagePtr->data()->cpuData;
+            const auto& image = *impl->cursorOverlayInfo.modImagePtr->finalData()->cpuData;
             ImVec2 mousePosInImage = impl->cursorOverlayInfo.mousePosInImage();
 
             if (!image.contains(mousePosInImage.x, mousePosInImage.y))
@@ -1663,6 +1685,9 @@ void ImageWindow::runAction (const ImageWindowAction& action)
         }
 
         case ImageWindowAction::Kind::CancelCurrentTool: {
+            if (impl->mutableState.activeToolState.kind == ActiveToolState::Kind::Annotate
+                && impl->mutableState.activeToolState.annotationTool.cancelCurrentAction())
+                break;
             setActiveTool (ActiveToolState::Kind::None);
             break;
         }
@@ -1763,6 +1788,12 @@ void ImageWindow::setActiveTool (ActiveToolState::Kind kind)
 {
     if (kind == impl->mutableState.activeToolState.kind)
         return;
+
+    if (impl->mutableState.activeToolState.kind == ActiveToolState::Kind::Annotate)
+    {
+        impl->mutableState.activeToolState.annotationTool.clearSelection();
+        impl->mutableState.activeToolState.annotationTool.setApplyToVisibleImagesFunc({});
+    }
 
     impl->mutableState.activeToolState.kind = kind;
 }

@@ -20,6 +20,9 @@ struct InteractiveToolRenderingContext
     int imageWidth = -1;
     int imageHeight = -1;
     bool firstValidImageIndex = false;
+    // Per-image annotation document for hit-testing and handle rendering.
+    // Null when no annotation tool is active or document is unavailable.
+    const AnnotationDocument* annotationDocument = nullptr;
 };
 
 struct ImageRenderingContext
@@ -57,6 +60,9 @@ public:
     virtual ImageRenderingOverride overrideImageRendering (const ImageRenderingContext&)
     { return {}; }
 
+    // Returns true if the tool consumed the key (suppresses default behavior).
+    virtual bool handleKeyEvent (ImGuiKey key, const ImGuiIO& io) { return false; }
+
 private:
     const Kind _kind;
 };
@@ -79,25 +85,6 @@ public:
 
 private:
     CropImageModifier::Params _params;
-    std::vector<ControlPoint> _controlPoints;
-};
-
-class LineTool : public InteractiveTool
-{
-public:
-    LineTool() : InteractiveTool (Kind::Annotation) {}
-
-    virtual void renderAsActiveTool(const InteractiveToolRenderingContext &context) override;
-
-    virtual void renderControls(const ImageSRGBA& firstIm) override;
-
-    virtual void addToImage(ModifiedImage& image) override
-    {
-        image.addModifier(std::make_unique<LineAnnotation>(_params));
-    }
-
-private:
-    LineAnnotation::Params _params;
     std::vector<ControlPoint> _controlPoints;
 };
 
