@@ -85,6 +85,9 @@ struct ControlsWindow::Impl
     bool saveAllChanges = false;
     bool askToConfirmPendingChanges = false;
 
+    bool requestModifiersTab = false;
+    AnnotationId lastAnnotationSelectedId;
+
     ActionToConfirm currentActionToConfirm;
 
     std::deque<ModifiedImagePtr> modImagesToSave;
@@ -188,6 +191,7 @@ void ControlsWindow::Impl::maybeRenderConfirmPendingChanges ()
         ImGui::OpenPopup("Confirm pending changes?");
         if (ImGui::BeginPopupModal("Confirm pending changes?", NULL, ImGuiWindowFlags_AlwaysAutoResize))
         {
+            const auto& io = ImGui::GetIO();
             ImGui::Text("The current image has been modified.\n Save the pending changes?\n\n");
             ImGui::Separator();
 
@@ -208,7 +212,8 @@ void ControlsWindow::Impl::maybeRenderConfirmPendingChanges ()
             }
 
             ImGui::SameLine();
-            if (ImGui::Button("Cancel Action", ImVec2(120, 0)))
+            if (ImGui::Button("Cancel Action", ImVec2(120, 0))
+                || (ImGui::IsKeyPressed(ImGuiKey_Escape) && !io.WantTextInput))
             {
                 this->askToConfirmPendingChanges = false;
                 this->viewer->onSavePendingChangesConfirmed(Confirmation::Cancel, false);
@@ -221,7 +226,7 @@ void ControlsWindow::Impl::maybeRenderConfirmPendingChanges ()
 
 void ControlsWindow::Impl::renderActiveTool (const ModifiedImagePtr& firstModIm)
 {    
-    const auto& firstIm = *(firstModIm->data()->cpuData);
+    const auto& firstIm = *(firstModIm->finalData()->cpuData);
 
     auto* imageWindow = this->viewer->imageWindow();
     auto& state = imageWindow->mutableState();
@@ -231,13 +236,13 @@ void ControlsWindow::Impl::renderActiveTool (const ModifiedImagePtr& firstModIm)
 
     InteractiveTool* activeTool = state.activeToolState.activeTool();
 
-    if (state.activeToolState.kind != ActiveToolState::Kind::None)
+    ImGui::Spacing();
+    ImGui::Separator();
+
+    activeTool->renderControls(firstIm);
+
+    if (ActiveToolState::needsExplicitApply(state.activeToolState.kind))
     {
-        ImGui::Spacing();
-        ImGui::Separator();
-
-        activeTool->renderControls(firstIm);
-
         if (ImGui::Button("Apply"))
         {
             imageWindow->addCommand(ImageWindow::actionCommand(ImageWindowAction::Kind::ApplyCurrentTool));
@@ -258,6 +263,11 @@ void ControlsWindow::Impl::renderModifiersTab (float cursorOverlayHeight)
     
     ImVec2 contentSize = ImGui::GetContentRegionAvail();
     ImGui::Spacing();
+
+    // Helper: render a button that looks pressed when `active` is true.
+    auto activateAnnotationMode = [&]() {
+        imageWindow->setActiveTool(ActiveToolState::Kind::Annotate);
+    };
 
     if (imageWindow->imageWidgetHasExactImageSize())
         ImGui::BeginDisabled ();
@@ -287,26 +297,29 @@ void ControlsWindow::Impl::renderModifiersTab (float cursorOverlayHeight)
 
     ImGui::SameLine();
 
-    if (ImGui::Button(ICON_FLOW_LINE))
-        imageWindow->setActiveTool (ActiveToolState::Kind::Annotate_Line);
+    // Line button: one-shot draw — enters AddLine mode, draws one line, auto-returns
+    // to Select. Shown pressed only during the brief AddLine gesture.
+    auto& annotTool = state.activeToolState.annotationTool;
+    const bool isAnnotating = (state.activeToolState.kind == ActiveToolState::Kind::Annotate);
+    const bool drawingLine = (isAnnotating && annotTool.mode() == AnnotationTool::Mode::AddLine);
+    if (activeButton(ICON_FLOW_LINE, drawingLine))
+    {
+        activateAnnotationMode();
+        annotTool.setMode(drawingLine ? AnnotationTool::Mode::Select
+                                      : AnnotationTool::Mode::AddLine);
+    }
     helpMarker ("Add Line", contentSize.x * 0.8, false /* no extra question mark */);
 
     ImGui::SameLine();
 
-    if (ImGui::Button(ICON_RECTANGLE))
-        imageWindow->setActiveTool (ActiveToolState::Kind::Annotate_Line);
-    helpMarker ("Add Rectangle", contentSize.x * 0.8, false /* no extra question mark */);
-
-    ImGui::SameLine();
-
-    if (ImGui::Button(ICON_CIRCLE))
-        imageWindow->setActiveTool (ActiveToolState::Kind::Annotate_Line);
-    helpMarker ("Add Circle", contentSize.x * 0.8, false /* no extra question mark */);
-
-    ImGui::SameLine();
-
-    if (ImGui::Button(ICON_TEXT))
-        imageWindow->setActiveTool (ActiveToolState::Kind::Annotate_Line);
+    // Text button: placement mode; click again to leave. Shown pressed while in AddText mode.
+    const bool addingText = (isAnnotating && annotTool.mode() == AnnotationTool::Mode::AddText);
+    if (activeButton(ICON_TEXT, addingText))
+    {
+        activateAnnotationMode();
+        annotTool.setMode(addingText ? AnnotationTool::Mode::Select
+                                     : AnnotationTool::Mode::AddText);
+    }
     helpMarker ("Add Text", contentSize.x * 0.8, false /* no extra question mark */);
 
     if (!firstModIm || !firstModIm->hasValidData())
@@ -582,6 +595,12 @@ void ControlsWindow::Impl::renderMenu ()
 
         if (ImGui::BeginMenu("Tools"))
         {
+            auto activateAnnotationMode = [&](AnnotationTool::Mode mode) {
+                imageWindow->setActiveTool(ActiveToolState::Kind::Annotate);
+                imageWindowState.activeToolState.annotationTool.setMode(mode);
+                requestModifiersTab = true;
+            };
+
             if (ImGui::BeginMenu("Transform"))
             {
                 if (ImGui::MenuItem("Rotate Left (-90)", "", false))
@@ -598,7 +617,7 @@ void ControlsWindow::Impl::renderMenu ()
                 }
                 if (ImGui::MenuItem("Crop Image", "", false))
                 {
-                    imageWindowState.activeToolState.kind = ActiveToolState::Kind::Transform_Crop;
+                    imageWindow->setActiveTool(ActiveToolState::Kind::Transform_Crop);
                 }
                 if (ImGui::MenuItem("Resize Image to Window", "", false, !imageWindow->imageWidgetHasExactImageSize()))
                 {
@@ -609,10 +628,13 @@ void ControlsWindow::Impl::renderMenu ()
 
             if (ImGui::BeginMenu("Annotate"))
             {
-                if (ImGui::MenuItem("Add Line", "", false))
-                {
-                    imageWindowState.activeToolState.kind = ActiveToolState::Kind::Annotate_Line;
-                }
+                const bool isAnnotating =
+                    (imageWindowState.activeToolState.kind == ActiveToolState::Kind::Annotate);
+                const auto mode = imageWindowState.activeToolState.annotationTool.mode();
+                if (ImGui::MenuItem("Add Line", "", isAnnotating && mode == AnnotationTool::Mode::AddLine))
+                    activateAnnotationMode(AnnotationTool::Mode::AddLine);
+                if (ImGui::MenuItem("Add Text", "", isAnnotating && mode == AnnotationTool::Mode::AddText))
+                    activateAnnotationMode(AnnotationTool::Mode::AddText);
                 ImGui::EndMenu();
             }
 
@@ -811,6 +833,7 @@ void ControlsWindow::saveAllChanges (bool forcePathSelectionOnSave)
 void ControlsWindow::confirmPendingChanges ()
 {
     impl->askToConfirmPendingChanges = true;
+    glfwFocusWindow (impl->imguiGlfwWindow.glfwWindow());
 }
 
 void ControlsWindow::setCurrentActionToConfirm (const ActionToConfirm& actionToConfirm)
@@ -843,11 +866,7 @@ void ControlsWindow::renderFrame ()
         {
             impl->viewer->onDismissRequested();
         }
-
-        if (ImGui::IsKeyPressed(ImGuiKey_Escape))
-        {
-            impl->viewer->onToggleControls();
-        }
+        // Escape: see imageWindow->checkImguiGlobalImageKeyEvents() below (not toggle controls).
     }    
 
     // ImGui::ShowDemoWindow();
@@ -933,6 +952,7 @@ void ControlsWindow::renderFrame ()
         }
 
         bool onImageListTab = false;
+        bool onModifiersTab = false;
 
         ImGuiTabBarFlags tab_bar_flags = ImGuiTabBarFlags_None;
         if (ImGui::BeginTabBar("TabBar", tab_bar_flags))
@@ -943,8 +963,16 @@ void ControlsWindow::renderFrame ()
                 impl->renderImageList (footerHeight);
                 ImGui::EndTabItem();
             }
-            if (ImGui::BeginTabItem("Modifiers"))
+
+            ImGuiTabItemFlags modifiersTabFlags = ImGuiTabItemFlags_None;
+            if (impl->requestModifiersTab)
             {
+                modifiersTabFlags = ImGuiTabItemFlags_SetSelected;
+                impl->requestModifiersTab = false;
+            }
+            if (ImGui::BeginTabItem("Modifiers", nullptr, modifiersTabFlags))
+            {
+                onModifiersTab = true;
                 impl->renderModifiersTab (footerHeight);
                 ImGui::EndTabItem();
             }
@@ -960,7 +988,7 @@ void ControlsWindow::renderFrame ()
                 ModifiedImagePtr firstModIm = imageWindow->getFirstValidImage(false);
                 if (firstModIm)
                 {
-                    const auto& firstIm = *(firstModIm->data()->cpuData);
+                    const auto& firstIm = *(firstModIm->finalData()->cpuData);
                     auto& colorEditorTool = imageWindow->mutableState().colorEditorTool;
                     colorEditorTool.renderControls(firstIm);
                     if (colorEditorTool.hasPendingCommitRequest())
@@ -975,7 +1003,22 @@ void ControlsWindow::renderFrame ()
             }
 
             ImGui::EndTabBar();
-        }        
+        }
+
+        // Keep the annotation tool active whenever nothing else is using the tool
+        // slot. This lets the user click annotations on any tab and have selection
+        // work globally (no need to be on the Modifiers tab first).
+        {
+            auto& toolState = imageWindowState.activeToolState;
+            if (toolState.kind == ActiveToolState::Kind::None)
+                imageWindow->setActiveTool(ActiveToolState::Kind::Annotate);
+
+            if (!onModifiersTab
+                && toolState.annotationTool.selectionChangedSince(impl->lastAnnotationSelectedId))
+            {
+                impl->requestModifiersTab = true;
+            }
+        }
                         
         if (showCursorOverlay && onImageListTab)
             impl->renderCursorInfo (cursorOverlayInfo, footerHeight, cursorOverlayHeight);

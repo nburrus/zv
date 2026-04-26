@@ -1,7 +1,6 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include "doctest.h"
 
-#include <libzv/Annotations.h>
 #include <libzv/Image.h>
 #include <libzv/Modifiers.h>
 
@@ -57,8 +56,7 @@ TEST_CASE("LevelsModifier applies LUT and preserves alpha")
 
     zv::LevelsModifier modifier(params);
     zv::ImageItemData outputData;
-    zv::AnnotationRenderer renderer;
-    modifier.apply(*inputData, outputData, renderer);
+    modifier.apply(*inputData, outputData);
 
     REQUIRE(outputData.status == zv::ImageItemData::Status::Ready);
     REQUIRE(outputData.cpuData);
@@ -85,8 +83,7 @@ static zv::ImageItemData applyOneShot(const zv::ImageItemDataPtr& input, zv::One
 {
     zv::OneShotColorModifier mod(params);
     zv::ImageItemData out;
-    zv::AnnotationRenderer renderer;
-    mod.apply(*input, out, renderer);
+    mod.apply(*input, out);
     return out;
 }
 
@@ -312,8 +309,7 @@ static zv::ImageItemData applyHueShift(const zv::ImageItemDataPtr& input, float 
 {
     zv::HueShiftModifier mod(degrees);
     zv::ImageItemData out;
-    zv::AnnotationRenderer renderer;
-    mod.apply(*input, out, renderer);
+    mod.apply(*input, out);
     return out;
 }
 

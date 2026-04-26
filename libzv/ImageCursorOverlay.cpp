@@ -32,8 +32,8 @@ void ImageCursorOverlay::showTooltip(const CursorOverlayInfo& d, bool showAsTool
     }
     
     auto& io = ImGui::GetIO();
-    const auto& image = *d.modImagePtr->data()->cpuData;
-    const auto& imageTexture = *d.modImagePtr->data()->textureData;
+    const auto& image = *d.modImagePtr->finalData()->cpuData;
+    const auto& imageTexture = *d.modImagePtr->finalData()->textureData;
     
     const float monoFontSize = ImguiGLFWWindow::monoFontSize(io);
     const float padding = monoFontSize / 2.f;

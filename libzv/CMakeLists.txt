@@ -57,6 +57,8 @@ endif()
 add_library(zv
     Annotations.h
     Annotations.cpp
+    AnnotationTool.h
+    AnnotationTool.cpp
     App.cpp
     App.h
     ColorConversion.cpp

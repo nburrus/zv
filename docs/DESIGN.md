@@ -13,69 +13,114 @@ change the image pixels.
 An `ImageModifier` is the committed image-processing layer. When the user
 presses Apply, the active tool creates a modifier from its current parameters by
 calling `addToImage()`. The modifier is appended to the `ModifiedImage` pipeline
-and produces the image data that `ModifiedImage::data()` exposes.
+and produces the image data that `ModifiedImage::preAnnotationData()` and
+`ModifiedImage::finalData()` expose.
 
-For example, the line tool has two related but separate objects:
+Most tools follow the preview-then-Apply pattern. For example, crop owns its
+transient rectangle while active; pressing Apply appends a crop modifier to the
+`ModifiedImage` pipeline.
 
-```text
-LineTool
-  owns editable LineAnnotation::Params
-  draws the preview overlay in widget/screen space
-  owns and updates draggable control points
+Annotations are the exception. The annotation UI is persistent and edits a
+per-image `AnnotationDocument` directly — there is no Apply step.
 
-Apply
+## Annotation System
 
-LineAnnotation : ImageModifier
-  receives a copy of the line parameters
-  rasterizes the line into image-sized output
-  becomes part of the ModifiedImage modifier chain
+### Data model
+
+`AnnotationDocument` owns a flat list of `AnnotationElement` objects. Each
+element has a stable `AnnotationId` (a process-global `uint64_t` counter),
+a kind (`Line` or `Text`), and the corresponding data struct
+(`LineAnnotationData` or `TextAnnotationData`). All geometry is stored in
+**normalized texture coordinates** ([0, 1] in each axis) so the same data can
+be rendered at any zoom level. Stroke widths and font sizes are stored in
+**image-space pixels**; callers convert to widget-space pixels when rendering
+live overlays.
+
+### ModifiedImage pipeline
+
+Each `ModifiedImage` owns an `AnnotationDocument` and a separate composited
+output buffer. The data pipeline is:
+
+```
+originalData
+  → modifier chain (crop, resize, levels, …)  → preAnnotationData()
+  → annotation compositor                     → annotatedData (cached)
+                                               → finalData()
 ```
 
-Before Apply, `LineTool::renderAsActiveTool()` draws the preview with ImGui's
-window draw list on top of the displayed image. The line is vector UI rendering
-in screen coordinates, scaled through `WidgetToImageTransform` so its apparent
-thickness follows the image zoom and matches the intended image-space line
-width.
+`finalData()` returns `annotatedData` if it exists and is ready; otherwise it
+falls back to `preAnnotationData()`. `ModifiedImage::updateAnnotations()` drives
+the compositor each frame via `AnnotationRenderer` (an offscreen ImGui context
+at native image resolution). Callers set `markAnnotationsDirty()` after mutating
+the document; the compositor reruns on the next `updateAnnotations()` call.
+Saving bakes `finalData()` to disk and clears the editable annotation state.
 
-After Apply, `LineAnnotation` is added as an `ImageModifier`. Annotation
-modifiers use `AnnotationRenderer`: it renders the input image and annotation
-offscreen at the image's native resolution, then downloads the framebuffer back
-into `output.cpuData`. At that point the annotation is baked into the modified
-image data.
+### AnnotationTool fan-out and undo
 
-This split keeps interaction responsive and high quality while editing, while
-preserving the same modifier pipeline used for save, undo, discard, and
-multi-image application.
+`AnnotationTool` edits every currently-visible valid `ModifiedImage` in lockstep
+through an `ApplyToVisibleImagesFunc` callback that `ImageWindow` rebinds each
+frame. The tool allocates a single `AnnotationId` and fans it to all images so
+the same logical annotation has the same id everywhere.
 
-Current naming can be slightly confusing: `LineAnnotation` is the committed
-modifier, not the interactive tool. The interactive object is `LineTool`.
+Before any interactive drag or style edit begins, `captureSelectedEditSnapshots()`
+records the pre-edit state of the selected element into a
+`std::unordered_map<ImageId, ElementSnapshot>` keyed by each image's stable
+`ImageItem::uniqueId`. When the gesture ends, `pushSelectedEditUndo()` looks up
+each image's snapshot by `uniqueId` and registers a per-image undo action, so
+images that became valid or invalid mid-gesture are handled gracefully.
 
-## ActiveToolState vs. Persistent Tools
+### Rendering
+
+Live overlays (selection handles, in-progress line preview) are drawn directly
+into the active ImGui window's draw list inside `renderAsActiveTool()`.
+Committed annotation pixels are produced by `compositeAnnotationLayer()`, which
+uses the offscreen `AnnotationRenderer` (a separate ImGui context sharing the
+main font atlas) to render the annotation document at native image resolution
+into `ModifiedImage::_annotatedData`.
+
+The shared rendering helpers `renderLineAnnotation()`, `renderTextAnnotation()`,
+and `renderAnnotationElement()` (declared in `Annotations.h`, defined in
+`Annotations.cpp`) are used by both the live overlay and the offscreen
+compositor so the two paths stay in sync.
+
+## ActiveToolState and the Annotation Invariant
 
 `ActiveToolState` (in `ImageWindowState.h`) is a **modal, one-at-a-time** tool
-slot for transient editing modes like crop and line annotation. Only one can be
-active at a time; pressing Escape or Enter exits the mode.
+slot. Only one kind can be active at a time.
+
+`AnnotationTool` is always kept in this slot (`Kind::Annotate`). `ControlsWindow`
+re-activates it every frame whenever the slot would otherwise be idle, so
+annotation selection and hit-testing work globally regardless of which Controls
+Window tab is visible. `Kind::None` is therefore a transient state that
+immediately becomes `Kind::Annotate` on the next frame.
+
+Other tools (`Transform_Crop`, etc.) take over the slot for their duration.
+Pressing Escape cancels in-progress annotation gestures (line draw, mode change);
+if nothing is in progress the slot is set to `None`, which immediately reverts to
+`Annotate`. Pressing Escape while in Crop mode exits crop.
 
 Persistent panel tools like `ColorEditorTool` are **not** stored in
 `ActiveToolState`. They are direct members of `ImageWindowState` and are always
-present. Their controls are rendered in a dedicated Controls Window tab.
+present; their controls live in a dedicated Controls Window tab.
 
 ## Controls Window Tab Architecture
 
 The Controls Window (`ControlsWindow.cpp`) owns the tab bar. Tabs are rendered
 in `renderFrame()` using `ImGui::BeginTabBar("TabBar", ...)`. To programmatically
-switch to a tab (e.g. when the user presses `e`), set a `bool requestXxxTab`
-flag on `ControlsWindow::Impl` and pass `ImGuiTabItemFlags_SetSelected` to
-`BeginTabItem` on the next frame, then clear the flag.
+switch to a tab (e.g. when an annotation is selected while on the Images tab),
+set a `bool requestXxxTab` flag on `ControlsWindow::Impl` and pass
+`ImGuiTabItemFlags_SetSelected` to `BeginTabItem` on the next frame, then clear
+the flag.
 
-The public entry point is `ControlsWindow::requestColorEditorTab()`. It is
-called from `Viewer::renderFrame()` when `ViewerState::showColorEditorRequested`
-is set. Showing the controls window and requesting a tab are two separate
-concerns handled in sequence in `Viewer::renderFrame()`.
+The public entry point for the color editor is
+`ControlsWindow::requestColorEditorTab()`. It is called from
+`Viewer::renderFrame()` when `ViewerState::showColorEditorRequested` is set.
+Showing the controls window and requesting a tab are two separate concerns
+handled in sequence in `Viewer::renderFrame()`.
 
 ## Image Rendering Override Hook
 
-`InteractiveTool` has a new non-pure virtual method:
+`InteractiveTool` has a non-pure virtual method:
 
 ```cpp
 virtual ImageRenderingOverride overrideImageRendering(const ImageRenderingContext&);
@@ -101,6 +146,10 @@ GLFW key handler → enqueueAction(Kind::Foo)
     → ViewerState::fooRequested = true
       → Viewer::renderFrame() handles the flag
 ```
+
+Delete and Backspace are intercepted before the action queue when an annotation
+is selected: they call `AnnotationTool::deleteSelected()` directly and do not
+propagate to the image-navigation actions.
 
 ## ImGui Version Note
 

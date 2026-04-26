@@ -55,6 +55,19 @@ inline ImGuiWindowFlags windowFlagsWithoutAnything()
 
 bool IsItemHovered(ImGuiHoveredFlags flags, float delaySeconds);
 
+inline bool activeButton(const char* label, bool active)
+{
+    if (active)
+    {
+        ImGui::PushStyleColor(ImGuiCol_Button,        ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
+    }
+    const bool clicked = ImGui::Button(label);
+    if (active)
+        ImGui::PopStyleColor(2);
+    return clicked;
+}
+
 struct ControlPoint
 {
 public:

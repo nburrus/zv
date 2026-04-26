@@ -8,6 +8,7 @@
 
 #include <libzv/Modifiers.h>
 #include <libzv/InteractiveTool.h>
+#include <libzv/AnnotationTool.h>
 #include <libzv/ColorEditorTool.h>
 #include <libzv/ImguiUtils.h>
 
@@ -55,18 +56,23 @@ struct ActiveToolState
 {
     enum class Kind {
         None,
-        
+
         Transform_Crop,
-        
-        Annotate_Line,
+
+        Annotate,
     };
-    
+
     Kind kind = Kind::None;
-    
+
+    static bool needsExplicitApply (Kind k)
+    {
+        return k == Kind::Transform_Crop;
+    }
+
     InteractiveTool* activeTool ();
 
     CropTool cropTool;
-    LineTool lineTool;
+    AnnotationTool annotationTool;
 };
 
 struct ImageWindowState

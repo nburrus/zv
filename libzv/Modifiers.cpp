@@ -6,9 +6,12 @@
 
 #include "Modifiers.h"
 
+#include <libzv/Annotations.h>
 #include <libzv/ImguiUtils.h>
 #include <libzv/Utils.h>
 #include <libzv/MathUtils.h>
+
+#include <imgui.h>
 
 #include <stb_image_resize.h>
 
@@ -21,10 +24,57 @@
 namespace zv
 {
 
+ModifiedImage::ModifiedImage(const ImageItemPtr& item, const ImageItemDataPtr& originalData)
+    : _item(item)
+    , _originalData(originalData)
+    , _annotations(std::make_unique<AnnotationDocument>())
+{}
+
+ModifiedImage::~ModifiedImage() = default;
+
+const ImageItemDataPtr& ModifiedImage::preAnnotationData() const
+{
+    if (!_modifiers.empty())
+        return _modifiers.back()->output();
+    return _originalData;
+}
+
+const ImageItemDataPtr& ModifiedImage::finalData() const
+{
+    if (_annotatedData && _annotatedData->status == ImageItemData::Status::Ready)
+        return _annotatedData;
+    return preAnnotationData();
+}
+
+bool ModifiedImage::hasPendingChanges() const
+{
+    return !_modifiers.empty() || hasAnnotations();
+}
+
+AnnotationDocument& ModifiedImage::annotations()
+{
+    return *_annotations;
+}
+
+const AnnotationDocument& ModifiedImage::annotations() const
+{
+    return *_annotations;
+}
+
+bool ModifiedImage::hasAnnotations() const
+{
+    return _annotations && !_annotations->empty();
+}
+
+void ModifiedImage::markAnnotationsDirty()
+{
+    _annotationsDirty = true;
+}
+
 bool ModifiedImage::saveChanges (const std::string& outputPath)
 {
-    ImageItemDataPtr maybeModifiedData = data();
-    
+    ImageItemDataPtr maybeModifiedData = finalData();
+
     if (!writeImageFile (outputPath, *(maybeModifiedData->cpuData)))
         return false;
 
@@ -35,6 +85,9 @@ bool ModifiedImage::saveChanges (const std::string& outputPath)
     {
         *_originalData = *maybeModifiedData;
         _modifiers.clear ();
+        _annotations->clear();
+        _annotatedData.reset();
+        _annotationsDirty = false;
     }
 
     return true;
@@ -42,10 +95,13 @@ bool ModifiedImage::saveChanges (const std::string& outputPath)
 
 void ModifiedImage::discardChanges ()
 {
-    if (_modifiers.empty ())
+    if (_modifiers.empty() && !hasAnnotations())
         return;
-    _modifiers.clear ();
+    _modifiers.clear();
+    _annotations->clear();
+    _annotatedData.reset();
     _modifiersChangedSinceLastUpdate = true;
+    _annotationsDirty = true;
 }
 
 void ModifiedImage::resetToNewData (const ImageItemDataPtr& newData)
@@ -53,54 +109,85 @@ void ModifiedImage::resetToNewData (const ImageItemDataPtr& newData)
     _originalData = newData;
     _modifiers.clear();
     _actions.clear();
+    _annotations->clear();
+    _annotatedData.reset();
     _modifiersChangedSinceLastUpdate = true;
+    _annotationsDirty = true;
 }
 
-bool ModifiedImage::update ()
+bool ModifiedImage::updateModifiers()
 {
     if (!_originalData)
         return false;
-    
+
     bool originalChanged = _originalData->update();
 
     if (!originalChanged && !_modifiersChangedSinceLastUpdate)
-    {
         return false;
-    }
 
-    // Reapply the modification pipeline if needed.
+    // Reapply the modification pipeline if the original was reloaded.
     if (originalChanged && _originalData->cpuData->hasData())
     {
         ImageItemDataPtr input = _originalData;
         for (auto& modifier : _modifiers)
         {
-            modifier->apply (input, _annotationRenderer);
+            modifier->apply (input);
             input = modifier->output ();
         }
+        _annotationsDirty = true;
     }
-    
+
     clearIntermediateModifiersData ();
     _modifiersChangedSinceLastUpdate = false;
 
-    const ImageItemDataPtr& currentData = data();
-    if (currentData->cpuData->hasData())
-    {
-        _item->metadata.width = currentData->cpuData->width();
-        _item->metadata.height = currentData->cpuData->height();
-    }
+    if (!_annotationsDirty)
+        syncItemMetadataFromFinalData();
 
     return true;
 }
 
+bool ModifiedImage::updateAnnotations(AnnotationRenderer& renderer)
+{
+    if (!_originalData)
+        return false;
+    if (!_annotationsDirty)
+        return false;
+
+    const ImageItemDataPtr& base = preAnnotationData();
+    if (hasAnnotations() && base && base->cpuData && base->cpuData->hasData())
+    {
+        compositeAnnotationLayer(renderer);
+    }
+    else
+    {
+        _annotatedData.reset();
+    }
+    _annotationsDirty = false;
+    return true;
+}
+
+void ModifiedImage::syncItemMetadataFromFinalData()
+{
+    const ImageItemDataPtr& currentData = finalData();
+    if (currentData && currentData->cpuData && currentData->cpuData->hasData())
+    {
+        _item->metadata.width = currentData->cpuData->width();
+        _item->metadata.height = currentData->cpuData->height();
+    }
+}
+
 void ModifiedImage::addModifier (std::unique_ptr<ImageModifier> modifier)
 {
-    if (hasValidData())
+    const ImageItemDataPtr& base = preAnnotationData();
+    if (base && base->status == ImageItemData::Status::Ready)
     {
-        modifier->apply (data(), _annotationRenderer);
+        modifier->apply (base);
     }
     _modifiers.push_back (std::move(modifier));
     _modifiersChangedSinceLastUpdate = true;
-    
+    _annotatedData.reset();
+    _annotationsDirty = true;
+
     _actions.push_back(ImageAction([this]() {
         removeLastModifier();
     }));
@@ -112,6 +199,8 @@ void ModifiedImage::removeLastModifier()
         return;
     _modifiers.pop_back();
     _modifiersChangedSinceLastUpdate = true;
+    _annotatedData.reset();
+    _annotationsDirty = true;
 }
 
 void ModifiedImage::undoLastChange ()
@@ -120,6 +209,11 @@ void ModifiedImage::undoLastChange ()
         return;
     _actions.back().undo();
     _actions.pop_back();
+}
+
+void ModifiedImage::pushUndoAction (std::function<void(void)>&& undoFunc)
+{
+    _actions.push_back(ImageAction(std::move(undoFunc)));
 }
 
 void ModifiedImage::clearIntermediateModifiersData ()
@@ -133,6 +227,37 @@ void ModifiedImage::clearIntermediateModifiersData ()
         (*it)->clearTextureData ();
         ++it;
     }
+}
+
+void ModifiedImage::compositeAnnotationLayer(AnnotationRenderer& renderer)
+{
+    const ImageItemDataPtr& base = preAnnotationData();
+    if (!base || !base->cpuData || !base->cpuData->hasData())
+        return;
+
+    if (!_annotatedData)
+        _annotatedData = std::make_shared<ImageItemData>();
+
+    const int w = base->cpuData->width();
+    const int h = base->cpuData->height();
+
+    renderer.beginRendering(*base);
+
+    AnnotationRenderTransform transform;
+    transform.imageWidth = w;
+    transform.imageHeight = h;
+    transform.imagePixelToScreenPixel = 1.0f;
+    transform.textureToScreen = [w, h](const Point& p) {
+        return ImVec2(float(p.x * w), float(p.y * h));
+    };
+
+    ImDrawList* drawList = ImGui::GetWindowDrawList();
+    for (const auto& el : _annotations->elements())
+    {
+        renderAnnotationElement(drawList, el, transform);
+    }
+
+    renderer.endRendering(*_annotatedData);
 }
 
 } // zv
@@ -352,7 +477,7 @@ CompiledLevelsLut compileLevelsLut(const LevelsAdjustmentParams& params)
     return lut;
 }
 
-void LevelsModifier::apply (const ImageItemData& input, ImageItemData& output, AnnotationRenderer&)
+void LevelsModifier::apply (const ImageItemData& input, ImageItemData& output)
 {
     const auto& inIm = *input.cpuData;
     output.cpuData = std::make_shared<ImageSRGBA>(inIm.width(), inIm.height());
@@ -373,7 +498,7 @@ void LevelsModifier::apply (const ImageItemData& input, ImageItemData& output, A
     }
 }
 
-void OneShotColorModifier::apply (const ImageItemData& input, ImageItemData& output, AnnotationRenderer&)
+void OneShotColorModifier::apply (const ImageItemData& input, ImageItemData& output)
 {
     const auto& inIm = *input.cpuData;
     output.cpuData = std::make_shared<ImageSRGBA>(inIm.width(), inIm.height());
@@ -486,7 +611,7 @@ void OneShotColorModifier::apply (const ImageItemData& input, ImageItemData& out
     }
 }
 
-void HueShiftModifier::apply (const ImageItemData& input, ImageItemData& output, AnnotationRenderer&)
+void HueShiftModifier::apply (const ImageItemData& input, ImageItemData& output)
 {
     const auto& inIm = *input.cpuData;
     output.cpuData = std::make_shared<ImageSRGBA>(inIm.width(), inIm.height());
@@ -547,7 +672,7 @@ void HueShiftModifier::apply (const ImageItemData& input, ImageItemData& output,
     }
 }
 
-void RotateImageModifier::apply (const ImageItemData& input, ImageItemData& output, AnnotationRenderer&)
+void RotateImageModifier::apply (const ImageItemData& input, ImageItemData& output)
 {
     const auto& inIm = (*input.cpuData);
     const int inW = inIm.width();
@@ -606,7 +731,7 @@ void RotateImageModifier::apply (const ImageItemData& input, ImageItemData& outp
     output.status = ImageItemData::Status::Ready;
 }
 
-void CropImageModifier::apply (const ImageItemData& input, ImageItemData& output, AnnotationRenderer&)
+void CropImageModifier::apply (const ImageItemData& input, ImageItemData& output)
 {
     const auto& inIm = (*input.cpuData);
     const int inW = inIm.width();
@@ -677,7 +802,7 @@ void CropImageModifier::Params::updateControlPoint (int idx, const Point& p, int
     // makeValid (imageWidth, imageHeight);
 }
 
-void ResizeImageModifier::apply (const ImageItemData& input, ImageItemData& output, AnnotationRenderer&)
+void ResizeImageModifier::apply (const ImageItemData& input, ImageItemData& output)
 {
     const auto& inIm = (*input.cpuData);
     const int inW = inIm.width();

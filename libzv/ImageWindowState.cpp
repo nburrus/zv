@@ -99,7 +99,7 @@ InteractiveTool* ActiveToolState::activeTool ()
     switch (kind)
     {
         case Kind::None: return nullptr;
-        case Kind::Annotate_Line: return &lineTool;
+        case Kind::Annotate: return &annotationTool;
         case Kind::Transform_Crop: return &cropTool;
     }
     return nullptr;

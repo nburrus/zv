@@ -1,0 +1,342 @@
+#define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
+#include "doctest.h"
+
+#include <libzv/Annotations.h>
+#include <libzv/AnnotationTool.h>
+#include <libzv/ImageList.h>
+#include <libzv/ImguiUtils.h>
+#include <libzv/MathUtils.h>
+#include <libzv/Modifiers.h>
+
+using namespace zv;
+
+namespace {
+
+// A widget transform that maps texture coords directly to widget coords with
+// a fixed image-pixel-to-widget-pixel scale, with no zoom (uvRoi = full).
+WidgetToImageTransform makeIdentityWidgetTransform(int imageWidth, int imageHeight)
+{
+    ImageWidgetRoi uvRoi{ImVec2(0, 0), ImVec2(1, 1)};
+    Rect widgetRect = Rect::from_x_y_w_h(0, 0, imageWidth, imageHeight);
+    return WidgetToImageTransform(uvRoi, widgetRect);
+}
+
+}
+
+TEST_CASE("AnnotationElement moveBy applies normalized delta to lines and texts")
+{
+    LineAnnotationData ld;
+    ld.textureLine = Line(Point(0.1, 0.2), Point(0.3, 0.4));
+    AnnotationElement line(AnnotationId::nextId(), ld);
+
+    line.moveBy(Point(0.05, -0.10));
+
+    CHECK(line.asLine().textureLine.p1.x == doctest::Approx(0.15));
+    CHECK(line.asLine().textureLine.p1.y == doctest::Approx(0.10));
+    CHECK(line.asLine().textureLine.p2.x == doctest::Approx(0.35));
+    CHECK(line.asLine().textureLine.p2.y == doctest::Approx(0.30));
+
+    TextAnnotationData td;
+    td.textureBox = Rect::from_x_y_w_h(0.4, 0.4, 0.2, 0.1);
+    AnnotationElement text(AnnotationId::nextId(), td);
+
+    text.moveBy(Point(0.1, 0.05));
+
+    CHECK(text.asText().textureBox.origin.x == doctest::Approx(0.5));
+    CHECK(text.asText().textureBox.origin.y == doctest::Approx(0.45));
+    // Size unchanged.
+    CHECK(text.asText().textureBox.size.x == doctest::Approx(0.2));
+    CHECK(text.asText().textureBox.size.y == doctest::Approx(0.1));
+}
+
+TEST_CASE("AnnotationElement moveHandleTo updates line endpoints")
+{
+    LineAnnotationData ld;
+    ld.textureLine = Line(Point(0.1, 0.1), Point(0.5, 0.5));
+    AnnotationElement line(AnnotationId::nextId(), ld);
+
+    CHECK(line.numHandles() == 2);
+
+    line.moveHandleTo(0, Point(0.2, 0.3));
+    CHECK(line.asLine().textureLine.p1.x == doctest::Approx(0.2));
+    CHECK(line.asLine().textureLine.p1.y == doctest::Approx(0.3));
+    // p2 unchanged.
+    CHECK(line.asLine().textureLine.p2.x == doctest::Approx(0.5));
+
+    line.moveHandleTo(1, Point(0.7, 0.8));
+    CHECK(line.asLine().textureLine.p2.x == doctest::Approx(0.7));
+    CHECK(line.asLine().textureLine.p2.y == doctest::Approx(0.8));
+}
+
+TEST_CASE("AnnotationDocument hit-test prioritizes handles over body")
+{
+    const int W = 100, H = 100;
+    AnnotationDocument doc;
+
+    LineAnnotationData ld;
+    // Endpoints at (10,10) and (90,90) in widget pixels.
+    ld.textureLine = Line(Point(0.1, 0.1), Point(0.9, 0.9));
+    AnnotationId lineId = AnnotationId::nextId();
+    doc.addLine(lineId, ld);
+
+    auto t = makeIdentityWidgetTransform(W, H);
+
+    // Click right on the p1 handle.
+    auto onP1 = doc.hitTest(Point(10, 10), t, AnnotationId{},
+                             /*handleRadius*/6.f, /*bodyTol*/3.f);
+    CHECK(onP1.part == AnnotationHitResult::Part::Handle);
+    CHECK(onP1.id == lineId);
+    CHECK(onP1.handleIdx == 0);
+
+    // Click at midpoint -> body hit.
+    auto onBody = doc.hitTest(Point(50, 50), t, AnnotationId{}, 6.f, 3.f);
+    CHECK(onBody.part == AnnotationHitResult::Part::Body);
+    CHECK(onBody.id == lineId);
+
+    // Click far away -> miss.
+    auto miss = doc.hitTest(Point(99, 5), t, AnnotationId{}, 6.f, 3.f);
+    CHECK(miss.part == AnnotationHitResult::Part::None);
+}
+
+TEST_CASE("AnnotationDocument hit-test prefers topmost element")
+{
+    const int W = 100, H = 100;
+    AnnotationDocument doc;
+
+    // Two overlapping text boxes covering the same widget region.
+    TextAnnotationData td1;
+    td1.textureBox = Rect::from_x_y_w_h(0.2, 0.2, 0.6, 0.6);
+    AnnotationId bottomId = AnnotationId::nextId();
+    doc.addText(bottomId, td1);
+
+    TextAnnotationData td2;
+    td2.textureBox = Rect::from_x_y_w_h(0.3, 0.3, 0.4, 0.4);
+    AnnotationId topId = AnnotationId::nextId();
+    doc.addText(topId, td2);
+
+    auto t = makeIdentityWidgetTransform(W, H);
+
+    auto hit = doc.hitTest(Point(50, 50), t, AnnotationId{}, 6.f, 3.f);
+    CHECK(hit.part == AnnotationHitResult::Part::Body);
+    CHECK(hit.id == topId);
+}
+
+TEST_CASE("AnnotationDocument hit-test gives selected line handle priority")
+{
+    const int W = 100, H = 100;
+    AnnotationDocument doc;
+
+    // A selected line below the text with an endpoint inside the top text box.
+    // The selected handle should still win over the topmost text body.
+    LineAnnotationData ld;
+    ld.textureLine = Line(Point(0.0, 0.0), Point(0.5, 0.5));
+    AnnotationId lineId = AnnotationId::nextId();
+    doc.addLine(lineId, ld);
+
+    // A text box drawn on top, covering the (10..90, 10..90) widget region.
+    TextAnnotationData td;
+    td.textureBox = Rect::from_x_y_w_h(0.1, 0.1, 0.8, 0.8);
+    AnnotationId textId = AnnotationId::nextId();
+    doc.addText(textId, td);
+
+    auto t = makeIdentityWidgetTransform(W, H);
+
+    auto hitWithSelection = doc.hitTest(Point(50, 50), t, lineId, 6.f, 3.f);
+    CHECK(hitWithSelection.part == AnnotationHitResult::Part::Handle);
+    CHECK(hitWithSelection.id == lineId);
+    CHECK(hitWithSelection.handleIdx == 1);
+
+    // Without selection, the topmost text body wins at the same point.
+    auto hitNoSelection = doc.hitTest(Point(50, 50), t, AnnotationId{}, 6.f, 3.f);
+    CHECK(hitNoSelection.part == AnnotationHitResult::Part::Body);
+    CHECK(hitNoSelection.id == textId);
+    CHECK(hitNoSelection.handleIdx == -1);
+}
+
+TEST_CASE("AnnotationDocument hit-test honors stroke-width tolerance for lines")
+{
+    const int W = 200, H = 200;
+    AnnotationDocument doc;
+
+    LineAnnotationData ld;
+    ld.textureLine = Line(Point(0.0, 0.5), Point(1.0, 0.5)); // y=100 in widget
+    ld.strokeWidth = 10;
+    doc.addLine(AnnotationId::nextId(), ld);
+
+    auto t = makeIdentityWidgetTransform(W, H);
+
+    // Click 4px above the line: within the stroke-width tolerance (5) so hit.
+    auto hit = doc.hitTest(Point(100, 96), t, AnnotationId{},
+                           /*handleRadius*/3.f, /*bodyTol*/0.f);
+    CHECK(hit.part == AnnotationHitResult::Part::Body);
+
+    // Click 20px above the line: well outside tolerance, miss.
+    auto miss = doc.hitTest(Point(100, 80), t, AnnotationId{}, 3.f, 0.f);
+    CHECK(miss.part == AnnotationHitResult::Part::None);
+}
+
+// ---------------------------------------------------------------------------
+// ModifiedImage annotation integration. These don't exercise compositing
+// (which needs a GL context) — only the bookkeeping around document
+// ownership, pending-changes, discard, and addModifier resetting state.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("ModifiedImage tracks annotations as pending changes")
+{
+    auto item = std::make_shared<ImageItem>();
+    auto data = std::make_shared<ImageItemData>();
+    ModifiedImage mi(item, data);
+
+    CHECK_FALSE(mi.hasPendingChanges());
+    CHECK_FALSE(mi.hasAnnotations());
+
+    LineAnnotationData ld;
+    mi.annotations().addLine(AnnotationId::nextId(), ld);
+    mi.markAnnotationsDirty();
+
+    CHECK(mi.hasAnnotations());
+    CHECK(mi.hasPendingChanges());
+}
+
+TEST_CASE("ModifiedImage discardChanges clears annotations")
+{
+    auto item = std::make_shared<ImageItem>();
+    auto data = std::make_shared<ImageItemData>();
+    ModifiedImage mi(item, data);
+
+    TextAnnotationData td;
+    td.text = "hello";
+    mi.annotations().addText(AnnotationId::nextId(), td);
+    mi.markAnnotationsDirty();
+    REQUIRE(mi.hasAnnotations());
+
+    mi.discardChanges();
+
+    CHECK_FALSE(mi.hasAnnotations());
+    CHECK_FALSE(mi.hasPendingChanges());
+    CHECK(mi.annotations().empty());
+}
+
+// ---------------------------------------------------------------------------
+// AnnotationTool fan-out, deletion, and undo. These don't drive any ImGui
+// drag — they invoke the same commit/delete paths that the live tool runs
+// once a drag finishes.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+struct ToolFixture
+{
+    std::shared_ptr<ImageItem> itemA = std::make_shared<ImageItem>();
+    std::shared_ptr<ImageItem> itemB = std::make_shared<ImageItem>();
+    std::shared_ptr<ImageItemData> dataA = std::make_shared<ImageItemData>();
+    std::shared_ptr<ImageItemData> dataB = std::make_shared<ImageItemData>();
+    ModifiedImage imA{itemA, dataA};
+    ModifiedImage imB{itemB, dataB};
+    AnnotationTool tool;
+
+    ToolFixture()
+    {
+        tool.setApplyToVisibleImagesFunc([this](const std::function<void(ModifiedImage&)>& op) {
+            op(imA);
+            op(imB);
+        });
+    }
+};
+
+} // namespace
+
+TEST_CASE("AnnotationTool commitNewLine adds matching ids to all visible images")
+{
+    ToolFixture f;
+
+    LineAnnotationData ld;
+    ld.textureLine = Line(Point(0.1, 0.2), Point(0.4, 0.5));
+    AnnotationId createdId = f.tool.commitNewLine(ld);
+
+    REQUIRE(createdId.isValid());
+    CHECK(f.tool.selectedId() == createdId);
+
+    auto* a = f.imA.annotations().findById(createdId);
+    auto* b = f.imB.annotations().findById(createdId);
+    REQUIRE(a != nullptr);
+    REQUIRE(b != nullptr);
+    CHECK(a->kind() == AnnotationElement::Kind::Line);
+    CHECK(b->kind() == AnnotationElement::Kind::Line);
+    CHECK(a->asLine().textureLine.p1.x == doctest::Approx(0.1));
+    CHECK(b->asLine().textureLine.p2.y == doctest::Approx(0.5));
+}
+
+TEST_CASE("AnnotationTool cancelCurrentAction consumes placement modes")
+{
+    AnnotationTool tool;
+
+    CHECK(!tool.cancelCurrentAction());
+
+    tool.setMode(AnnotationTool::Mode::AddText);
+    CHECK(tool.cancelCurrentAction());
+    CHECK(tool.mode() == AnnotationTool::Mode::Select);
+    CHECK(!tool.cancelCurrentAction());
+}
+
+TEST_CASE("AnnotationTool deleteSelected removes the line from all visible images")
+{
+    ToolFixture f;
+
+    LineAnnotationData ld;
+    ld.textureLine = Line(Point(0.0, 0.0), Point(0.7, 0.7));
+    AnnotationId createdId = f.tool.commitNewLine(ld);
+    REQUIRE(f.imA.annotations().findById(createdId) != nullptr);
+    REQUIRE(f.imB.annotations().findById(createdId) != nullptr);
+
+    f.tool.deleteSelected();
+
+    CHECK(f.imA.annotations().findById(createdId) == nullptr);
+    CHECK(f.imB.annotations().findById(createdId) == nullptr);
+    CHECK(!f.tool.selectedId().isValid());
+}
+
+TEST_CASE("AnnotationTool undo restores after create")
+{
+    ToolFixture f;
+
+    LineAnnotationData ld;
+    ld.textureLine = Line(Point(0.2, 0.2), Point(0.6, 0.6));
+    AnnotationId createdId = f.tool.commitNewLine(ld);
+
+    REQUIRE(f.imA.canUndo());
+    REQUIRE(f.imB.canUndo());
+
+    f.imA.undoLastChange();
+    f.imB.undoLastChange();
+
+    CHECK(f.imA.annotations().findById(createdId) == nullptr);
+    CHECK(f.imB.annotations().findById(createdId) == nullptr);
+    CHECK(!f.imA.canUndo());
+    CHECK(!f.imB.canUndo());
+}
+
+TEST_CASE("AnnotationTool undo restores after delete")
+{
+    ToolFixture f;
+
+    LineAnnotationData ld;
+    ld.textureLine = Line(Point(0.3, 0.3), Point(0.8, 0.8));
+    ld.strokeWidth = 5;
+    AnnotationId createdId = f.tool.commitNewLine(ld);
+
+    f.tool.deleteSelected();
+    REQUIRE(f.imA.annotations().findById(createdId) == nullptr);
+    REQUIRE(f.imB.annotations().findById(createdId) == nullptr);
+
+    // Top of stack is the delete-undo (re-adds). Below it is the create-undo.
+    f.imA.undoLastChange();
+    f.imB.undoLastChange();
+
+    auto* a = f.imA.annotations().findById(createdId);
+    auto* b = f.imB.annotations().findById(createdId);
+    REQUIRE(a != nullptr);
+    REQUIRE(b != nullptr);
+    CHECK(a->asLine().strokeWidth == 5);
+    CHECK(b->asLine().textureLine.p1.x == doctest::Approx(0.3));
+}
