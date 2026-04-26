@@ -47,6 +47,28 @@ TEST_CASE("AnnotationElement moveBy applies normalized delta to lines and texts"
     // Size unchanged.
     CHECK(text.asText().textureBox.size.x == doctest::Approx(0.2));
     CHECK(text.asText().textureBox.size.y == doctest::Approx(0.1));
+
+    RectangleAnnotationData rd;
+    rd.textureBox = Rect::from_x_y_w_h(0.2, 0.3, 0.4, 0.2);
+    AnnotationElement rectangle(AnnotationId::nextId(), rd);
+
+    rectangle.moveBy(Point(-0.1, 0.05));
+
+    CHECK(rectangle.asRectangle().textureBox.origin.x == doctest::Approx(0.1));
+    CHECK(rectangle.asRectangle().textureBox.origin.y == doctest::Approx(0.35));
+    CHECK(rectangle.asRectangle().textureBox.size.x == doctest::Approx(0.4));
+    CHECK(rectangle.asRectangle().textureBox.size.y == doctest::Approx(0.2));
+
+    EllipseAnnotationData ed;
+    ed.textureBox = Rect::from_x_y_w_h(0.1, 0.2, 0.3, 0.4);
+    AnnotationElement ellipse(AnnotationId::nextId(), ed);
+
+    ellipse.moveBy(Point(0.2, -0.1));
+
+    CHECK(ellipse.asEllipse().textureBox.origin.x == doctest::Approx(0.3));
+    CHECK(ellipse.asEllipse().textureBox.origin.y == doctest::Approx(0.1));
+    CHECK(ellipse.asEllipse().textureBox.size.x == doctest::Approx(0.3));
+    CHECK(ellipse.asEllipse().textureBox.size.y == doctest::Approx(0.4));
 }
 
 TEST_CASE("AnnotationElement moveHandleTo updates line endpoints")
@@ -66,6 +88,37 @@ TEST_CASE("AnnotationElement moveHandleTo updates line endpoints")
     line.moveHandleTo(1, Point(0.7, 0.8));
     CHECK(line.asLine().textureLine.p2.x == doctest::Approx(0.7));
     CHECK(line.asLine().textureLine.p2.y == doctest::Approx(0.8));
+}
+
+TEST_CASE("AnnotationElement moveHandleTo resizes rectangle and ellipse corners")
+{
+    RectangleAnnotationData rd;
+    rd.textureBox = Rect::from_x_y_w_h(0.2, 0.2, 0.4, 0.3);
+    AnnotationElement rectangle(AnnotationId::nextId(), rd);
+
+    REQUIRE(rectangle.numHandles() == 4);
+    rectangle.moveHandleTo(2, Point(0.8, 0.7));
+    CHECK(rectangle.asRectangle().textureBox.origin.x == doctest::Approx(0.2));
+    CHECK(rectangle.asRectangle().textureBox.origin.y == doctest::Approx(0.2));
+    CHECK(rectangle.asRectangle().textureBox.size.x == doctest::Approx(0.6));
+    CHECK(rectangle.asRectangle().textureBox.size.y == doctest::Approx(0.5));
+
+    rectangle.moveHandleTo(0, Point(0.1, 0.1));
+    CHECK(rectangle.asRectangle().textureBox.origin.x == doctest::Approx(0.1));
+    CHECK(rectangle.asRectangle().textureBox.origin.y == doctest::Approx(0.1));
+    CHECK(rectangle.asRectangle().textureBox.size.x == doctest::Approx(0.7));
+    CHECK(rectangle.asRectangle().textureBox.size.y == doctest::Approx(0.6));
+
+    EllipseAnnotationData ed;
+    ed.textureBox = Rect::from_x_y_w_h(0.3, 0.3, 0.3, 0.2);
+    AnnotationElement ellipse(AnnotationId::nextId(), ed);
+
+    REQUIRE(ellipse.numHandles() == 4);
+    ellipse.moveHandleTo(3, Point(0.2, 0.8));
+    CHECK(ellipse.asEllipse().textureBox.origin.x == doctest::Approx(0.2));
+    CHECK(ellipse.asEllipse().textureBox.origin.y == doctest::Approx(0.3));
+    CHECK(ellipse.asEllipse().textureBox.size.x == doctest::Approx(0.4));
+    CHECK(ellipse.asEllipse().textureBox.size.y == doctest::Approx(0.5));
 }
 
 TEST_CASE("AnnotationDocument hit-test prioritizes handles over body")
@@ -96,6 +149,41 @@ TEST_CASE("AnnotationDocument hit-test prioritizes handles over body")
     // Click far away -> miss.
     auto miss = doc.hitTest(Point(99, 5), t, AnnotationId{}, 6.f, 3.f);
     CHECK(miss.part == AnnotationHitResult::Part::None);
+}
+
+TEST_CASE("AnnotationDocument hit-test selects rectangle and ellipse borders only")
+{
+    const int W = 200, H = 200;
+    AnnotationDocument rectDoc;
+
+    RectangleAnnotationData rd;
+    rd.textureBox = Rect::from_x_y_w_h(0.2, 0.2, 0.5, 0.4); // (40,40)..(140,120)
+    rd.strokeWidth = 6;
+    AnnotationId rectangleId = AnnotationId::nextId();
+    rectDoc.addRectangle(rectangleId, rd);
+
+    auto t = makeIdentityWidgetTransform(W, H);
+
+    auto rectBorder = rectDoc.hitTest(Point(90, 40), t, AnnotationId{}, 3.f, 2.f, W, H);
+    CHECK(rectBorder.part == AnnotationHitResult::Part::Body);
+    CHECK(rectBorder.id == rectangleId);
+
+    auto rectInterior = rectDoc.hitTest(Point(90, 80), t, rectangleId, 3.f, 2.f, W, H);
+    CHECK(rectInterior.part == AnnotationHitResult::Part::None);
+
+    AnnotationDocument ellipseDoc;
+    EllipseAnnotationData ed;
+    ed.textureBox = Rect::from_x_y_w_h(0.2, 0.2, 0.5, 0.4);
+    ed.strokeWidth = 6;
+    AnnotationId ellipseId = AnnotationId::nextId();
+    ellipseDoc.addEllipse(ellipseId, ed);
+
+    auto ellipseBorder = ellipseDoc.hitTest(Point(140, 80), t, AnnotationId{}, 3.f, 2.f, W, H);
+    CHECK(ellipseBorder.part == AnnotationHitResult::Part::Body);
+    CHECK(ellipseBorder.id == ellipseId);
+
+    auto ellipseInterior = ellipseDoc.hitTest(Point(90, 80), t, ellipseId, 3.f, 2.f, W, H);
+    CHECK(ellipseInterior.part == AnnotationHitResult::Part::None);
 }
 
 TEST_CASE("AnnotationDocument hit-test prefers topmost element")
@@ -265,6 +353,36 @@ TEST_CASE("AnnotationTool commitNewLine adds matching ids to all visible images"
     CHECK(b->kind() == AnnotationElement::Kind::Line);
     CHECK(a->asLine().textureLine.p1.x == doctest::Approx(0.1));
     CHECK(b->asLine().textureLine.p2.y == doctest::Approx(0.5));
+}
+
+TEST_CASE("AnnotationTool commitNewRectangle and commitNewEllipse add matching ids to all visible images")
+{
+    ToolFixture f;
+
+    RectangleAnnotationData rd;
+    rd.textureBox = Rect::from_x_y_w_h(0.1, 0.2, 0.3, 0.4);
+    AnnotationId rectangleId = f.tool.commitNewRectangle(rd);
+
+    EllipseAnnotationData ed;
+    ed.textureBox = Rect::from_x_y_w_h(0.3, 0.2, 0.4, 0.2);
+    AnnotationId ellipseId = f.tool.commitNewEllipse(ed);
+
+    REQUIRE(rectangleId.isValid());
+    REQUIRE(ellipseId.isValid());
+    CHECK(f.tool.selectedId() == ellipseId);
+
+    auto* rectA = f.imA.annotations().findById(rectangleId);
+    auto* rectB = f.imB.annotations().findById(rectangleId);
+    auto* ellA = f.imA.annotations().findById(ellipseId);
+    auto* ellB = f.imB.annotations().findById(ellipseId);
+    REQUIRE(rectA != nullptr);
+    REQUIRE(rectB != nullptr);
+    REQUIRE(ellA != nullptr);
+    REQUIRE(ellB != nullptr);
+    CHECK(rectA->kind() == AnnotationElement::Kind::Rectangle);
+    CHECK(rectB->asRectangle().textureBox.size.y == doctest::Approx(0.4));
+    CHECK(ellA->kind() == AnnotationElement::Kind::Ellipse);
+    CHECK(ellB->asEllipse().textureBox.origin.x == doctest::Approx(0.3));
 }
 
 TEST_CASE("AnnotationTool cancelCurrentAction consumes placement modes")

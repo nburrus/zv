@@ -312,6 +312,28 @@ void ControlsWindow::Impl::renderModifiersTab (float cursorOverlayHeight)
 
     ImGui::SameLine();
 
+    const bool drawingRectangle = (isAnnotating && annotTool.mode() == AnnotationTool::Mode::AddRectangle);
+    if (activeButton(ICON_RECTANGLE, drawingRectangle))
+    {
+        activateAnnotationMode();
+        annotTool.setMode(drawingRectangle ? AnnotationTool::Mode::Select
+                                           : AnnotationTool::Mode::AddRectangle);
+    }
+    helpMarker ("Add Rectangle", contentSize.x * 0.8, false /* no extra question mark */);
+
+    ImGui::SameLine();
+
+    const bool drawingEllipse = (isAnnotating && annotTool.mode() == AnnotationTool::Mode::AddEllipse);
+    if (activeButton(ICON_CIRCLE, drawingEllipse))
+    {
+        activateAnnotationMode();
+        annotTool.setMode(drawingEllipse ? AnnotationTool::Mode::Select
+                                         : AnnotationTool::Mode::AddEllipse);
+    }
+    helpMarker ("Add Ellipse", contentSize.x * 0.8, false /* no extra question mark */);
+
+    ImGui::SameLine();
+
     // Text button: placement mode; click again to leave. Shown pressed while in AddText mode.
     const bool addingText = (isAnnotating && annotTool.mode() == AnnotationTool::Mode::AddText);
     if (activeButton(ICON_TEXT, addingText))
@@ -633,6 +655,10 @@ void ControlsWindow::Impl::renderMenu ()
                 const auto mode = imageWindowState.activeToolState.annotationTool.mode();
                 if (ImGui::MenuItem("Add Line", "", isAnnotating && mode == AnnotationTool::Mode::AddLine))
                     activateAnnotationMode(AnnotationTool::Mode::AddLine);
+                if (ImGui::MenuItem("Add Rectangle", "", isAnnotating && mode == AnnotationTool::Mode::AddRectangle))
+                    activateAnnotationMode(AnnotationTool::Mode::AddRectangle);
+                if (ImGui::MenuItem("Add Ellipse", "", isAnnotating && mode == AnnotationTool::Mode::AddEllipse))
+                    activateAnnotationMode(AnnotationTool::Mode::AddEllipse);
                 if (ImGui::MenuItem("Add Text", "", isAnnotating && mode == AnnotationTool::Mode::AddText))
                     activateAnnotationMode(AnnotationTool::Mode::AddText);
                 ImGui::EndMenu();

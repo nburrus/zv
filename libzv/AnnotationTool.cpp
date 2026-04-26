@@ -31,12 +31,14 @@ void AnnotationTool::setMode(Mode mode)
 {
     if (_mode == mode)
         return;
-    cancelLineCreation();
+    cancelDragCreation();
     cancelEditDrag();
     _propertyEditActive = false;
     _mode = mode;
     _selectedId = {};
     _selectedLineDataValid = false;
+    _selectedRectangleDataValid = false;
+    _selectedEllipseDataValid = false;
     _selectedTextDataValid = false;
 }
 
@@ -44,9 +46,9 @@ bool AnnotationTool::cancelCurrentAction()
 {
     bool consumed = false;
 
-    if (_creatingLine)
+    if (_creatingShape)
     {
-        cancelLineCreation();
+        cancelDragCreation();
         consumed = true;
     }
 
@@ -85,17 +87,27 @@ void AnnotationTool::deleteSelected()
         const AnnotationElement::Kind kind = el->kind();
         LineAnnotationData lineData;
         TextAnnotationData textData;
+        RectangleAnnotationData rectangleData;
+        EllipseAnnotationData ellipseData;
         if (kind == AnnotationElement::Kind::Line)
             lineData = el->asLine();
+        else if (kind == AnnotationElement::Kind::Rectangle)
+            rectangleData = el->asRectangle();
+        else if (kind == AnnotationElement::Kind::Ellipse)
+            ellipseData = el->asEllipse();
         else
             textData = el->asText();
 
         im.annotations().removeById(idToDelete);
         im.markAnnotationsDirty();
 
-        im.pushUndoAction([&im, idToDelete, kind, lineData, textData]() {
+        im.pushUndoAction([&im, idToDelete, kind, lineData, rectangleData, ellipseData, textData]() {
             if (kind == AnnotationElement::Kind::Line)
                 im.annotations().addLine(idToDelete, lineData);
+            else if (kind == AnnotationElement::Kind::Rectangle)
+                im.annotations().addRectangle(idToDelete, rectangleData);
+            else if (kind == AnnotationElement::Kind::Ellipse)
+                im.annotations().addEllipse(idToDelete, ellipseData);
             else
                 im.annotations().addText(idToDelete, textData);
             im.markAnnotationsDirty();
@@ -124,6 +136,10 @@ void AnnotationTool::captureSelectedEditSnapshots()
             snap.kind  = el->kind();
             if (snap.kind == AnnotationElement::Kind::Line)
                 snap.lineData = el->asLine();
+            else if (snap.kind == AnnotationElement::Kind::Rectangle)
+                snap.rectangleData = el->asRectangle();
+            else if (snap.kind == AnnotationElement::Kind::Ellipse)
+                snap.ellipseData = el->asEllipse();
             else
                 snap.textData = el->asText();
         }
@@ -152,6 +168,10 @@ void AnnotationTool::pushSelectedEditUndo()
                 return;
             if (snap.kind == AnnotationElement::Kind::Line)
                 el->asLine() = snap.lineData;
+            else if (snap.kind == AnnotationElement::Kind::Rectangle)
+                el->asRectangle() = snap.rectangleData;
+            else if (snap.kind == AnnotationElement::Kind::Ellipse)
+                el->asEllipse() = snap.ellipseData;
             else
                 el->asText() = snap.textData;
             im.markAnnotationsDirty();
@@ -169,7 +189,7 @@ void AnnotationTool::cancelEditDrag()
 }
 
 // ---------------------------------------------------------------------------
-// Line creation
+// Drag creation
 // ---------------------------------------------------------------------------
 
 AnnotationId AnnotationTool::commitNewLine(const LineAnnotationData& data)
@@ -192,47 +212,106 @@ AnnotationId AnnotationTool::commitNewLine(const LineAnnotationData& data)
     return createdId;
 }
 
-void AnnotationTool::startLineCreation(const Point& textureStart)
+AnnotationId AnnotationTool::commitNewRectangle(const RectangleAnnotationData& data)
 {
-    _creatingLine          = true;
-    _creationId            = AnnotationId::nextId();
-    _creationStartTexture  = textureStart;
+    const AnnotationId createdId = AnnotationId::nextId();
+
+    if (_applyFunc)
+    {
+        _applyFunc([createdId, data](ModifiedImage& im) {
+            im.annotations().addRectangle(createdId, data);
+            im.markAnnotationsDirty();
+            im.pushUndoAction([&im, createdId]() {
+                im.annotations().removeById(createdId);
+                im.markAnnotationsDirty();
+            });
+        });
+    }
+
+    _selectedId = createdId;
+    return createdId;
+}
+
+AnnotationId AnnotationTool::commitNewEllipse(const EllipseAnnotationData& data)
+{
+    const AnnotationId createdId = AnnotationId::nextId();
+
+    if (_applyFunc)
+    {
+        _applyFunc([createdId, data](ModifiedImage& im) {
+            im.annotations().addEllipse(createdId, data);
+            im.markAnnotationsDirty();
+            im.pushUndoAction([&im, createdId]() {
+                im.annotations().removeById(createdId);
+                im.markAnnotationsDirty();
+            });
+        });
+    }
+
+    _selectedId = createdId;
+    return createdId;
+}
+
+void AnnotationTool::startDragCreation(CreationKind kind, const Point& textureStart)
+{
+    _creatingShape          = true;
+    _creationKind           = kind;
+    _creationId             = AnnotationId::nextId();
+    _creationStartTexture   = textureStart;
     _creationCurrentTexture = textureStart;
 }
 
-void AnnotationTool::updateLineCreation(const Point& textureCurrent)
+void AnnotationTool::updateDragCreation(const Point& textureCurrent)
 {
-    if (!_creatingLine)
+    if (!_creatingShape)
         return;
     _creationCurrentTexture = textureCurrent;
 }
 
-void AnnotationTool::finishLineCreation()
+void AnnotationTool::finishDragCreation()
 {
-    if (!_creatingLine)
+    if (!_creatingShape)
         return;
 
     const double dx = _creationCurrentTexture.x - _creationStartTexture.x;
     const double dy = _creationCurrentTexture.y - _creationStartTexture.y;
     if (dx * dx + dy * dy < 1e-8)
     {
-        cancelLineCreation();
+        cancelDragCreation();
         return;
     }
 
-    LineAnnotationData lineData = _defaultLineStyle;
-    lineData.textureLine = Line(_creationStartTexture, _creationCurrentTexture);
-    commitNewLine(lineData);
+    const Rect box = Rect::from_two_points(_creationStartTexture, _creationCurrentTexture);
+    if (_creationKind == CreationKind::Line)
+    {
+        LineAnnotationData lineData = _defaultLineStyle;
+        lineData.textureLine = Line(_creationStartTexture, _creationCurrentTexture);
+        commitNewLine(lineData);
+    }
+    else if (_creationKind == CreationKind::Rectangle)
+    {
+        RectangleAnnotationData rectangleData = _defaultRectangleStyle;
+        rectangleData.textureBox = box;
+        commitNewRectangle(rectangleData);
+    }
+    else if (_creationKind == CreationKind::Ellipse)
+    {
+        EllipseAnnotationData ellipseData = _defaultEllipseStyle;
+        ellipseData.textureBox = box;
+        commitNewEllipse(ellipseData);
+    }
 
-    _creatingLine = false;
-    _creationId   = {};
+    _creatingShape = false;
+    _creationKind  = CreationKind::None;
+    _creationId    = {};
     _mode = Mode::Select;
 }
 
-void AnnotationTool::cancelLineCreation()
+void AnnotationTool::cancelDragCreation()
 {
-    _creatingLine = false;
-    _creationId   = {};
+    _creatingShape = false;
+    _creationKind  = CreationKind::None;
+    _creationId    = {};
 }
 
 // ---------------------------------------------------------------------------
@@ -359,6 +438,24 @@ void AnnotationTool::renderAsActiveTool(const InteractiveToolRenderingContext& c
                 {
                     _selectedLineData = sel->asLine();
                     _selectedLineDataValid = true;
+                    _selectedRectangleDataValid = false;
+                    _selectedEllipseDataValid = false;
+                    _selectedTextDataValid = false;
+                }
+                else if (sel->kind() == AnnotationElement::Kind::Rectangle)
+                {
+                    _selectedRectangleData = sel->asRectangle();
+                    _selectedRectangleDataValid = true;
+                    _selectedLineDataValid = false;
+                    _selectedEllipseDataValid = false;
+                    _selectedTextDataValid = false;
+                }
+                else if (sel->kind() == AnnotationElement::Kind::Ellipse)
+                {
+                    _selectedEllipseData = sel->asEllipse();
+                    _selectedEllipseDataValid = true;
+                    _selectedLineDataValid = false;
+                    _selectedRectangleDataValid = false;
                     _selectedTextDataValid = false;
                 }
                 else if (sel->kind() == AnnotationElement::Kind::Text)
@@ -366,6 +463,8 @@ void AnnotationTool::renderAsActiveTool(const InteractiveToolRenderingContext& c
                     _selectedTextData = sel->asText();
                     _selectedTextDataValid = true;
                     _selectedLineDataValid = false;
+                    _selectedRectangleDataValid = false;
+                    _selectedEllipseDataValid = false;
                     // Sync edit buffer when selection/content changes externally.
                     snprintf(_textEditBuffer, sizeof(_textEditBuffer), "%s",
                              _selectedTextData.text.c_str());
@@ -375,22 +474,41 @@ void AnnotationTool::renderAsActiveTool(const InteractiveToolRenderingContext& c
         else
         {
             _selectedLineDataValid = false;
+            _selectedRectangleDataValid = false;
+            _selectedEllipseDataValid = false;
             _selectedTextDataValid = false;
         }
     }
     else
     {
         _selectedLineDataValid = false;
+        _selectedRectangleDataValid = false;
+        _selectedEllipseDataValid = false;
         _selectedTextDataValid = false;
     }
 
-    // Live in-progress line overlay — drawn in every visible image so the
+    // Live in-progress shape overlay — drawn in every visible image so the
     // drag preview mirrors where the committed annotation will land.
-    if (_creatingLine)
+    if (_creatingShape)
     {
-        LineAnnotationData ld = _defaultLineStyle;
-        ld.textureLine = Line(_creationStartTexture, _creationCurrentTexture);
-        renderLineAnnotation(drawList, ld, renderTransform);
+        if (_creationKind == CreationKind::Line)
+        {
+            LineAnnotationData ld = _defaultLineStyle;
+            ld.textureLine = Line(_creationStartTexture, _creationCurrentTexture);
+            renderLineAnnotation(drawList, ld, renderTransform);
+        }
+        else if (_creationKind == CreationKind::Rectangle)
+        {
+            RectangleAnnotationData rd = _defaultRectangleStyle;
+            rd.textureBox = Rect::from_two_points(_creationStartTexture, _creationCurrentTexture);
+            renderRectangleAnnotation(drawList, rd, renderTransform);
+        }
+        else if (_creationKind == CreationKind::Ellipse)
+        {
+            EllipseAnnotationData ed = _defaultEllipseStyle;
+            ed.textureBox = Rect::from_two_points(_creationStartTexture, _creationCurrentTexture);
+            renderEllipseAnnotation(drawList, ed, renderTransform);
+        }
     }
 
     // ---- Input (first valid image only) ----
@@ -406,7 +524,7 @@ void AnnotationTool::renderAsActiveTool(const InteractiveToolRenderingContext& c
     const Point texturePos = widgetTransform.widgetToTexture(toPoint(io.MousePos));
 
     // (A) Start a new interaction on a fresh click (not already dragging/creating).
-    if (!_editDragActive && !_creatingLine
+    if (!_editDragActive && !_creatingShape
         && hovered
         && ImGui::IsMouseClicked(ImGuiMouseButton_Left)
         && !io.KeyCtrl)
@@ -422,7 +540,9 @@ void AnnotationTool::renderAsActiveTool(const InteractiveToolRenderingContext& c
                     widgetTransform,
                     _selectedId,
                     kHandleRadius,
-                    kBodyTolerance);
+                    kBodyTolerance,
+                    context.imageWidth,
+                    context.imageHeight);
             }
 
             if (hit.isValid())
@@ -451,13 +571,19 @@ void AnnotationTool::renderAsActiveTool(const InteractiveToolRenderingContext& c
             break;
         }
         case Mode::AddLine:
+        case Mode::AddRectangle:
+        case Mode::AddEllipse:
         case Mode::AddText:
             // Placement modes: never select or edit existing annotations; add new only.
             _propertyEditActive = false;
             _selectedEditSnapshots.clear();
             _selectedId = {};
             if (_mode == Mode::AddLine)
-                startLineCreation(texturePos);
+                startDragCreation(CreationKind::Line, texturePos);
+            else if (_mode == Mode::AddRectangle)
+                startDragCreation(CreationKind::Rectangle, texturePos);
+            else if (_mode == Mode::AddEllipse)
+                startDragCreation(CreationKind::Ellipse, texturePos);
             else
                 createTextAtPosition(texturePos, context.imageWidth, context.imageHeight,
                                      renderTransform.imagePixelToScreenPixel);
@@ -507,12 +633,12 @@ void AnnotationTool::renderAsActiveTool(const InteractiveToolRenderingContext& c
         cancelEditDrag();
     }
 
-    // (C) Continue / finish an in-progress line creation.
-    if (_creatingLine)
+    // (C) Continue / finish an in-progress drag creation.
+    if (_creatingShape)
     {
-        updateLineCreation(texturePos);
+        updateDragCreation(texturePos);
         if (ImGui::IsMouseReleased(ImGuiMouseButton_Left))
-            finishLineCreation();
+            finishDragCreation();
     }
 }
 
@@ -577,6 +703,44 @@ void AnnotationTool::applySelectedLineStyle(const LineAnnotationData& style)
     });
 }
 
+void AnnotationTool::applySelectedRectangleStyle(const RectangleAnnotationData& style)
+{
+    if (!_selectedId.isValid() || !_applyFunc)
+        return;
+
+    const AnnotationId id = _selectedId;
+    const ImColor color   = style.color;
+    const int strokeWidth = style.strokeWidth;
+    _applyFunc([id, color, strokeWidth](ModifiedImage& im) {
+        AnnotationElement* el = im.annotations().findById(id);
+        if (el && el->kind() == AnnotationElement::Kind::Rectangle)
+        {
+            el->asRectangle().color = color;
+            el->asRectangle().strokeWidth = strokeWidth;
+            im.markAnnotationsDirty();
+        }
+    });
+}
+
+void AnnotationTool::applySelectedEllipseStyle(const EllipseAnnotationData& style)
+{
+    if (!_selectedId.isValid() || !_applyFunc)
+        return;
+
+    const AnnotationId id = _selectedId;
+    const ImColor color   = style.color;
+    const int strokeWidth = style.strokeWidth;
+    _applyFunc([id, color, strokeWidth](ModifiedImage& im) {
+        AnnotationElement* el = im.annotations().findById(id);
+        if (el && el->kind() == AnnotationElement::Kind::Ellipse)
+        {
+            el->asEllipse().color = color;
+            el->asEllipse().strokeWidth = strokeWidth;
+            im.markAnnotationsDirty();
+        }
+    });
+}
+
 void AnnotationTool::renderControls(const ImageSRGBA& /*firstIm*/)
 {
     ImGuiColorEditFlags colorFlags = ImGuiColorEditFlags_NoAlpha;
@@ -603,6 +767,68 @@ void AnnotationTool::renderControls(const ImageSRGBA& /*firstIm*/)
                 _propertyEditActive = true;
             }
             applySelectedLineStyle(_selectedLineData);
+        }
+
+        if (_propertyEditActive && (colorDone || widthDone))
+        {
+            pushSelectedEditUndo();
+            _selectedEditSnapshots.clear();
+            _propertyEditActive = false;
+        }
+    }
+    else if (_selectedId.isValid() && _selectedRectangleDataValid)
+    {
+        // --- Properties of the selected rectangle ---
+        ImGui::TextDisabled("Selected rectangle  |  Delete / Backspace to remove");
+
+        bool anyChanged = false;
+        if (ImGui::ColorEdit4("Color##rectangle", (float*)&_selectedRectangleData.color.Value, colorFlags))
+            anyChanged = true;
+        const bool colorDone = ImGui::IsItemDeactivatedAfterEdit();
+
+        if (ImGui::SliderInt("Width##rectangle", &_selectedRectangleData.strokeWidth, 1, 10))
+            anyChanged = true;
+        const bool widthDone = ImGui::IsItemDeactivatedAfterEdit();
+
+        if (anyChanged)
+        {
+            if (!_propertyEditActive)
+            {
+                captureSelectedEditSnapshots();
+                _propertyEditActive = true;
+            }
+            applySelectedRectangleStyle(_selectedRectangleData);
+        }
+
+        if (_propertyEditActive && (colorDone || widthDone))
+        {
+            pushSelectedEditUndo();
+            _selectedEditSnapshots.clear();
+            _propertyEditActive = false;
+        }
+    }
+    else if (_selectedId.isValid() && _selectedEllipseDataValid)
+    {
+        // --- Properties of the selected ellipse ---
+        ImGui::TextDisabled("Selected ellipse  |  Delete / Backspace to remove");
+
+        bool anyChanged = false;
+        if (ImGui::ColorEdit4("Color##ellipse", (float*)&_selectedEllipseData.color.Value, colorFlags))
+            anyChanged = true;
+        const bool colorDone = ImGui::IsItemDeactivatedAfterEdit();
+
+        if (ImGui::SliderInt("Width##ellipse", &_selectedEllipseData.strokeWidth, 1, 10))
+            anyChanged = true;
+        const bool widthDone = ImGui::IsItemDeactivatedAfterEdit();
+
+        if (anyChanged)
+        {
+            if (!_propertyEditActive)
+            {
+                captureSelectedEditSnapshots();
+                _propertyEditActive = true;
+            }
+            applySelectedEllipseStyle(_selectedEllipseData);
         }
 
         if (_propertyEditActive && (colorDone || widthDone))
@@ -657,6 +883,20 @@ void AnnotationTool::renderControls(const ImageSRGBA& /*firstIm*/)
         ImGui::TextDisabled("New line style");
         ImGui::ColorEdit4("Color##newline", (float*)&_defaultLineStyle.color.Value, colorFlags);
         ImGui::SliderInt("Width", &_defaultLineStyle.strokeWidth, 1, 10);
+    }
+    else if (_mode == Mode::AddRectangle)
+    {
+        // --- Default style shown briefly while drawing a new rectangle ---
+        ImGui::TextDisabled("New rectangle style");
+        ImGui::ColorEdit4("Color##newrectangle", (float*)&_defaultRectangleStyle.color.Value, colorFlags);
+        ImGui::SliderInt("Width##newrectangle", &_defaultRectangleStyle.strokeWidth, 1, 10);
+    }
+    else if (_mode == Mode::AddEllipse)
+    {
+        // --- Default style shown briefly while drawing a new ellipse ---
+        ImGui::TextDisabled("New ellipse style");
+        ImGui::ColorEdit4("Color##newellipse", (float*)&_defaultEllipseStyle.color.Value, colorFlags);
+        ImGui::SliderInt("Width##newellipse", &_defaultEllipseStyle.strokeWidth, 1, 10);
     }
     else if (_mode == Mode::AddText)
     {

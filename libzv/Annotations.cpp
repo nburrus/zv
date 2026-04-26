@@ -42,6 +42,14 @@ AnnotationElement::AnnotationElement(AnnotationId id, const LineAnnotationData& 
     : _id(id), _kind(Kind::Line), _line(data)
 {}
 
+AnnotationElement::AnnotationElement(AnnotationId id, const RectangleAnnotationData& data)
+    : _id(id), _kind(Kind::Rectangle), _rectangle(data)
+{}
+
+AnnotationElement::AnnotationElement(AnnotationId id, const EllipseAnnotationData& data)
+    : _id(id), _kind(Kind::Ellipse), _ellipse(data)
+{}
+
 AnnotationElement::AnnotationElement(AnnotationId id, const TextAnnotationData& data)
     : _id(id), _kind(Kind::Text), _text(data)
 {}
@@ -56,6 +64,30 @@ const LineAnnotationData& AnnotationElement::asLine() const
 {
     zv_assert(_kind == Kind::Line, "Element is not a line");
     return _line;
+}
+
+RectangleAnnotationData& AnnotationElement::asRectangle()
+{
+    zv_assert(_kind == Kind::Rectangle, "Element is not a rectangle");
+    return _rectangle;
+}
+
+const RectangleAnnotationData& AnnotationElement::asRectangle() const
+{
+    zv_assert(_kind == Kind::Rectangle, "Element is not a rectangle");
+    return _rectangle;
+}
+
+EllipseAnnotationData& AnnotationElement::asEllipse()
+{
+    zv_assert(_kind == Kind::Ellipse, "Element is not an ellipse");
+    return _ellipse;
+}
+
+const EllipseAnnotationData& AnnotationElement::asEllipse() const
+{
+    zv_assert(_kind == Kind::Ellipse, "Element is not an ellipse");
+    return _ellipse;
 }
 
 TextAnnotationData& AnnotationElement::asText()
@@ -75,6 +107,8 @@ int AnnotationElement::numHandles() const
     switch (_kind)
     {
         case Kind::Line: return 2; // p1, p2
+        case Kind::Rectangle: return 4; // tl, tr, br, bl
+        case Kind::Ellipse: return 4; // bounding box corners: tl, tr, br, bl
         case Kind::Text: return 0; // text boxes are body-drag only in V1
     }
     return 0;
@@ -89,6 +123,24 @@ Point AnnotationElement::handleTexturePos(int handleIdx) const
             {
                 case 0: return _line.textureLine.p1;
                 case 1: return _line.textureLine.p2;
+            }
+            break;
+        case Kind::Rectangle:
+            switch (handleIdx)
+            {
+                case 0: return _rectangle.textureBox.topLeft();
+                case 1: return _rectangle.textureBox.topRight();
+                case 2: return _rectangle.textureBox.bottomRight();
+                case 3: return _rectangle.textureBox.bottomLeft();
+            }
+            break;
+        case Kind::Ellipse:
+            switch (handleIdx)
+            {
+                case 0: return _ellipse.textureBox.topLeft();
+                case 1: return _ellipse.textureBox.topRight();
+                case 2: return _ellipse.textureBox.bottomRight();
+                case 3: return _ellipse.textureBox.bottomLeft();
             }
             break;
         case Kind::Text:
@@ -108,6 +160,24 @@ void AnnotationElement::moveHandleTo(int handleIdx, const Point& newTexturePos)
                 case 1: _line.textureLine.p2 = newTexturePos; break;
             }
             break;
+        case Kind::Rectangle:
+            switch (handleIdx)
+            {
+                case 0: _rectangle.textureBox.moveTopLeft(newTexturePos); break;
+                case 1: _rectangle.textureBox.moveTopRight(newTexturePos); break;
+                case 2: _rectangle.textureBox.moveBottomRight(newTexturePos); break;
+                case 3: _rectangle.textureBox.moveBottomLeft(newTexturePos); break;
+            }
+            break;
+        case Kind::Ellipse:
+            switch (handleIdx)
+            {
+                case 0: _ellipse.textureBox.moveTopLeft(newTexturePos); break;
+                case 1: _ellipse.textureBox.moveTopRight(newTexturePos); break;
+                case 2: _ellipse.textureBox.moveBottomRight(newTexturePos); break;
+                case 3: _ellipse.textureBox.moveBottomLeft(newTexturePos); break;
+            }
+            break;
         case Kind::Text:
             break; // text boxes are body-drag only in V1; numHandles() returns 0
     }
@@ -121,6 +191,12 @@ void AnnotationElement::moveBy(const Point& d)
             _line.textureLine.p1 += d;
             _line.textureLine.p2 += d;
             break;
+        case Kind::Rectangle:
+            _rectangle.textureBox.origin += d;
+            break;
+        case Kind::Ellipse:
+            _ellipse.textureBox.origin += d;
+            break;
         case Kind::Text:
             _text.textureBox.origin += d;
             break;
@@ -132,6 +208,18 @@ void AnnotationElement::moveBy(const Point& d)
 // ---------------------------------------------------------------------------
 
 AnnotationElement& AnnotationDocument::addLine(AnnotationId id, const LineAnnotationData& data)
+{
+    _elements.emplace_back(id, data);
+    return _elements.back();
+}
+
+AnnotationElement& AnnotationDocument::addRectangle(AnnotationId id, const RectangleAnnotationData& data)
+{
+    _elements.emplace_back(id, data);
+    return _elements.back();
+}
+
+AnnotationElement& AnnotationDocument::addEllipse(AnnotationId id, const EllipseAnnotationData& data)
 {
     _elements.emplace_back(id, data);
     return _elements.back();
@@ -170,12 +258,61 @@ const AnnotationElement* AnnotationDocument::findById(AnnotationId id) const
     return nullptr;
 }
 
+namespace
+{
+
+float strokeHitTolerancePx(int strokeWidth, const WidgetToImageTransform& transform,
+                           int imageWidth, int imageHeight)
+{
+    if (imageWidth > 0 && imageHeight > 0)
+    {
+        const ImVec2 scale = transform.pixelScale(imageWidth, imageHeight);
+        return strokeWidth * 0.5f * std::max(scale.x, scale.y);
+    }
+    return strokeWidth * 0.5f;
+}
+
+bool strokedRectContains(const Rect& widgetBox, const Point& widgetPos, float tolerancePx)
+{
+    Rect outer = Rect::from_x_y_w_h(widgetBox.origin.x - tolerancePx,
+                                    widgetBox.origin.y - tolerancePx,
+                                    widgetBox.size.x + 2.0 * tolerancePx,
+                                    widgetBox.size.y + 2.0 * tolerancePx);
+    if (!outer.contains(widgetPos))
+        return false;
+
+    Rect inner = Rect::from_x_y_w_h(widgetBox.origin.x + tolerancePx,
+                                    widgetBox.origin.y + tolerancePx,
+                                    std::max(0.0, widgetBox.size.x - 2.0 * tolerancePx),
+                                    std::max(0.0, widgetBox.size.y - 2.0 * tolerancePx));
+    return inner.size.x <= 0.0 || inner.size.y <= 0.0 || !inner.contains(widgetPos);
+}
+
+bool strokedEllipseContains(const Rect& widgetBox, const Point& widgetPos, float tolerancePx)
+{
+    const double rx = widgetBox.size.x * 0.5;
+    const double ry = widgetBox.size.y * 0.5;
+    if (rx <= 0.0 || ry <= 0.0)
+        return false;
+
+    const double cx = widgetBox.origin.x + rx;
+    const double cy = widgetBox.origin.y + ry;
+    const double dx = widgetPos.x - cx;
+    const double dy = widgetPos.y - cy;
+    const double normalizedDistance = std::sqrt((dx * dx) / (rx * rx) + (dy * dy) / (ry * ry));
+    const double normalizedTolerance = tolerancePx / std::max(1.0, std::min(rx, ry));
+    return std::abs(normalizedDistance - 1.0) <= normalizedTolerance;
+}
+
+} // namespace
 
 AnnotationHitResult AnnotationDocument::hitTest(const Point& widgetPos,
                                                 const WidgetToImageTransform& transform,
                                                 AnnotationId selectedId,
                                                 float handleRadiusPx,
-                                                float bodyTolerancePx) const
+                                                float bodyTolerancePx,
+                                                int imageWidth,
+                                                int imageHeight) const
 {
     AnnotationHitResult result;
 
@@ -227,7 +364,25 @@ AnnotationHitResult AnnotationDocument::hitTest(const Point& widgetPos,
                 const Point widgetP1 = transform.textureToWidget(ld.textureLine.p1);
                 const Point widgetP2 = transform.textureToWidget(ld.textureLine.p2);
                 const double d = distancePointToSegment(widgetPos, widgetP1, widgetP2);
-                bodyHit = d <= (bodyTolerancePx + ld.strokeWidth * 0.5);
+                bodyHit = d <= (bodyTolerancePx + strokeHitTolerancePx(ld.strokeWidth, transform, imageWidth, imageHeight));
+                break;
+            }
+            case AnnotationElement::Kind::Rectangle:
+            {
+                const auto& rd = el.asRectangle();
+                const Point widgetTL = transform.textureToWidget(rd.textureBox.topLeft());
+                const Point widgetBR = transform.textureToWidget(rd.textureBox.bottomRight());
+                const float tolerance = bodyTolerancePx + strokeHitTolerancePx(rd.strokeWidth, transform, imageWidth, imageHeight);
+                bodyHit = strokedRectContains(Rect::from_two_points(widgetTL, widgetBR), widgetPos, tolerance);
+                break;
+            }
+            case AnnotationElement::Kind::Ellipse:
+            {
+                const auto& ed = el.asEllipse();
+                const Point widgetTL = transform.textureToWidget(ed.textureBox.topLeft());
+                const Point widgetBR = transform.textureToWidget(ed.textureBox.bottomRight());
+                const float tolerance = bodyTolerancePx + strokeHitTolerancePx(ed.strokeWidth, transform, imageWidth, imageHeight);
+                bodyHit = strokedEllipseContains(Rect::from_two_points(widgetTL, widgetBR), widgetPos, tolerance);
                 break;
             }
             case AnnotationElement::Kind::Text:
@@ -266,6 +421,28 @@ void renderLineAnnotation(ImDrawList* drawList,
     drawList->AddLine(p1, p2, data.color, thickness);
 }
 
+void renderRectangleAnnotation(ImDrawList* drawList,
+                               const RectangleAnnotationData& data,
+                               const AnnotationRenderTransform& transform)
+{
+    const ImVec2 tl = transform.textureToScreen(data.textureBox.topLeft());
+    const ImVec2 br = transform.textureToScreen(data.textureBox.bottomRight());
+    const float thickness = std::max(1.0f, data.strokeWidth * transform.imagePixelToScreenPixel);
+    drawList->AddRect(tl, br, data.color, 0.0f, 0, thickness);
+}
+
+void renderEllipseAnnotation(ImDrawList* drawList,
+                             const EllipseAnnotationData& data,
+                             const AnnotationRenderTransform& transform)
+{
+    const ImVec2 tl = transform.textureToScreen(data.textureBox.topLeft());
+    const ImVec2 br = transform.textureToScreen(data.textureBox.bottomRight());
+    const ImVec2 center((tl.x + br.x) * 0.5f, (tl.y + br.y) * 0.5f);
+    const ImVec2 radius(std::abs(br.x - tl.x) * 0.5f, std::abs(br.y - tl.y) * 0.5f);
+    const float thickness = std::max(1.0f, data.strokeWidth * transform.imagePixelToScreenPixel);
+    drawList->AddEllipse(center, radius, data.color, 0.0f, 0, thickness);
+}
+
 void renderTextAnnotation(ImDrawList* drawList,
                           const TextAnnotationData& data,
                           const AnnotationRenderTransform& transform)
@@ -284,6 +461,12 @@ void renderAnnotationElement(ImDrawList* drawList,
     {
         case AnnotationElement::Kind::Line:
             renderLineAnnotation(drawList, element.asLine(), transform);
+            break;
+        case AnnotationElement::Kind::Rectangle:
+            renderRectangleAnnotation(drawList, element.asRectangle(), transform);
+            break;
+        case AnnotationElement::Kind::Ellipse:
+            renderEllipseAnnotation(drawList, element.asEllipse(), transform);
             break;
         case AnnotationElement::Kind::Text:
             renderTextAnnotation(drawList, element.asText(), transform);

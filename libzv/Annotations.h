@@ -44,6 +44,20 @@ struct LineAnnotationData
     int strokeWidth = 2; // image-space pixels
 };
 
+struct RectangleAnnotationData
+{
+    Rect textureBox = Rect::from_x_y_w_h(0.1, 0.1, 0.4, 0.3);
+    ImColor color = ImColor(ImVec4(1, 1, 0, 1));
+    int strokeWidth = 2; // image-space pixels
+};
+
+struct EllipseAnnotationData
+{
+    Rect textureBox = Rect::from_x_y_w_h(0.1, 0.1, 0.4, 0.3);
+    ImColor color = ImColor(ImVec4(1, 1, 0, 1));
+    int strokeWidth = 2; // image-space pixels
+};
+
 struct TextAnnotationData
 {
     Rect textureBox = Rect::from_x_y_w_h(0.4, 0.4, 0.2, 0.1);
@@ -55,9 +69,11 @@ struct TextAnnotationData
 class AnnotationElement
 {
 public:
-    enum class Kind { Line, Text };
+    enum class Kind { Line, Rectangle, Ellipse, Text };
 
     AnnotationElement(AnnotationId id, const LineAnnotationData& data);
+    AnnotationElement(AnnotationId id, const RectangleAnnotationData& data);
+    AnnotationElement(AnnotationId id, const EllipseAnnotationData& data);
     AnnotationElement(AnnotationId id, const TextAnnotationData& data);
 
     AnnotationId id() const { return _id; }
@@ -65,6 +81,10 @@ public:
 
     LineAnnotationData& asLine();
     const LineAnnotationData& asLine() const;
+    RectangleAnnotationData& asRectangle();
+    const RectangleAnnotationData& asRectangle() const;
+    EllipseAnnotationData& asEllipse();
+    const EllipseAnnotationData& asEllipse() const;
     TextAnnotationData& asText();
     const TextAnnotationData& asText() const;
 
@@ -77,6 +97,8 @@ private:
     AnnotationId _id;
     Kind _kind;
     LineAnnotationData _line;
+    RectangleAnnotationData _rectangle;
+    EllipseAnnotationData _ellipse;
     TextAnnotationData _text;
 };
 
@@ -101,6 +123,8 @@ public:
     // Adds an element with the supplied id (so corresponding annotations
     // across multiple visible images can share a stable id).
     AnnotationElement& addLine(AnnotationId id, const LineAnnotationData& data);
+    AnnotationElement& addRectangle(AnnotationId id, const RectangleAnnotationData& data);
+    AnnotationElement& addEllipse(AnnotationId id, const EllipseAnnotationData& data);
     AnnotationElement& addText(AnnotationId id, const TextAnnotationData& data);
 
     bool removeById(AnnotationId id);
@@ -121,7 +145,9 @@ public:
                                 const WidgetToImageTransform& transform,
                                 AnnotationId selectedId,
                                 float handleRadiusPx,
-                                float bodyTolerancePx) const;
+                                float bodyTolerancePx,
+                                int imageWidth = 0,
+                                int imageHeight = 0) const;
 
 private:
     std::vector<AnnotationElement> _elements;
@@ -147,6 +173,14 @@ struct AnnotationRenderTransform
 void renderLineAnnotation(ImDrawList* drawList,
                           const LineAnnotationData& data,
                           const AnnotationRenderTransform& transform);
+
+void renderRectangleAnnotation(ImDrawList* drawList,
+                               const RectangleAnnotationData& data,
+                               const AnnotationRenderTransform& transform);
+
+void renderEllipseAnnotation(ImDrawList* drawList,
+                             const EllipseAnnotationData& data,
+                             const AnnotationRenderTransform& transform);
 
 void renderTextAnnotation(ImDrawList* drawList,
                           const TextAnnotationData& data,
