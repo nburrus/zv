@@ -30,14 +30,14 @@ struct CursorOverlayInfo
 
     ImVec2 mousePosInImage() const
     {
-        const auto& image = *modImagePtr->data()->cpuData;
+        const auto& image = *modImagePtr->finalData()->cpuData;
         ImVec2 imageSize (image.width(), image.height());
         return mousePosInOriginalTexture() * imageSize;
     }
 
     ImVec2 mousePosInOriginalTexture() const
     {
-        const auto& image = *modImagePtr->data()->cpuData;
+        const auto& image = *modImagePtr->finalData()->cpuData;
         ImVec2 imageSize (image.width(), image.height());
 
         // This 0.5 offset is important since the mouse coordinate is an integer.

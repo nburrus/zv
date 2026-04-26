@@ -15,6 +15,7 @@
 namespace zv
 {
 
+class AnnotationDocument;
 class AnnotationRenderer;
 
 class ImageModifier
@@ -23,10 +24,10 @@ public:
     virtual ~ImageModifier () {}
 
 public:
-    void apply (const ImageItemDataPtr& input, AnnotationRenderer& annotationRenderer)
+    void apply (const ImageItemDataPtr& input)
     {
         _outputData = std::make_shared<ImageItemData>();
-        apply (*input, *_outputData, annotationRenderer);
+        apply (*input, *_outputData);
     }
 
     const ImageItemDataPtr& output () const
@@ -40,7 +41,7 @@ public:
     }
 
 protected:
-    virtual void apply (const ImageItemData& input, ImageItemData& output, AnnotationRenderer& annotationRenderer) = 0;
+    virtual void apply (const ImageItemData& input, ImageItemData& output) = 0;
 
 private:
     ImageItemDataPtr _outputData;
@@ -77,31 +78,30 @@ private:
 // Image currently active in the viewer, maybe modified.
 struct ModifiedImage
 {
-    ModifiedImage(AnnotationRenderer& renderer,
-                  const ImageItemPtr& item,
-                  const ImageItemDataPtr& originalData)
-                  : _annotationRenderer (renderer)
-                  , _item (item)
-                  , _originalData (originalData)
-    {}
+    ModifiedImage(const ImageItemPtr& item, const ImageItemDataPtr& originalData);
+    ~ModifiedImage();
 
-    bool hasValidData() const { return data() && data()->status == ImageItemData::Status::Ready; }
-    
-    bool hasPendingChanges () const { return !_modifiers.empty(); }
+    bool hasValidData() const { return finalData() && finalData()->status == ImageItemData::Status::Ready; }
+
+    bool hasPendingChanges () const;
 
     bool canUndo () const { return !_actions.empty(); }
 
-    const ImageItemDataPtr& data() const 
-    {
-        if (!_modifiers.empty()) 
-            return _modifiers.back()->output();
-        return _originalData;
-    }
-    
+    // The final image at the end of the pipeline: the annotation-composited
+    // output when annotations exist, otherwise the result of the normal
+    // modifier chain. This is what gets rendered and what gets saved.
+    const ImageItemDataPtr& finalData() const;
+
+    // The result of the normal modifier chain, before the annotation layer
+    // is composited on top. Use this when something needs to feed into the
+    // annotation pipeline (like adding a new modifier).
+    const ImageItemDataPtr& preAnnotationData() const;
+
     ImageItemPtr& item() { return _item; }
     const ImageItemPtr& item() const { return _item; }
 
-    bool update ();
+    bool updateModifiers();
+    bool updateAnnotations(AnnotationRenderer& renderer);
 
     void addModifier (std::unique_ptr<ImageModifier> modifier);
     void removeLastModifier();
@@ -114,16 +114,33 @@ struct ModifiedImage
     void resetToNewData (const ImageItemDataPtr& newData);
     void undoLastChange ();
 
+    // Push an arbitrary undo callback. Used by tools that mutate state
+    // outside the modifier chain (e.g. annotation edits).
+    void pushUndoAction (std::function<void(void)>&& undoFunc);
+
+    // Annotation access. Tools should call markAnnotationsDirty() after
+    // mutating the document so the final-layer compositor reruns.
+    AnnotationDocument& annotations();
+    const AnnotationDocument& annotations() const;
+    bool hasAnnotations() const;
+    void markAnnotationsDirty();
+
 private:
     void clearIntermediateModifiersData ();
+    void syncItemMetadataFromFinalData();
+    void compositeAnnotationLayer(AnnotationRenderer& renderer);
 
 private:
     ImageItemPtr _item;
     ImageItemDataPtr _originalData;
-    AnnotationRenderer& _annotationRenderer;
     std::deque<std::unique_ptr<ImageModifier>> _modifiers;
     std::deque<ImageAction> _actions;
+
+    std::unique_ptr<AnnotationDocument> _annotations;
+    ImageItemDataPtr _annotatedData;
+
     bool _modifiersChangedSinceLastUpdate = false;
+    bool _annotationsDirty = false;
 };
 using ModifiedImagePtr = std::shared_ptr<ModifiedImage>;
 
@@ -173,7 +190,7 @@ public:
     {}
 
 public:
-    virtual void apply (const ImageItemData& input, ImageItemData& output, AnnotationRenderer&) override;
+    virtual void apply (const ImageItemData& input, ImageItemData& output) override;
 
 private:
     LevelsAdjustmentParams _params;
@@ -207,7 +224,7 @@ public:
     OneShotColorModifier(const OneShotColorParams& params) : _params(params) {}
 
 public:
-    virtual void apply (const ImageItemData& input, ImageItemData& output, AnnotationRenderer&) override;
+    virtual void apply (const ImageItemData& input, ImageItemData& output) override;
 
 private:
     OneShotColorParams _params;
@@ -219,7 +236,7 @@ public:
     HueShiftModifier(float hueDegrees) : _hueDegrees(hueDegrees) {}
 
 public:
-    virtual void apply (const ImageItemData& input, ImageItemData& output, AnnotationRenderer&) override;
+    virtual void apply (const ImageItemData& input, ImageItemData& output) override;
 
 private:
     float _hueDegrees;
@@ -238,7 +255,7 @@ public:
     {}
 
 public:
-    virtual void apply (const ImageItemData& input, ImageItemData& output, AnnotationRenderer&) override;
+    virtual void apply (const ImageItemData& input, ImageItemData& output) override;
 
 private:
     Angle _angle = Angle::Angle_90;
@@ -269,7 +286,7 @@ public:
     const Params& params () const { return _params; }
 
 public:
-    virtual void apply (const ImageItemData& input, ImageItemData& output, AnnotationRenderer&) override;
+    virtual void apply (const ImageItemData& input, ImageItemData& output) override;
 
 private:
     Params _params;
@@ -291,7 +308,7 @@ public:
     const Params& params () const { return _params; }
 
 public:
-    virtual void apply (const ImageItemData& input, ImageItemData& output, AnnotationRenderer&) override;
+    virtual void apply (const ImageItemData& input, ImageItemData& output) override;
 
 private:
     Params _params;
