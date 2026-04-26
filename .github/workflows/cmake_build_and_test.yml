@@ -83,3 +83,7 @@ jobs:
         # FIXME: I don't understand why the external projects dependencies are not properly handled sometimes.
         cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}} --target glfw-deps clip-deps libjpeg-turbo-deps
         cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}} --target all
+
+    - name: Run tests
+      working-directory: ${{github.workspace}}/build
+      run: ctest --build-config ${{env.BUILD_TYPE}} --output-on-failure
