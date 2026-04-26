@@ -66,6 +66,12 @@ struct TextAnnotationData
     float fontSize = 24.f; // image-space pixels
 };
 
+float fitTextAnnotationFontSizeToPixelBox(const ImVec2& textExtentAtCurrentFontSize,
+                                          float currentFontSize,
+                                          const ImVec2& pixelBoxSize,
+                                          float minFontSize = 1.f,
+                                          float maxFontSize = 512.f);
+
 class AnnotationElement
 {
 public:

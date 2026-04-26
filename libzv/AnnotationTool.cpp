@@ -10,6 +10,9 @@
 
 #include <imgui.h>
 
+#include <cfloat>
+#include <cmath>
+
 namespace zv
 {
 
@@ -321,6 +324,61 @@ void AnnotationTool::cancelDragCreation()
 // Compute the textureBox size from actual font metrics.
 // Must be called inside an ImGui frame (CalcTextSizeA needs the font atlas).
 // `imagePixelToScreenPixel` is the display zoom factor (widget_px / image_px).
+static ImVec2 textExtentFromFontMetrics(const TextAnnotationData& data,
+                                        float imagePixelToScreenPixel)
+{
+    zv_assert(ImGui::GetCurrentContext() != nullptr, "textExtentFromFontMetrics must be called inside an ImGui frame");
+    const float wFontSize = std::max(1.0f, data.fontSize * imagePixelToScreenPixel);
+    const char* text = data.text.empty() ? " " : data.text.c_str();
+    return ImGui::GetFont()->CalcTextSizeA(wFontSize, FLT_MAX, 0.f, text);
+}
+
+static void tuneTextFontSizeToBox(TextAnnotationData& data,
+                                  int imageWidth,
+                                  int imageHeight,
+                                  float imagePixelToScreenPixel,
+                                  bool growToFit)
+{
+    if (imageWidth <= 0 || imageHeight <= 0)
+        return;
+
+    const float scale = imagePixelToScreenPixel > 0.f ? imagePixelToScreenPixel : 1.f;
+    const ImVec2 extent = textExtentFromFontMetrics(data, scale);
+    const ImVec2 pixelBoxSize((float)(data.textureBox.size.x * imageWidth * scale),
+                              (float)(data.textureBox.size.y * imageHeight * scale));
+    const float currentScreenFontSize = std::max(1.0f, data.fontSize * scale);
+    const float fittedScreenFontSize = fitTextAnnotationFontSizeToPixelBox(
+        extent, currentScreenFontSize, pixelBoxSize, 1.f, 512.f * scale);
+    const float fittedImageFontSize = fittedScreenFontSize / scale;
+
+    if (growToFit || fittedImageFontSize < data.fontSize)
+        data.fontSize = fittedImageFontSize;
+}
+
+static void imageSizeForAnnotationFit(const ModifiedImage& im,
+                                      int fallbackWidth,
+                                      int fallbackHeight,
+                                      int& imageWidth,
+                                      int& imageHeight)
+{
+    imageWidth = fallbackWidth;
+    imageHeight = fallbackHeight;
+
+    const ImageItemDataPtr& data = im.preAnnotationData();
+    if (data && data->cpuData && data->cpuData->hasData())
+    {
+        imageWidth = data->cpuData->width();
+        imageHeight = data->cpuData->height();
+        return;
+    }
+
+    if (im.item() && im.item()->metadata.width > 0 && im.item()->metadata.height > 0)
+    {
+        imageWidth = im.item()->metadata.width;
+        imageHeight = im.item()->metadata.height;
+    }
+}
+
 static Rect textBoxFromFontMetrics(const Point& origin,
                                    const TextAnnotationData& data,
                                    float imagePixelToScreenPixel,
@@ -328,9 +386,7 @@ static Rect textBoxFromFontMetrics(const Point& origin,
                                    int imageHeight)
 {
     zv_assert(ImGui::GetCurrentContext() != nullptr, "textBoxFromFontMetrics must be called inside an ImGui frame");
-    const float wFontSize = std::max(1.0f, data.fontSize * imagePixelToScreenPixel);
-    const ImVec2 ext = ImGui::GetFont()->CalcTextSizeA(
-        wFontSize, FLT_MAX, 0.f, data.text.c_str());
+    const ImVec2 ext = textExtentFromFontMetrics(data, imagePixelToScreenPixel);
     // Convert widget-pixel extent back to texture coordinates.
     const float scale = imagePixelToScreenPixel > 0.f ? imagePixelToScreenPixel : 1.f;
     // Fallbacks (~20% width, ~8% height) are used when image dimensions are
@@ -409,27 +465,23 @@ void AnnotationTool::renderAsActiveTool(const InteractiveToolRenderingContext& c
     {
         if (const AnnotationElement* sel = context.annotationDocument->findById(_selectedId))
         {
+            // Text: draw the editable bounding box. Font size is adjusted to fit
+            // this box when users resize it; body drags preserve the geometry.
+            if (sel->kind() == AnnotationElement::Kind::Text)
+            {
+                const auto& td = sel->asText();
+                const ImVec2 tlW = imVec2(widgetTransform.textureToWidget(td.textureBox.topLeft()));
+                const ImVec2 brW = imVec2(widgetTransform.textureToWidget(td.textureBox.bottomRight()));
+
+                // Thin outline
+                drawList->AddRect(tlW, brW, IM_COL32(255, 255, 255, 160), 0.f, 0, 1.5f);
+            }
+
             for (int h = 0; h < sel->numHandles(); ++h)
             {
                 const ImVec2 hp = imVec2(widgetTransform.textureToWidget(sel->handleTexturePos(h)));
                 drawList->AddCircleFilled(hp, kHandleRadius, IM_COL32(255, 255, 255, 220));
                 drawList->AddCircle(hp, kHandleRadius, IM_COL32(0, 0, 0, 220), 0, 1.5f);
-            }
-
-            // Text: draw a selection box sized to the actual rendered text extent.
-            // Text resize handles are intentionally omitted in V1 because the
-            // box auto-sizes to the text content and only body-drag is useful.
-            if (sel->kind() == AnnotationElement::Kind::Text)
-            {
-                const auto& td = sel->asText();
-                const ImVec2 tlW = imVec2(widgetTransform.textureToWidget(td.textureBox.topLeft()));
-                const float wFontSize = std::max(1.0f, td.fontSize * renderTransform.imagePixelToScreenPixel);
-                const ImVec2 extent = ImGui::GetFont()->CalcTextSizeA(
-                    wFontSize, FLT_MAX, 0.f, td.text.c_str());
-                const ImVec2 brW = ImVec2(tlW.x + extent.x, tlW.y + extent.y);
-
-                // Thin outline
-                drawList->AddRect(tlW, brW, IM_COL32(255, 255, 255, 160), 0.f, 0, 1.5f);
             }
 
             if (!_propertyEditActive)
@@ -615,11 +667,26 @@ void AnnotationTool::renderAsActiveTool(const InteractiveToolRenderingContext& c
         {
             const AnnotationId id = _selectedId;
             const int hi = _editDragHandleIdx;
+            const int imageWidth = context.imageWidth;
+            const int imageHeight = context.imageHeight;
+            const float imagePixelToScreenPixel = renderTransform.imagePixelToScreenPixel;
             if (_applyFunc)
             {
-                _applyFunc([id, hi, texturePos](ModifiedImage& im) {
+                _applyFunc([id, hi, texturePos, imageWidth, imageHeight, imagePixelToScreenPixel](ModifiedImage& im) {
                     AnnotationElement* el = im.annotations().findById(id);
-                    if (el) { el->moveHandleTo(hi, texturePos); im.markAnnotationsDirty(); }
+                    if (el)
+                    {
+                        el->moveHandleTo(hi, texturePos);
+                        if (el->kind() == AnnotationElement::Kind::Text)
+                        {
+                            int fitW = imageWidth;
+                            int fitH = imageHeight;
+                            imageSizeForAnnotationFit(im, imageWidth, imageHeight, fitW, fitH);
+                            tuneTextFontSizeToBox(el->asText(), fitW, fitH,
+                                                  imagePixelToScreenPixel, true);
+                        }
+                        im.markAnnotationsDirty();
+                    }
                 });
             }
             _editDragMoved = true;
@@ -646,7 +713,9 @@ void AnnotationTool::renderAsActiveTool(const InteractiveToolRenderingContext& c
 // Controls panel
 // ---------------------------------------------------------------------------
 
-void AnnotationTool::applySelectedTextStyle(const TextAnnotationData& style)
+void AnnotationTool::applySelectedTextStyle(const TextAnnotationData& style,
+                                            bool growFontToExistingBox,
+                                            bool shrinkFontToExistingBox)
 {
     if (!_selectedId.isValid() || !_applyFunc)
         return;
@@ -659,15 +728,8 @@ void AnnotationTool::applySelectedTextStyle(const TextAnnotationData& style)
     const int   imH   = _lastImageHeight;
     const float scale = _lastImagePixelToScreenPixel;
 
-    // Compute the updated hit-box here, while we're still inside the ImGui
-    // frame and CalcTextSizeA is valid, before the lambda captures it.
-    TextAnnotationData scratchForMetrics = style;
-    // origin will be replaced per-element in the lambda; size is what matters
-    const Rect newBox = textBoxFromFontMetrics(Point(0, 0), scratchForMetrics, scale, imW, imH);
-    const float newBoxW = newBox.size.x;
-    const float newBoxH = newBox.size.y;
-
-    _applyFunc([id, color, fontSize, text, newBoxW, newBoxH](ModifiedImage& im) {
+    _applyFunc([id, color, fontSize, text, imW, imH, scale,
+                growFontToExistingBox, shrinkFontToExistingBox](ModifiedImage& im) {
         AnnotationElement* el = im.annotations().findById(id);
         if (el && el->kind() == AnnotationElement::Kind::Text)
         {
@@ -675,10 +737,13 @@ void AnnotationTool::applySelectedTextStyle(const TextAnnotationData& style)
             td.color    = color;
             td.fontSize = fontSize;
             td.text     = text;
-            // Resync hit-box size (origin is preserved).
-            if (newBoxW > 0.f && newBoxH > 0.f)
-                td.textureBox = Rect::from_x_y_w_h(
-                    td.textureBox.origin.x, td.textureBox.origin.y, newBoxW, newBoxH);
+            if (growFontToExistingBox || shrinkFontToExistingBox)
+            {
+                int fitW = imW;
+                int fitH = imH;
+                imageSizeForAnnotationFit(im, imW, imH, fitW, fitH);
+                tuneTextFontSizeToBox(td, fitW, fitH, scale, growFontToExistingBox);
+            }
             im.markAnnotationsDirty();
         }
     });
@@ -845,9 +910,13 @@ void AnnotationTool::renderControls(const ImageSRGBA& /*firstIm*/)
 
         bool anyChanged = false;
 
-        if (ImGui::InputText("Text", _textEditBuffer, sizeof(_textEditBuffer)))
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        bool textChanged = false;
+        if (ImGui::InputTextMultiline("Text", _textEditBuffer, sizeof(_textEditBuffer),
+                                      ImVec2(-FLT_MIN, ImGui::GetTextLineHeight() * 4.0f)))
         {
             _selectedTextData.text = _textEditBuffer;
+            textChanged = true;
             anyChanged = true;
         }
         const bool textDone = ImGui::IsItemDeactivatedAfterEdit();
@@ -856,6 +925,7 @@ void AnnotationTool::renderControls(const ImageSRGBA& /*firstIm*/)
             anyChanged = true;
         const bool colorDone = ImGui::IsItemDeactivatedAfterEdit();
 
+        const float fontSizeBefore = _selectedTextData.fontSize;
         if (ImGui::SliderFloat("Font Size", &_selectedTextData.fontSize, 8.f, 96.f))
             anyChanged = true;
         const bool fontSizeDone = ImGui::IsItemDeactivatedAfterEdit();
@@ -867,7 +937,10 @@ void AnnotationTool::renderControls(const ImageSRGBA& /*firstIm*/)
                 captureSelectedEditSnapshots();
                 _propertyEditActive = true;
             }
-            applySelectedTextStyle(_selectedTextData);
+            const bool fontSizeChanged = std::abs(_selectedTextData.fontSize - fontSizeBefore) >= 1e-6f;
+            applySelectedTextStyle(_selectedTextData,
+                                   textChanged,
+                                   textChanged || fontSizeChanged);
         }
 
         if (_propertyEditActive && (textDone || colorDone || fontSizeDone))

@@ -34,6 +34,22 @@ AnnotationId AnnotationId::nextId()
     return id;
 }
 
+float fitTextAnnotationFontSizeToPixelBox(const ImVec2& textExtentAtCurrentFontSize,
+                                          float currentFontSize,
+                                          const ImVec2& pixelBoxSize,
+                                          float minFontSize,
+                                          float maxFontSize)
+{
+    if (currentFontSize <= 0.f || pixelBoxSize.x <= 0.f || pixelBoxSize.y <= 0.f
+        || textExtentAtCurrentFontSize.x <= 0.f || textExtentAtCurrentFontSize.y <= 0.f)
+        return std::max(minFontSize, std::min(maxFontSize, currentFontSize));
+
+    const float sx = pixelBoxSize.x / textExtentAtCurrentFontSize.x;
+    const float sy = pixelBoxSize.y / textExtentAtCurrentFontSize.y;
+    const float fitted = currentFontSize * std::min(sx, sy);
+    return std::max(minFontSize, std::min(maxFontSize, fitted));
+}
+
 // ---------------------------------------------------------------------------
 // AnnotationElement
 // ---------------------------------------------------------------------------
@@ -109,7 +125,7 @@ int AnnotationElement::numHandles() const
         case Kind::Line: return 2; // p1, p2
         case Kind::Rectangle: return 4; // tl, tr, br, bl
         case Kind::Ellipse: return 4; // bounding box corners: tl, tr, br, bl
-        case Kind::Text: return 0; // text boxes are body-drag only in V1
+        case Kind::Text: return 4; // bounding box corners: tl, tr, br, bl
     }
     return 0;
 }
@@ -144,7 +160,14 @@ Point AnnotationElement::handleTexturePos(int handleIdx) const
             }
             break;
         case Kind::Text:
-            break; // text boxes are body-drag only in V1; numHandles() returns 0
+            switch (handleIdx)
+            {
+                case 0: return _text.textureBox.topLeft();
+                case 1: return _text.textureBox.topRight();
+                case 2: return _text.textureBox.bottomRight();
+                case 3: return _text.textureBox.bottomLeft();
+            }
+            break;
     }
     return Point(NAN, NAN);
 }
@@ -179,7 +202,14 @@ void AnnotationElement::moveHandleTo(int handleIdx, const Point& newTexturePos)
             }
             break;
         case Kind::Text:
-            break; // text boxes are body-drag only in V1; numHandles() returns 0
+            switch (handleIdx)
+            {
+                case 0: _text.textureBox.moveTopLeft(newTexturePos); break;
+                case 1: _text.textureBox.moveTopRight(newTexturePos); break;
+                case 2: _text.textureBox.moveBottomRight(newTexturePos); break;
+                case 3: _text.textureBox.moveBottomLeft(newTexturePos); break;
+            }
+            break;
     }
 }
 
@@ -448,9 +478,12 @@ void renderTextAnnotation(ImDrawList* drawList,
                           const AnnotationRenderTransform& transform)
 {
     const ImVec2 tl = transform.textureToScreen(data.textureBox.topLeft());
+    const ImVec2 br = transform.textureToScreen(data.textureBox.bottomRight());
     const float fontSize = std::max(1.0f, data.fontSize * transform.imagePixelToScreenPixel);
     ImFont* font = ImGui::GetFont();
-    drawList->AddText(font, fontSize, tl, data.color, data.text.c_str());
+    const ImVec4 clipRect(std::min(tl.x, br.x), std::min(tl.y, br.y),
+                          std::max(tl.x, br.x), std::max(tl.y, br.y));
+    drawList->AddText(font, fontSize, tl, data.color, data.text.c_str(), nullptr, 0.0f, &clipRect);
 }
 
 void renderAnnotationElement(ImDrawList* drawList,

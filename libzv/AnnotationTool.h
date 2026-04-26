@@ -94,7 +94,9 @@ private:
     void applySelectedEllipseStyle(const EllipseAnnotationData& style);
 
     // Apply text/color/fontSize from style to the currently selected text across all images.
-    void applySelectedTextStyle(const TextAnnotationData& style);
+    void applySelectedTextStyle(const TextAnnotationData& style,
+                                bool growFontToExistingBox,
+                                bool shrinkFontToExistingBox);
 
     // --- Edit drag (move / handle-resize an existing annotation) ---
     enum class EditDragKind { None, Body, Handle };

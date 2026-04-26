@@ -121,6 +121,31 @@ TEST_CASE("AnnotationElement moveHandleTo resizes rectangle and ellipse corners"
     CHECK(ellipse.asEllipse().textureBox.size.y == doctest::Approx(0.5));
 }
 
+TEST_CASE("AnnotationElement moveHandleTo resizes text corners")
+{
+    TextAnnotationData td;
+    td.textureBox = Rect::from_x_y_w_h(0.2, 0.2, 0.4, 0.3);
+    td.fontSize = 24.f;
+    AnnotationElement text(AnnotationId::nextId(), td);
+
+    REQUIRE(text.numHandles() == 4);
+    CHECK(text.handleTexturePos(0).x == doctest::Approx(0.2));
+    CHECK(text.handleTexturePos(2).y == doctest::Approx(0.5));
+
+    text.moveHandleTo(2, Point(0.8, 0.7));
+    CHECK(text.asText().textureBox.origin.x == doctest::Approx(0.2));
+    CHECK(text.asText().textureBox.origin.y == doctest::Approx(0.2));
+    CHECK(text.asText().textureBox.size.x == doctest::Approx(0.6));
+    CHECK(text.asText().textureBox.size.y == doctest::Approx(0.5));
+    CHECK(text.asText().fontSize == doctest::Approx(24.f));
+
+    text.moveHandleTo(0, Point(0.1, 0.1));
+    CHECK(text.asText().textureBox.origin.x == doctest::Approx(0.1));
+    CHECK(text.asText().textureBox.origin.y == doctest::Approx(0.1));
+    CHECK(text.asText().textureBox.size.x == doctest::Approx(0.7));
+    CHECK(text.asText().textureBox.size.y == doctest::Approx(0.6));
+}
+
 TEST_CASE("AnnotationDocument hit-test prioritizes handles over body")
 {
     const int W = 100, H = 100;
@@ -239,6 +264,39 @@ TEST_CASE("AnnotationDocument hit-test gives selected line handle priority")
     CHECK(hitNoSelection.part == AnnotationHitResult::Part::Body);
     CHECK(hitNoSelection.id == textId);
     CHECK(hitNoSelection.handleIdx == -1);
+}
+
+TEST_CASE("AnnotationDocument hit-test gives selected text handles priority over body")
+{
+    const int W = 100, H = 100;
+    AnnotationDocument doc;
+
+    TextAnnotationData td;
+    td.textureBox = Rect::from_x_y_w_h(0.1, 0.1, 0.8, 0.8);
+    AnnotationId textId = AnnotationId::nextId();
+    doc.addText(textId, td);
+
+    auto t = makeIdentityWidgetTransform(W, H);
+
+    auto corner = doc.hitTest(Point(90, 90), t, textId, 6.f, 3.f, W, H);
+    CHECK(corner.part == AnnotationHitResult::Part::Handle);
+    CHECK(corner.id == textId);
+    CHECK(corner.handleIdx == 2);
+
+    auto body = doc.hitTest(Point(50, 50), t, textId, 6.f, 3.f, W, H);
+    CHECK(body.part == AnnotationHitResult::Part::Body);
+    CHECK(body.id == textId);
+    CHECK(body.handleIdx == -1);
+}
+
+TEST_CASE("fitTextAnnotationFontSizeToPixelBox scales to the limiting box dimension")
+{
+    CHECK(fitTextAnnotationFontSizeToPixelBox(ImVec2(200, 50), 20.f, ImVec2(100, 100))
+          == doctest::Approx(10.f));
+    CHECK(fitTextAnnotationFontSizeToPixelBox(ImVec2(100, 200), 20.f, ImVec2(100, 50))
+          == doctest::Approx(5.f));
+    CHECK(fitTextAnnotationFontSizeToPixelBox(ImVec2(100, 100), 20.f, ImVec2(400, 400), 1.f, 60.f)
+          == doctest::Approx(60.f));
 }
 
 TEST_CASE("AnnotationDocument hit-test honors stroke-width tolerance for lines")
