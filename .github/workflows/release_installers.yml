@@ -30,12 +30,9 @@ jobs:
 
     steps:
     - name: Checkout
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
       with:
         lfs: true
-
-    - name: Install Ninja
-      uses: seanmiddleditch/gha-setup-ninja@master
 
     - name: Install Linux dependencies
       if: startsWith(matrix.os, 'ubuntu-')
@@ -51,11 +48,12 @@ jobs:
           libxi-dev \
           libxinerama-dev \
           libxrandr-dev \
+          ninja-build \
           nasm
 
     - name: Install macOS dependencies
       if: startsWith(matrix.os, 'macos-')
-      run: brew install nasm
+      run: brew install nasm ninja
 
     - name: Configure CMake
       run: >
