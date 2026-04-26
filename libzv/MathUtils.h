@@ -207,6 +207,12 @@ namespace zv
             return r;
         }
 
+        static Rect from_two_points (const Point& a, const Point& b)
+        {
+            return from_x_y_w_h(std::min(a.x, b.x), std::min(a.y, b.y),
+                                 std::abs(b.x - a.x), std::abs(b.y - a.y));
+        }
+
         void scale (double sx, double sy)
         {
             origin.x *= sx;
@@ -316,5 +322,24 @@ namespace zv
         Point p1;
         Point p2;
     };
+
+    inline double distanceBetweenPoints(const Point& a, const Point& b)
+    {
+        const double dx = a.x - b.x;
+        const double dy = a.y - b.y;
+        return std::sqrt(dx*dx + dy*dy);
+    }
+
+    inline double distancePointToSegment(const Point& p, const Point& a, const Point& b)
+    {
+        const double dx = b.x - a.x;
+        const double dy = b.y - a.y;
+        const double len2 = dx*dx + dy*dy;
+        if (len2 <= 1e-12)
+            return distanceBetweenPoints(p, a);
+        double t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2;
+        t = std::max(0.0, std::min(1.0, t));
+        return distanceBetweenPoints(p, Point(a.x + t * dx, a.y + t * dy));
+    }
 
 } // zv
