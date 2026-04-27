@@ -59,6 +59,39 @@ It also has a standalone C and Python API to be used as an alternative to OpenCV
 - Only tested on Linux and macOS so far, but it should be straightforward to
   build on Windows later on as all the dependencies are cross-platform.
 
+## Keyboard shortcuts
+
+`zv` keeps xv-style single-key shortcuts for the main image-viewing commands
+and uses shifted mnemonic keys for annotation tools.
+
+On macOS, shortcuts shown with `Ctrl` use `Cmd` instead.
+
+| Shortcut | Action |
+| --- | --- |
+| `Space` / `Down` | Next image |
+| `Backspace` / `Up` | Previous image |
+| `PageDown` / `PageUp` | Next / previous page of a multi-page image |
+| `0` | Automatic mosaic layout |
+| `1` ... `9` | Set a fixed image layout for the visible images |
+| `n` | Normal image size |
+| `m` | Maxpect image size |
+| `>` / `<` | Double / halve image size |
+| `.` / `,` | Grow / shrink image size by 10% |
+| `a` | Restore aspect ratio |
+| `v` | Toggle info overlay |
+| `e` | Open the color editor |
+| `Ctrl+O` / `Cmd+O` | Open image |
+| `Ctrl+S` / `Cmd+S` | Save image |
+| `Ctrl+Shift+S` / `Cmd+Shift+S` | Save image as |
+| `Ctrl+R` / `Cmd+R` or `F5` | Reload image from disk |
+| `Ctrl+Z` / `Cmd+Z` | Undo |
+| `Shift+T` | Add text annotation |
+| `Shift+L` | Add line annotation |
+| `Shift+R` | Add rectangle annotation |
+| `Shift+O` | Add ellipse annotation |
+| `Esc` | Cancel the current tool or annotation placement mode |
+| `Delete` / `Backspace` | Delete the selected annotation, otherwise close or navigate images |
+
 ## Install
 
 Single-command install for the latest release:

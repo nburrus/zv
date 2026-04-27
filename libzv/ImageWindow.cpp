@@ -669,7 +669,7 @@ void ImageWindow::checkImguiGlobalImageKeyEvents ()
             ImGuiKey_6, ImGuiKey_7, ImGuiKey_8, ImGuiKey_9,
             ImGuiKey_UpArrow, ImGuiKey_DownArrow, ImGuiKey_LeftArrow, ImGuiKey_RightArrow,
             ImGuiKey_PageUp, ImGuiKey_PageDown,
-            ImGuiKey_O, ImGuiKey_S, ImGuiKey_W, ImGuiKey_R, ImGuiKey_F5,
+            ImGuiKey_L, ImGuiKey_O, ImGuiKey_S, ImGuiKey_T, ImGuiKey_W, ImGuiKey_R, ImGuiKey_F5,
             ImGuiKey_E,
             ImGuiKey_N, ImGuiKey_A, ImGuiKey_V, ImGuiKey_Period, ImGuiKey_Comma, ImGuiKey_M,
             ImGuiKey_C, ImGuiKey_Z,
@@ -697,6 +697,15 @@ inline bool CtrlOrCmd(ImGuiIO& io)
 void ImageWindow::processKeyEvent (ImGuiKey keycode)
 {
     auto& io = ImGui::GetIO();
+
+    auto activateAnnotationMode = [&](AnnotationTool::Mode mode) {
+        if (!io.KeyShift || CtrlOrCmd(io))
+            return false;
+
+        setActiveTool(ActiveToolState::Kind::Annotate);
+        impl->mutableState.activeToolState.annotationTool.setMode(mode);
+        return true;
+    };
 
     if (keycode == ImGuiKey_0)
     {
@@ -750,9 +759,16 @@ void ImageWindow::processKeyEvent (ImGuiKey keycode)
             break;
         }
 
+        case ImGuiKey_L: {
+            activateAnnotationMode(AnnotationTool::Mode::AddLine);
+            break;
+        }
+
         case ImGuiKey_O: {
             if (CtrlOrCmd(io))
                 enqueueAction(ImageWindowAction::Kind::File_OpenImage);
+            else
+                activateAnnotationMode(AnnotationTool::Mode::AddEllipse);
             break;
         }
 
@@ -771,6 +787,13 @@ void ImageWindow::processKeyEvent (ImGuiKey keycode)
         case ImGuiKey_R: {
             if (keycode == ImGuiKey_F5 || CtrlOrCmd(io))
                 enqueueAction(ImageWindowAction::Kind::File_RefreshImageFromDisk);
+            else
+                activateAnnotationMode(AnnotationTool::Mode::AddRectangle);
+            break;
+        }
+
+        case ImGuiKey_T: {
+            activateAnnotationMode(AnnotationTool::Mode::AddText);
             break;
         }
 

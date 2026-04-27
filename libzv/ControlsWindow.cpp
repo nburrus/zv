@@ -653,13 +653,13 @@ void ControlsWindow::Impl::renderMenu ()
                 const bool isAnnotating =
                     (imageWindowState.activeToolState.kind == ActiveToolState::Kind::Annotate);
                 const auto mode = imageWindowState.activeToolState.annotationTool.mode();
-                if (ImGui::MenuItem("Add Line", "", isAnnotating && mode == AnnotationTool::Mode::AddLine))
+                if (ImGui::MenuItem("Add Line", "Shift+L", isAnnotating && mode == AnnotationTool::Mode::AddLine))
                     activateAnnotationMode(AnnotationTool::Mode::AddLine);
-                if (ImGui::MenuItem("Add Rectangle", "", isAnnotating && mode == AnnotationTool::Mode::AddRectangle))
+                if (ImGui::MenuItem("Add Rectangle", "Shift+R", isAnnotating && mode == AnnotationTool::Mode::AddRectangle))
                     activateAnnotationMode(AnnotationTool::Mode::AddRectangle);
-                if (ImGui::MenuItem("Add Ellipse", "", isAnnotating && mode == AnnotationTool::Mode::AddEllipse))
+                if (ImGui::MenuItem("Add Ellipse", "Shift+O", isAnnotating && mode == AnnotationTool::Mode::AddEllipse))
                     activateAnnotationMode(AnnotationTool::Mode::AddEllipse);
-                if (ImGui::MenuItem("Add Text", "", isAnnotating && mode == AnnotationTool::Mode::AddText))
+                if (ImGui::MenuItem("Add Text", "Shift+T", isAnnotating && mode == AnnotationTool::Mode::AddText))
                     activateAnnotationMode(AnnotationTool::Mode::AddText);
                 ImGui::EndMenu();
             }
