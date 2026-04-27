@@ -29,6 +29,7 @@ public:
     {
         Select,   // click existing = select; click empty = deselect
         AddLine,  // click always starts a new line (no selecting existing)
+        AddArrow, // click-drag starts a new line with an arrow head at the end
         AddRectangle, // drag always starts a new rectangle
         AddEllipse, // drag always starts a new ellipse
         AddText,  // click always places new text (no selecting existing)
@@ -78,7 +79,7 @@ public:
 
 private:
     // --- Drag creation for line/rectangle/ellipse ---
-    enum class CreationKind { None, Line, Rectangle, Ellipse };
+    enum class CreationKind { None, Line, Arrow, Rectangle, Ellipse };
     void startDragCreation(CreationKind kind, const Point& textureStart);
     void updateDragCreation(const Point& textureCurrent);
     void finishDragCreation();
@@ -144,6 +145,7 @@ private:
     Point _creationStartTexture;
     Point _creationCurrentTexture;
     LineAnnotationData _defaultLineStyle;
+    LineAnnotationData _defaultArrowStyle;
     RectangleAnnotationData _defaultRectangleStyle;
     EllipseAnnotationData _defaultEllipseStyle;
 

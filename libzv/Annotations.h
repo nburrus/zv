@@ -37,11 +37,27 @@ struct AnnotationId
     static AnnotationId nextId();
 };
 
+enum class LineEndpointStyle
+{
+    None,
+    Arrow,
+};
+
+enum class AnnotationStrokeStyle
+{
+    Solid,
+    Dashed,
+    Dotted,
+};
+
 struct LineAnnotationData
 {
     Line textureLine = Line(Point(0.1, 0.1), Point(0.5, 0.5));
     ImColor color = ImColor(ImVec4(1, 1, 0, 1));
     int strokeWidth = 2; // image-space pixels
+    LineEndpointStyle startStyle = LineEndpointStyle::None;
+    LineEndpointStyle endStyle = LineEndpointStyle::None;
+    AnnotationStrokeStyle strokeStyle = AnnotationStrokeStyle::Solid;
 };
 
 struct RectangleAnnotationData

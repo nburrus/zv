@@ -398,6 +398,8 @@ TEST_CASE("AnnotationTool commitNewLine adds matching ids to all visible images"
 
     LineAnnotationData ld;
     ld.textureLine = Line(Point(0.1, 0.2), Point(0.4, 0.5));
+    ld.endStyle = LineEndpointStyle::Arrow;
+    ld.strokeStyle = AnnotationStrokeStyle::Dashed;
     AnnotationId createdId = f.tool.commitNewLine(ld);
 
     REQUIRE(createdId.isValid());
@@ -411,6 +413,23 @@ TEST_CASE("AnnotationTool commitNewLine adds matching ids to all visible images"
     CHECK(b->kind() == AnnotationElement::Kind::Line);
     CHECK(a->asLine().textureLine.p1.x == doctest::Approx(0.1));
     CHECK(b->asLine().textureLine.p2.y == doctest::Approx(0.5));
+    CHECK(a->asLine().startStyle == LineEndpointStyle::None);
+    CHECK(a->asLine().endStyle == LineEndpointStyle::Arrow);
+    CHECK(b->asLine().strokeStyle == AnnotationStrokeStyle::Dashed);
+}
+
+TEST_CASE("Arrow-style line remains a line annotation")
+{
+    LineAnnotationData ld;
+    ld.textureLine = Line(Point(0.1, 0.1), Point(0.9, 0.9));
+    ld.endStyle = LineEndpointStyle::Arrow;
+    ld.strokeStyle = AnnotationStrokeStyle::Dotted;
+
+    AnnotationElement arrow(AnnotationId::nextId(), ld);
+
+    CHECK(arrow.kind() == AnnotationElement::Kind::Line);
+    CHECK(arrow.asLine().endStyle == LineEndpointStyle::Arrow);
+    CHECK(arrow.asLine().strokeStyle == AnnotationStrokeStyle::Dotted);
 }
 
 TEST_CASE("AnnotationTool commitNewRectangle and commitNewEllipse add matching ids to all visible images")
@@ -499,6 +518,9 @@ TEST_CASE("AnnotationTool undo restores after delete")
     LineAnnotationData ld;
     ld.textureLine = Line(Point(0.3, 0.3), Point(0.8, 0.8));
     ld.strokeWidth = 5;
+    ld.startStyle = LineEndpointStyle::Arrow;
+    ld.endStyle = LineEndpointStyle::Arrow;
+    ld.strokeStyle = AnnotationStrokeStyle::Dotted;
     AnnotationId createdId = f.tool.commitNewLine(ld);
 
     f.tool.deleteSelected();
@@ -514,5 +536,8 @@ TEST_CASE("AnnotationTool undo restores after delete")
     REQUIRE(a != nullptr);
     REQUIRE(b != nullptr);
     CHECK(a->asLine().strokeWidth == 5);
+    CHECK(a->asLine().startStyle == LineEndpointStyle::Arrow);
+    CHECK(a->asLine().endStyle == LineEndpointStyle::Arrow);
+    CHECK(a->asLine().strokeStyle == AnnotationStrokeStyle::Dotted);
     CHECK(b->asLine().textureLine.p1.x == doctest::Approx(0.3));
 }

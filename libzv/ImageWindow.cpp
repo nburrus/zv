@@ -764,6 +764,12 @@ void ImageWindow::processKeyEvent (ImGuiKey keycode)
             break;
         }
 
+        case ImGuiKey_A: {
+            if (!activateAnnotationMode(AnnotationTool::Mode::AddArrow))
+                enqueueAction(ImageWindowAction::Kind::Zoom_RestoreAspectRatio);
+            break;
+        }
+
         case ImGuiKey_O: {
             if (CtrlOrCmd(io))
                 enqueueAction(ImageWindowAction::Kind::File_OpenImage);
@@ -807,7 +813,6 @@ void ImageWindow::processKeyEvent (ImGuiKey keycode)
         case ImGuiKey_E: enqueueAction(ImageWindowAction::Kind::Tools_ShowColorEditor); break;
         case ImGuiKey_N: enqueueAction(ImageWindowAction::Kind::Zoom_Normal); break;
         case ImGuiKey_M: enqueueAction(ImageWindowAction::Kind::Zoom_Maxspect); break;
-        case ImGuiKey_A: enqueueAction(ImageWindowAction::Kind::Zoom_RestoreAspectRatio); break;
         case ImGuiKey_Period: enqueueAction(ImageWindowAction::Kind::Zoom_Inc10p); break;
         case ImGuiKey_Comma: enqueueAction(ImageWindowAction::Kind::Zoom_Dec10p); break;
 

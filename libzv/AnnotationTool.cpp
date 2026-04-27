@@ -18,7 +18,9 @@ namespace zv
 
 AnnotationTool::AnnotationTool()
     : InteractiveTool(Kind::Annotation)
-{}
+{
+    _defaultArrowStyle.endStyle = LineEndpointStyle::Arrow;
+}
 
 bool AnnotationTool::handleKeyEvent(ImGuiKey key, const ImGuiIO& /*io*/)
 {
@@ -285,9 +287,11 @@ void AnnotationTool::finishDragCreation()
     }
 
     const Rect box = Rect::from_two_points(_creationStartTexture, _creationCurrentTexture);
-    if (_creationKind == CreationKind::Line)
+    if (_creationKind == CreationKind::Line || _creationKind == CreationKind::Arrow)
     {
-        LineAnnotationData lineData = _defaultLineStyle;
+        LineAnnotationData lineData = (_creationKind == CreationKind::Arrow)
+                                      ? _defaultArrowStyle
+                                      : _defaultLineStyle;
         lineData.textureLine = Line(_creationStartTexture, _creationCurrentTexture);
         commitNewLine(lineData);
     }
@@ -543,9 +547,11 @@ void AnnotationTool::renderAsActiveTool(const InteractiveToolRenderingContext& c
     // drag preview mirrors where the committed annotation will land.
     if (_creatingShape)
     {
-        if (_creationKind == CreationKind::Line)
+        if (_creationKind == CreationKind::Line || _creationKind == CreationKind::Arrow)
         {
-            LineAnnotationData ld = _defaultLineStyle;
+            LineAnnotationData ld = (_creationKind == CreationKind::Arrow)
+                                    ? _defaultArrowStyle
+                                    : _defaultLineStyle;
             ld.textureLine = Line(_creationStartTexture, _creationCurrentTexture);
             renderLineAnnotation(drawList, ld, renderTransform);
         }
@@ -623,6 +629,7 @@ void AnnotationTool::renderAsActiveTool(const InteractiveToolRenderingContext& c
             break;
         }
         case Mode::AddLine:
+        case Mode::AddArrow:
         case Mode::AddRectangle:
         case Mode::AddEllipse:
         case Mode::AddText:
@@ -632,6 +639,8 @@ void AnnotationTool::renderAsActiveTool(const InteractiveToolRenderingContext& c
             _selectedId = {};
             if (_mode == Mode::AddLine)
                 startDragCreation(CreationKind::Line, texturePos);
+            else if (_mode == Mode::AddArrow)
+                startDragCreation(CreationKind::Arrow, texturePos);
             else if (_mode == Mode::AddRectangle)
                 startDragCreation(CreationKind::Rectangle, texturePos);
             else if (_mode == Mode::AddEllipse)
@@ -757,12 +766,18 @@ void AnnotationTool::applySelectedLineStyle(const LineAnnotationData& style)
     const AnnotationId id = _selectedId;
     const ImColor color   = style.color;
     const int strokeWidth = style.strokeWidth;
-    _applyFunc([id, color, strokeWidth](ModifiedImage& im) {
+    const LineEndpointStyle startStyle = style.startStyle;
+    const LineEndpointStyle endStyle = style.endStyle;
+    const AnnotationStrokeStyle strokeStyle = style.strokeStyle;
+    _applyFunc([id, color, strokeWidth, startStyle, endStyle, strokeStyle](ModifiedImage& im) {
         AnnotationElement* el = im.annotations().findById(id);
         if (el && el->kind() == AnnotationElement::Kind::Line)
         {
             el->asLine().color = color;
             el->asLine().strokeWidth = strokeWidth;
+            el->asLine().startStyle = startStyle;
+            el->asLine().endStyle = endStyle;
+            el->asLine().strokeStyle = strokeStyle;
             im.markAnnotationsDirty();
         }
     });
@@ -806,6 +821,41 @@ void AnnotationTool::applySelectedEllipseStyle(const EllipseAnnotationData& styl
     });
 }
 
+namespace {
+
+bool endpointStyleCombo(const char* label, LineEndpointStyle& style)
+{
+    int value = (style == LineEndpointStyle::Arrow) ? 1 : 0;
+    const char* items[] = {"None", "Arrow"};
+    if (!ImGui::Combo(label, &value, items, 2))
+        return false;
+    style = (value == 1) ? LineEndpointStyle::Arrow : LineEndpointStyle::None;
+    return true;
+}
+
+bool strokeStyleCombo(const char* label, AnnotationStrokeStyle& style)
+{
+    int value = 0;
+    if (style == AnnotationStrokeStyle::Dashed)
+        value = 1;
+    else if (style == AnnotationStrokeStyle::Dotted)
+        value = 2;
+
+    const char* items[] = {"Solid", "Dashed", "Dotted"};
+    if (!ImGui::Combo(label, &value, items, 3))
+        return false;
+
+    if (value == 1)
+        style = AnnotationStrokeStyle::Dashed;
+    else if (value == 2)
+        style = AnnotationStrokeStyle::Dotted;
+    else
+        style = AnnotationStrokeStyle::Solid;
+    return true;
+}
+
+} // namespace
+
 void AnnotationTool::renderControls(const ImageSRGBA& /*firstIm*/)
 {
     ImGuiColorEditFlags colorFlags = ImGuiColorEditFlags_NoAlpha;
@@ -824,6 +874,21 @@ void AnnotationTool::renderControls(const ImageSRGBA& /*firstIm*/)
             anyChanged = true;
         const bool widthDone = ImGui::IsItemDeactivatedAfterEdit();
 
+        const bool startChanged = endpointStyleCombo("Start", _selectedLineData.startStyle);
+        if (startChanged)
+            anyChanged = true;
+        const bool startDone = ImGui::IsItemDeactivatedAfterEdit();
+
+        const bool endChanged = endpointStyleCombo("End", _selectedLineData.endStyle);
+        if (endChanged)
+            anyChanged = true;
+        const bool endDone = ImGui::IsItemDeactivatedAfterEdit();
+
+        const bool strokeChanged = strokeStyleCombo("Stroke", _selectedLineData.strokeStyle);
+        if (strokeChanged)
+            anyChanged = true;
+        const bool strokeDone = ImGui::IsItemDeactivatedAfterEdit();
+
         if (anyChanged)
         {
             if (!_propertyEditActive)
@@ -834,7 +899,10 @@ void AnnotationTool::renderControls(const ImageSRGBA& /*firstIm*/)
             applySelectedLineStyle(_selectedLineData);
         }
 
-        if (_propertyEditActive && (colorDone || widthDone))
+        if (_propertyEditActive
+            && (colorDone || widthDone
+                || startDone || endDone || strokeDone
+                || startChanged || endChanged || strokeChanged))
         {
             pushSelectedEditUndo();
             _selectedEditSnapshots.clear();
@@ -956,6 +1024,19 @@ void AnnotationTool::renderControls(const ImageSRGBA& /*firstIm*/)
         ImGui::TextDisabled("New line style");
         ImGui::ColorEdit4("Color##newline", (float*)&_defaultLineStyle.color.Value, colorFlags);
         ImGui::SliderInt("Width", &_defaultLineStyle.strokeWidth, 1, 10);
+        endpointStyleCombo("Start##newline", _defaultLineStyle.startStyle);
+        endpointStyleCombo("End##newline", _defaultLineStyle.endStyle);
+        strokeStyleCombo("Stroke##newline", _defaultLineStyle.strokeStyle);
+    }
+    else if (_mode == Mode::AddArrow)
+    {
+        // --- Default style shown briefly while drawing a new arrow ---
+        ImGui::TextDisabled("New arrow style");
+        ImGui::ColorEdit4("Color##newarrow", (float*)&_defaultArrowStyle.color.Value, colorFlags);
+        ImGui::SliderInt("Width##newarrow", &_defaultArrowStyle.strokeWidth, 1, 10);
+        endpointStyleCombo("Start##newarrow", _defaultArrowStyle.startStyle);
+        endpointStyleCombo("End##newarrow", _defaultArrowStyle.endStyle);
+        strokeStyleCombo("Stroke##newarrow", _defaultArrowStyle.strokeStyle);
     }
     else if (_mode == Mode::AddRectangle)
     {

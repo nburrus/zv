@@ -312,6 +312,19 @@ void ControlsWindow::Impl::renderModifiersTab (float cursorOverlayHeight)
 
     ImGui::SameLine();
 
+    const bool drawingArrow = (isAnnotating && annotTool.mode() == AnnotationTool::Mode::AddArrow);
+    ImGui::PushID("add-arrow");
+    if (activeButton(ICON_FLOW_LINE, drawingArrow))
+    {
+        activateAnnotationMode();
+        annotTool.setMode(drawingArrow ? AnnotationTool::Mode::Select
+                                       : AnnotationTool::Mode::AddArrow);
+    }
+    ImGui::PopID();
+    helpMarker ("Add Arrow", contentSize.x * 0.8, false /* no extra question mark */);
+
+    ImGui::SameLine();
+
     const bool drawingRectangle = (isAnnotating && annotTool.mode() == AnnotationTool::Mode::AddRectangle);
     if (activeButton(ICON_RECTANGLE, drawingRectangle))
     {
@@ -655,6 +668,8 @@ void ControlsWindow::Impl::renderMenu ()
                 const auto mode = imageWindowState.activeToolState.annotationTool.mode();
                 if (ImGui::MenuItem("Add Line", "Shift+L", isAnnotating && mode == AnnotationTool::Mode::AddLine))
                     activateAnnotationMode(AnnotationTool::Mode::AddLine);
+                if (ImGui::MenuItem("Add Arrow", "Shift+A", isAnnotating && mode == AnnotationTool::Mode::AddArrow))
+                    activateAnnotationMode(AnnotationTool::Mode::AddArrow);
                 if (ImGui::MenuItem("Add Rectangle", "Shift+R", isAnnotating && mode == AnnotationTool::Mode::AddRectangle))
                     activateAnnotationMode(AnnotationTool::Mode::AddRectangle);
                 if (ImGui::MenuItem("Add Ellipse", "Shift+O", isAnnotating && mode == AnnotationTool::Mode::AddEllipse))

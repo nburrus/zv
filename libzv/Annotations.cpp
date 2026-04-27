@@ -441,6 +441,96 @@ AnnotationHitResult AnnotationDocument::hitTest(const Point& widgetPos,
 // Shared rendering helpers
 // ---------------------------------------------------------------------------
 
+namespace {
+
+void drawStyledShaft(ImDrawList* drawList,
+                     const ImVec2& p1,
+                     const ImVec2& p2,
+                     ImU32 color,
+                     float thickness,
+                     AnnotationStrokeStyle strokeStyle)
+{
+    const ImVec2 delta = p2 - p1;
+    const float len = static_cast<float>(toPoint(delta).length());
+    if (len <= 0.5f)
+        return;
+
+    if (strokeStyle == AnnotationStrokeStyle::Solid)
+    {
+        drawList->AddLine(p1, p2, color, thickness);
+        return;
+    }
+
+    const ImVec2 dir = delta * (1.0f / len);
+
+    if (strokeStyle == AnnotationStrokeStyle::Dashed)
+    {
+        const float dashLen = std::max(6.0f, thickness * 4.0f);
+        const float gapLen = std::max(4.0f, thickness * 2.5f);
+        for (float d = 0.0f; d < len; d += dashLen + gapLen)
+        {
+            const float d2 = std::min(d + dashLen, len);
+            drawList->AddLine(p1 + dir * d, p1 + dir * d2, color, thickness);
+        }
+        return;
+    }
+
+    const float spacing = std::max(6.0f, thickness * 3.0f);
+    const float radius = std::max(1.0f, thickness * 0.5f);
+    for (float d = 0.0f; d <= len; d += spacing)
+        drawList->AddCircleFilled(p1 + dir * d, radius, color);
+}
+
+void drawArrowHead(ImDrawList* drawList,
+                   const ImVec2& tip,
+                   const ImVec2& dirTowardTip,
+                   ImU32 color,
+                   float thickness)
+{
+    const float headLength = std::max(10.0f, thickness * 4.0f);
+    const float headWidth = std::max(7.0f, thickness * 2.5f);
+    const ImVec2 perp(-dirTowardTip.y, dirTowardTip.x);
+    const ImVec2 base = tip - dirTowardTip * headLength;
+    drawList->AddTriangleFilled(tip,
+                                base + perp * (headWidth * 0.5f),
+                                base - perp * (headWidth * 0.5f),
+                                color);
+}
+
+void drawLineWithEndpoints(ImDrawList* drawList,
+                           const ImVec2& p1,
+                           const ImVec2& p2,
+                           ImU32 color,
+                           float thickness,
+                           LineEndpointStyle startStyle,
+                           LineEndpointStyle endStyle,
+                           AnnotationStrokeStyle strokeStyle)
+{
+    const ImVec2 delta = p2 - p1;
+    const float len = static_cast<float>(toPoint(delta).length());
+    if (len <= 0.5f)
+        return;
+
+    const ImVec2 dir = delta * (1.0f / len);
+    const float headLength = std::max(10.0f, thickness * 4.0f);
+    ImVec2 shaftStart = p1;
+    ImVec2 shaftEnd = p2;
+
+    if (startStyle == LineEndpointStyle::Arrow)
+        shaftStart = p1 + dir * std::min(headLength, len * 0.45f);
+    if (endStyle == LineEndpointStyle::Arrow)
+        shaftEnd = p2 - dir * std::min(headLength, len * 0.45f);
+
+    drawStyledShaft(drawList, shaftStart, shaftEnd, color, thickness, strokeStyle);
+
+    if (startStyle == LineEndpointStyle::Arrow)
+        drawArrowHead(drawList, p1, dir * -1.0f, color, thickness);
+    if (endStyle == LineEndpointStyle::Arrow)
+        drawArrowHead(drawList, p2, dir, color, thickness);
+}
+
+} // namespace
+
 void renderLineAnnotation(ImDrawList* drawList,
                           const LineAnnotationData& data,
                           const AnnotationRenderTransform& transform)
@@ -448,7 +538,8 @@ void renderLineAnnotation(ImDrawList* drawList,
     const ImVec2 p1 = transform.textureToScreen(data.textureLine.p1);
     const ImVec2 p2 = transform.textureToScreen(data.textureLine.p2);
     const float thickness = std::max(1.0f, data.strokeWidth * transform.imagePixelToScreenPixel);
-    drawList->AddLine(p1, p2, data.color, thickness);
+    drawLineWithEndpoints(drawList, p1, p2, data.color, thickness,
+                          data.startStyle, data.endStyle, data.strokeStyle);
 }
 
 void renderRectangleAnnotation(ImDrawList* drawList,
