@@ -1,0 +1,74 @@
+[
+  {
+    "label": "CMake: configure-debug",
+    "command": "cmake",
+    "args": ["--preset", "debug"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "hide": "on_success",
+    "reveal": "no_focus",
+    "save": "all"
+  },
+  {
+    "label": "CMake: configure-release",
+    "command": "cmake",
+    "args": ["--preset", "release"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "hide": "on_success",
+    "reveal": "no_focus",
+    "save": "all"
+  },
+  {
+    "label": "CMake: build-debug",
+    "command": "cmake",
+    "args": ["--build", "--preset", "debug"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "hide": "on_success",
+    "reveal": "no_focus",
+    "save": "all"
+  },
+  {
+    "label": "CMake: build-release",
+    "command": "cmake",
+    "args": ["--build", "--preset", "release"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "hide": "on_success",
+    "reveal": "no_focus",
+    "save": "all"
+  },
+  {
+    "label": "CMake: build-zv-debug",
+    "command": "cmake",
+    "args": ["--build", "--preset", "debug", "--target", "zvbin"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "hide": "on_success",
+    "reveal": "no_focus",
+    "save": "all"
+  },
+  {
+    "label": "CMake: build-zv-client-debug",
+    "command": "cmake",
+    "args": ["--build", "--preset", "debug", "--target", "zv-client"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "hide": "on_success",
+    "reveal": "no_focus",
+    "save": "all"
+  },
+  {
+    "label": "CMake: test-debug",
+    "command": "ctest",
+    "args": ["--preset", "debug"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "hide": "never",
+    "reveal": "no_focus",
+    "save": "all",
+  },
+  {
+    "label": "CMake: test-release",
+    "command": "ctest",
+    "args": ["--preset", "release"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "save": "all",
+    "hide": "never",
+    "reveal": "no_focus"
+  }
+]

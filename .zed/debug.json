@@ -1,0 +1,97 @@
+[
+  {
+    "label": "zv",
+    "adapter": "CodeLLDB",
+    "request": "launch",
+    "program": "$ZED_WORKTREE_ROOT/build/zv/zv",
+    "args": [
+      "$ZED_WORKTREE_ROOT/tests/baboon.png",
+      "$ZED_WORKTREE_ROOT/tests/rgbgrid.png",
+      "$ZED_WORKTREE_ROOT/tests/brettel1997_protan_wn_1.0.png"
+    ],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "build": "CMake: build-zv"
+  },
+  {
+    "label": "zv (Windows)",
+    "adapter": "CodeLLDB",
+    "request": "launch",
+    "program": "$ZED_WORKTREE_ROOT/build/zv/zv.exe",
+    "args": ["--require-server"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "build": "CMake: build-zv"
+  },
+  {
+    "label": "Python: Current File",
+    "adapter": "Debugpy",
+    "request": "launch",
+    "program": "$ZED_FILE",
+    "cwd": "$ZED_DIRNAME",
+    "env": {
+      "PYTHONPATH": "$ZED_WORKTREE_ROOT/build/python:$ZED_WORKTREE_ROOT/python"
+    },
+    "justMyCode": false
+  },
+  {
+    "label": "zv-python",
+    "adapter": "Debugpy",
+    "request": "launch",
+    "program": "$ZED_WORKTREE_ROOT/python/scripts/zv-python",
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "env": {
+      "PYTHONPATH": "$ZED_WORKTREE_ROOT/build/python:$ZED_WORKTREE_ROOT/python"
+    },
+    "justMyCode": false
+  },
+  {
+    "label": "zv-log",
+    "adapter": "Debugpy",
+    "request": "launch",
+    "program": "$ZED_WORKTREE_ROOT/python/zv/log.py",
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "env": {
+      "PYTHONPATH": "$ZED_WORKTREE_ROOT/build/python:$ZED_WORKTREE_ROOT/python"
+    },
+    "justMyCode": false
+  },
+  {
+    "label": "zv-client",
+    "adapter": "CodeLLDB",
+    "request": "launch",
+    "program": "$ZED_WORKTREE_ROOT/build/zv-client/zv-client",
+    "args": [
+      "--host",
+      "localhost",
+      "--port",
+      "4207",
+      "tests/brettel1997_deutan_wn_1.0.pn",
+      "tests/brettel1997_protan_wn_1.0.png",
+      "tests/brettel1997_tritan_wn_1.0.png",
+      "tests/daltonize_tritan_1.0.png",
+      "tests/rgbgrid.png",
+      "tests/rgbgrid_small.png"
+    ],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "build": "CMake: build-zv-client"
+  },
+  {
+    "label": "zv-client (Windows)",
+    "adapter": "CodeLLDB",
+    "request": "launch",
+    "program": "$ZED_WORKTREE_ROOT/build/zv-client/zv-client.exe",
+    "args": [
+      "--host",
+      "localhost",
+      "--port",
+      "4207",
+      "tests/brettel1997_deutan_wn_1.0.pn",
+      "tests/brettel1997_protan_wn_1.0.png",
+      "tests/brettel1997_tritan_wn_1.0.png",
+      "tests/daltonize_tritan_1.0.png",
+      "tests/rgbgrid.png",
+      "tests/rgbgrid_small.png"
+    ],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "build": "CMake: build-zv-client"
+  }
+]
