@@ -1,0 +1,32 @@
+set dotenv-load := false
+
+default:
+    just --list
+
+check:
+    cargo check
+
+build:
+    cargo build
+
+release:
+    cargo build --release
+
+fmt:
+    cargo fmt
+
+fmt-check:
+    cargo fmt --check
+
+clippy:
+    cargo clippy --all-targets -- -D warnings
+
+run *args:
+    cargo run -- {{args}}
+
+test:
+    cargo run -- ../tests/baboon.png
+
+clean:
+    cargo clean
+

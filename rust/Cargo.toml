@@ -1,0 +1,6 @@
+[workspace]
+members = [
+    "crates/zv-viewer",
+]
+resolver = "3"
+
