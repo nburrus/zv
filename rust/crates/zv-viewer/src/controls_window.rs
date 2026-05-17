@@ -12,6 +12,9 @@ pub struct ControlsWindow {
     action_queue: Arc<Mutex<Vec<AppAction>>>,
     enabled: bool,
     target_position: Option<egui::Pos2>,
+    has_ever_been_shown: bool,
+    apply_initial_position_on_show: bool,
+    focus_on_show: bool,
 }
 
 impl ControlsWindow {
@@ -25,11 +28,19 @@ impl ControlsWindow {
             action_queue,
             enabled: false,
             target_position: None,
+            has_ever_been_shown: false,
+            apply_initial_position_on_show: false,
+            focus_on_show: false,
         }
     }
 
     pub fn toggle(&mut self) {
         self.enabled = !self.enabled;
+        if self.enabled {
+            self.apply_initial_position_on_show = !self.has_ever_been_shown;
+            self.has_ever_been_shown = true;
+            self.focus_on_show = true;
+        }
     }
 
     pub fn set_target_position(&mut self, position: Option<egui::Pos2>) {
@@ -56,8 +67,12 @@ impl ControlsWindow {
             .with_inner_size(egui::vec2(320.0, 120.0))
             .with_resizable(true)
             .with_visible(self.enabled);
-        if let Some(position) = self.target_position {
-            builder = builder.with_position(position);
+        let apply_initial_position_on_show = self.apply_initial_position_on_show;
+        self.apply_initial_position_on_show = false;
+        if apply_initial_position_on_show {
+            if let Some(position) = self.target_position {
+                builder = builder.with_position(position);
+            }
         }
 
         ctx.show_viewport_deferred(self.viewport_id, builder, move |ctx, _class| {
@@ -89,5 +104,10 @@ impl ControlsWindow {
                 }
             });
         });
+
+        if self.focus_on_show {
+            self.focus_on_show = false;
+            ctx.send_viewport_cmd_to(self.viewport_id, egui::ViewportCommand::Focus);
+        }
     }
 }

@@ -109,7 +109,8 @@ Current behavior:
 
 - Hidden initially.
 - Toggled by right-clicking the image.
-- Positioned next to the image window following the C++ placement policy as closely as egui viewport APIs allow.
+- Positioned next to the image window only on first show; afterward it keeps the user-managed position across hide/show cycles.
+- Right-click show requests focus for the controls viewport so it comes to front.
 - Displays the pixel under the mouse:
   - image name
   - pixel coordinates
