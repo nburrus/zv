@@ -67,20 +67,23 @@ It owns:
 - `ControlsWindow`
 - image entries
 - selected image index
-- pending image navigation actions
+- pending app actions
+- controls action queue shared with the controls viewport
 - shared cursor pixel info
 - applied image geometry bookkeeping
 
 `Viewer::update` runs the viewer frame:
 
-1. Collect keyboard actions.
-2. Load the selected image lazily.
-3. Apply initial image window geometry.
-4. Render the image window.
-5. Toggle controls on image right-click.
-6. Update controls placement.
-7. Render the controls viewport.
-8. Return a `ViewerDebugState` snapshot for debug automation.
+1. Collect shortcuts from the root viewport.
+2. Collect shortcuts from the controls viewport queue.
+3. Apply pending app actions centrally.
+4. Load the selected image lazily.
+5. Apply initial image window geometry.
+6. Render the image window.
+7. Toggle controls on image right-click.
+8. Update controls placement.
+9. Render the controls viewport.
+10. Return a `ViewerDebugState` snapshot for debug automation.
 
 ### `ImageWindow`
 
@@ -111,7 +114,7 @@ Current behavior:
   - image name
   - pixel coordinates
   - sRGBA values
-- Handles `q` as quit when the controls window has focus.
+- Sends shortcut actions through the same shared action path as the root viewport.
 
 `Viewer` owns and manages `ControlsWindow`; the controls window does not own viewer state.
 
@@ -178,10 +181,18 @@ So this is a faithful policy port using the available egui APIs, not a byte-for-
 
 Current runtime input:
 
-- `q` quits from the image window.
-- `q` also quits from the controls window.
+- `q` quits from either root or controls viewport through the shared shortcut router.
 - right-click on the image toggles controls visibility.
-- arrow/space/backspace navigation hooks exist but are still minimal.
+- arrow/space/backspace navigation works from either viewport through shared app actions.
+
+Shortcut handling is centralized in `shortcuts.rs`:
+
+- both viewports call the same shortcut collector
+- actions are executed in one place by `Viewer`
+- global shortcuts are gated by `ctx.wants_keyboard_input()`, so text-edit widgets can consume keyboard input without firing global commands
+- controls viewport shortcut collection explicitly requests a root viewport repaint when it enqueues actions, so root-driven viewer updates continue even when controls is focused
+- after applying actions, `Viewer` explicitly requests repaint for both root and controls viewports so focused-window shortcuts still refresh the other viewport
+- scoped shortcut kinds already exist for future extension (`GlobalAlways`, `GlobalWhenNotTyping`, and `ViewportOnly`)
 
 A previous `q` deadlock was fixed by avoiding viewport close commands inside `ctx.input` closures.
 The code now records the intent inside the input closure and sends viewport commands afterward.

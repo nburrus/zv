@@ -6,6 +6,7 @@ mod geometry;
 mod image;
 mod image_window;
 mod render;
+mod shortcuts;
 mod viewer;
 
 use std::path::PathBuf;

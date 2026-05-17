@@ -1,5 +1,6 @@
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ImageWindowAction {
+pub enum AppAction {
     NextImage,
     PreviousImage,
+    Quit,
 }

@@ -3,19 +3,21 @@ use std::sync::{Arc, Mutex};
 
 use eframe::egui;
 
-use crate::actions::ImageWindowAction;
+use crate::actions::AppAction;
 use crate::controls_window::ControlsWindow;
 use crate::debug::{SelectedImageDebug, ViewerDebugState};
 use crate::geometry::{controls_position_for_image_window, initial_image_window_geometry};
 use crate::image::{ImageItemData, RgbaImage, load_rgba_image};
 use crate::image_window::{CursorPixelInfo, ImageWindow};
+use crate::shortcuts::{ShortcutViewport, collect_shortcuts};
 
 pub struct Viewer {
     image_window: ImageWindow,
     controls_window: ControlsWindow,
     entries: Vec<ImageEntry>,
     selected_index: usize,
-    pending_actions: Vec<ImageWindowAction>,
+    pending_actions: Vec<AppAction>,
+    controls_action_queue: Arc<Mutex<Vec<AppAction>>>,
     cursor_info: Arc<Mutex<Option<CursorPixelInfo>>>,
     applied_image_geometry_for: Option<(u32, u32)>,
 }
@@ -38,12 +40,14 @@ impl Viewer {
         };
 
         let cursor_info = Arc::new(Mutex::new(None));
+        let controls_action_queue = Arc::new(Mutex::new(Vec::new()));
         Self {
             image_window: ImageWindow::default(),
-            controls_window: ControlsWindow::new(cursor_info.clone()),
+            controls_window: ControlsWindow::new(cursor_info.clone(), controls_action_queue.clone()),
             entries,
             selected_index: 0,
             pending_actions: Vec::new(),
+            controls_action_queue,
             cursor_info,
             applied_image_geometry_for: None,
         }
@@ -51,7 +55,8 @@ impl Viewer {
 
     pub fn update(&mut self, ctx: &egui::Context) -> ViewerDebugState {
         self.collect_keyboard_actions(ctx);
-        self.apply_pending_actions();
+        self.collect_controls_actions();
+        self.apply_pending_actions(ctx);
 
         let mut image_rect = None;
         let mut selected_image_debug = None;
@@ -106,30 +111,33 @@ impl Viewer {
     }
 
     fn collect_keyboard_actions(&mut self, ctx: &egui::Context) {
-        let mut close_requested = false;
-        ctx.input(|input| {
-            if input.key_pressed(egui::Key::ArrowDown) || input.key_pressed(egui::Key::Space) {
-                self.pending_actions.push(ImageWindowAction::NextImage);
-            }
-            if input.key_pressed(egui::Key::ArrowUp) || input.key_pressed(egui::Key::Backspace) {
-                self.pending_actions.push(ImageWindowAction::PreviousImage);
-            }
-            if input.key_pressed(egui::Key::Q) {
-                close_requested = true;
-            }
-        });
-        if close_requested {
-            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        self.pending_actions
+            .extend(collect_shortcuts(ctx, ShortcutViewport::MainImage));
+    }
+
+    fn collect_controls_actions(&mut self) {
+        if let Ok(mut queued) = self.controls_action_queue.lock() {
+            self.pending_actions.append(&mut queued);
         }
     }
 
-    fn apply_pending_actions(&mut self) {
+    fn apply_pending_actions(&mut self, ctx: &egui::Context) {
         let actions = std::mem::take(&mut self.pending_actions);
+        let applied_any = !actions.is_empty();
         for action in actions {
             match action {
-                ImageWindowAction::NextImage => self.select_relative(1),
-                ImageWindowAction::PreviousImage => self.select_relative(-1),
+                AppAction::NextImage => self.select_relative(1),
+                AppAction::PreviousImage => self.select_relative(-1),
+                AppAction::Quit => {
+                    // In this app, ROOT is the main image viewport/window.
+                    ctx.send_viewport_cmd_to(egui::ViewportId::ROOT, egui::ViewportCommand::Close)
+                }
             }
+        }
+        if applied_any {
+            // Keep the main image viewport and controls viewport visually in sync.
+            ctx.request_repaint_of(egui::ViewportId::ROOT);
+            ctx.request_repaint_of(self.controls_window.viewport_id());
         }
     }
 

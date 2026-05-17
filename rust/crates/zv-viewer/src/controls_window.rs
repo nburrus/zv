@@ -2,20 +2,27 @@ use std::sync::{Arc, Mutex};
 
 use eframe::egui;
 
+use crate::actions::AppAction;
 use crate::image_window::CursorPixelInfo;
+use crate::shortcuts::{ShortcutViewport, collect_shortcuts};
 
 pub struct ControlsWindow {
     viewport_id: egui::ViewportId,
     cursor_info: Arc<Mutex<Option<CursorPixelInfo>>>,
+    action_queue: Arc<Mutex<Vec<AppAction>>>,
     enabled: bool,
     target_position: Option<egui::Pos2>,
 }
 
 impl ControlsWindow {
-    pub fn new(cursor_info: Arc<Mutex<Option<CursorPixelInfo>>>) -> Self {
+    pub fn new(
+        cursor_info: Arc<Mutex<Option<CursorPixelInfo>>>,
+        action_queue: Arc<Mutex<Vec<AppAction>>>,
+    ) -> Self {
         Self {
             viewport_id: egui::ViewportId::from_hash_of("zv-controls-window"),
             cursor_info,
+            action_queue,
             enabled: false,
             target_position: None,
         }
@@ -43,6 +50,7 @@ impl ControlsWindow {
 
     pub fn show(&mut self, ctx: &egui::Context) {
         let cursor_info = self.cursor_info.clone();
+        let action_queue = self.action_queue.clone();
         let mut builder = egui::ViewportBuilder::default()
             .with_title("ZV Controls")
             .with_inner_size(egui::vec2(320.0, 120.0))
@@ -53,9 +61,15 @@ impl ControlsWindow {
         }
 
         ctx.show_viewport_deferred(self.viewport_id, builder, move |ctx, _class| {
-            let close_requested = ctx.input(|input| input.key_pressed(egui::Key::Q));
-            if close_requested {
-                ctx.send_viewport_cmd_to(egui::ViewportId::ROOT, egui::ViewportCommand::Close);
+            let new_actions = collect_shortcuts(ctx, ShortcutViewport::Controls);
+            if !new_actions.is_empty() {
+                if let Ok(mut actions) = action_queue.lock() {
+                    actions.extend(new_actions);
+                }
+                // Viewer::update runs on the root viewport; wake it so queued
+                // controls actions are applied even when only controls is focused.
+                // ROOT corresponds to the main image viewport/window.
+                ctx.request_repaint_of(egui::ViewportId::ROOT);
             }
 
             egui::CentralPanel::default().show(ctx, |ui| {

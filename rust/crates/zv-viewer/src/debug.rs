@@ -277,6 +277,7 @@ impl RuntimeDebug {
             }
             DebugAction::Hover { target, at } => {
                 let pos = resolve_target_pos(target, at, state);
+                // Debug "root" input targets the main image viewport/window.
                 let viewport_id = egui::ViewportId::ROOT;
                 self.queue_hover(viewport_id, pos);
                 request_repaint_after_scripted_input(ctx, state, viewport_id);
@@ -285,6 +286,7 @@ impl RuntimeDebug {
             }
             DebugAction::RightClick { target, at } => {
                 let pos = resolve_target_pos(target, at, state);
+                // Debug "root" input targets the main image viewport/window.
                 let viewport_id = egui::ViewportId::ROOT;
                 self.queue_right_click(viewport_id, pos);
                 request_repaint_after_scripted_input(ctx, state, viewport_id);
@@ -585,6 +587,7 @@ fn resolve_target_pos(target: DebugTarget, at: [f32; 2], state: &ViewerDebugStat
 
 fn resolve_viewport(viewport: DebugViewport, state: &ViewerDebugState) -> egui::ViewportId {
     match viewport {
+        // ROOT corresponds to the main image viewport/window.
         DebugViewport::Root => egui::ViewportId::ROOT,
         DebugViewport::Controls => state.controls_viewport_id,
     }
