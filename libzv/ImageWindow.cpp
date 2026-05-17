@@ -1145,7 +1145,7 @@ void ImageWindow::renderFrame ()
         for (int c = 0; c < impl->currentLayout.config.numCols; ++c)
         {
             const int idx = r*impl->currentLayout.config.numCols + c;
-            if (idx < impl->currentImages.size() && impl->currentImages[idx] && impl->currentImages[idx]->hasValidData())
+            if (idx < impl->currentImages.size() && impl->currentImages[idx] && impl->currentImages[idx]->finalData())
             {
                 const auto& rect = impl->currentLayout.imageRects[idx];
                 const Point imageWidgetSize = Point(globalImageWidgetContentSize.x * rect.size.x,
@@ -1170,10 +1170,16 @@ void ImageWindow::renderFrame ()
             
             if (!impl->currentImages[idx]->finalData()->cpuData->hasData())
             {
-                ImGui::SetCursorScreenPos (imVec2(widgetGeometries[idx].topLeft()));
+                const ImVec2 widgetTopLeft = imVec2(widgetGeometries[idx].topLeft());
+                const ImVec2 widgetSize = imSize(widgetGeometries[idx]);
+
+                ImGui::SetCursorScreenPos (widgetTopLeft);
+                ImGui::Dummy(ImVec2(std::max(1.0f, widgetSize.x), std::max(1.0f, widgetSize.y)));
+
                 switch (impl->currentImages[idx]->finalData()->status)
                 {
                     case ImageItemData::Status::FailedToLoad: {
+                        ImGui::SetCursorScreenPos (widgetTopLeft);
                         ImGui::TextColored(ImVec4(1, 0, 0, 1), "ERROR: could not load the image %s.\nPath: %s",
                                    impl->currentImages[idx]->item()->prettyName.c_str(),
                                    impl->currentImages[idx]->item()->sourceImagePath.c_str());

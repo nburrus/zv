@@ -140,8 +140,7 @@ bool ModifiedImage::updateModifiers()
     clearIntermediateModifiersData ();
     _modifiersChangedSinceLastUpdate = false;
 
-    if (!_annotationsDirty)
-        syncItemMetadataFromFinalData();
+    syncItemMetadataFromFinalData();
 
     return true;
 }
@@ -163,6 +162,7 @@ bool ModifiedImage::updateAnnotations(AnnotationRenderer& renderer)
         _annotatedData.reset();
     }
     _annotationsDirty = false;
+    syncItemMetadataFromFinalData();
     return true;
 }
 
