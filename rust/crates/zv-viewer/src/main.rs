@@ -10,6 +10,7 @@ mod shortcuts;
 mod viewer;
 
 use std::path::PathBuf;
+use std::time::Instant;
 
 use clap::Parser;
 
@@ -30,6 +31,7 @@ struct Cli {
 }
 
 fn main() -> anyhow::Result<()> {
+    let launched_at = Instant::now();
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
@@ -50,6 +52,7 @@ fn main() -> anyhow::Result<()> {
             Ok(Box::new(app::ZvApp::new(
                 cc,
                 cli.images.clone(),
+                launched_at,
                 debug::DebugConfig::new(
                     cli.debug_script_json.clone(),
                     cli.debug_artifact_dir.clone(),

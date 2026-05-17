@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::time::Instant;
 
 use eframe::egui;
 
@@ -9,12 +10,15 @@ use crate::viewer::Viewer;
 pub struct ZvApp {
     viewer: Viewer,
     runtime_debug: Option<RuntimeDebug>,
+    launched_at: Instant,
+    logged_first_frame: bool,
 }
 
 impl ZvApp {
     pub fn new(
         cc: &eframe::CreationContext<'_>,
         image_paths: Vec<PathBuf>,
+        launched_at: Instant,
         debug_config: DebugConfig,
     ) -> Self {
         tracing::info!("creating zv-viewer app");
@@ -38,6 +42,8 @@ impl ZvApp {
         Self {
             viewer: Viewer::new(image_paths),
             runtime_debug,
+            launched_at,
+            logged_first_frame: false,
         }
     }
 }
@@ -58,6 +64,13 @@ impl eframe::App for ZvApp {
         let state = self.viewer.update(ctx);
         if let Some(runtime_debug) = &mut self.runtime_debug {
             runtime_debug.update_after_viewer(ctx, &state);
+        }
+        if !self.logged_first_frame {
+            self.logged_first_frame = true;
+            tracing::info!(
+                elapsed_ms = self.launched_at.elapsed().as_millis(),
+                "first frame rendered"
+            );
         }
     }
 }
