@@ -5,6 +5,7 @@ use eframe::egui;
 
 use crate::actions::ImageWindowAction;
 use crate::controls_window::ControlsWindow;
+use crate::debug::{SelectedImageDebug, ViewerDebugState};
 use crate::geometry::{controls_position_for_image_window, initial_image_window_geometry};
 use crate::image::{ImageItemData, RgbaImage, load_rgba_image};
 use crate::image_window::{CursorPixelInfo, ImageWindow};
@@ -48,10 +49,12 @@ impl Viewer {
         }
     }
 
-    pub fn update(&mut self, ctx: &egui::Context) {
+    pub fn update(&mut self, ctx: &egui::Context) -> ViewerDebugState {
         self.collect_keyboard_actions(ctx);
         self.apply_pending_actions();
 
+        let mut image_rect = None;
+        let mut selected_image_debug = None;
         let selected = if let Some(entry) = self.entries.get_mut(self.selected_index) {
             entry.ensure_loaded();
             Some((
@@ -66,6 +69,14 @@ impl Viewer {
         if let Some((image_name, data, error)) = selected {
             if let Some(data) = data.as_ref() {
                 self.apply_image_window_geometry(ctx, data);
+                if let Ok(data) = data.lock() {
+                    selected_image_debug = Some(SelectedImageDebug {
+                        name: image_name.clone(),
+                        width: data.width(),
+                        height: data.height(),
+                        bytes_per_row: data.bytes_per_row(),
+                    });
+                }
             }
 
             let image_output = self.image_window.show(
@@ -78,10 +89,20 @@ impl Viewer {
             if image_output.secondary_clicked {
                 self.controls_window.toggle();
             }
+            image_rect = image_output.image_rect;
         }
 
         self.update_controls_position(ctx);
         self.controls_window.show(ctx);
+
+        ViewerDebugState {
+            image_rect,
+            controls_enabled: self.controls_window.is_enabled(),
+            controls_viewport_id: self.controls_window.viewport_id(),
+            controls_target_position: self.controls_window.target_position(),
+            cursor_info: self.cursor_info.lock().ok().and_then(|info| info.clone()),
+            selected_image: selected_image_debug,
+        }
     }
 
     fn collect_keyboard_actions(&mut self, ctx: &egui::Context) {

@@ -1,0 +1,17 @@
+{
+  "wait_frames_default": 60,
+  "actions": [
+    { "type": "wait_for_image" },
+    { "type": "right_click", "target": "image", "at": [0.5, 0.5] },
+    { "type": "wait_frames", "frames": 0 },
+    { "type": "state", "name": "controls_open" },
+    { "type": "hover", "target": "image", "at": [0.25, 0.25] },
+    { "type": "wait_frames", "frames": 0 },
+    { "type": "state", "name": "hover_1" },
+    { "type": "hover", "target": "image", "at": [0.75, 0.75] },
+    { "type": "wait_frames", "frames": 0 },
+    { "type": "state", "name": "hover_2" },
+    { "type": "screenshot", "name": "hover_controls", "viewport": "controls" },
+    { "type": "key", "viewport": "root", "key": "q" }
+  ]
+}

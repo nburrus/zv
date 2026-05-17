@@ -29,6 +29,18 @@ impl ControlsWindow {
         self.target_position = position;
     }
 
+    pub fn viewport_id(&self) -> egui::ViewportId {
+        self.viewport_id
+    }
+
+    pub fn is_enabled(&self) -> bool {
+        self.enabled
+    }
+
+    pub fn target_position(&self) -> Option<egui::Pos2> {
+        self.target_position
+    }
+
     pub fn show(&mut self, ctx: &egui::Context) {
         let cursor_info = self.cursor_info.clone();
         let mut builder = egui::ViewportBuilder::default()
