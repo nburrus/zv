@@ -65,6 +65,7 @@ It owns:
 
 - `ImageWindow`
 - `ControlsWindow`
+- `ImageWindowGeometryState`
 - image entries
 - selected image index
 - pending app actions
@@ -74,16 +75,17 @@ It owns:
 
 `Viewer::update` runs the viewer frame:
 
-1. Collect shortcuts from the root viewport.
-2. Collect shortcuts from the controls viewport queue.
-3. Apply pending app actions centrally.
-4. Load the selected image lazily.
-5. Apply initial image window geometry.
-6. Render the image window.
-7. Toggle controls on image right-click.
-8. Update controls placement.
-9. Render the controls viewport.
-10. Return a `ViewerDebugState` snapshot for debug automation.
+1. Observe root viewport geometry and reconcile any pending programmatic resize.
+2. Collect shortcuts from the root viewport.
+3. Collect shortcuts from the controls viewport queue.
+4. Apply pending app actions centrally.
+5. Load the selected image lazily.
+6. Apply initial image window geometry.
+7. Render the image window.
+8. Toggle controls on image right-click.
+9. Update controls placement.
+10. Render the controls viewport.
+11. Return a `ViewerDebugState` snapshot for debug automation.
 
 ### `ImageWindow`
 
@@ -92,10 +94,11 @@ It owns:
 Current behavior:
 
 - Uses a black central panel.
-- Shows image name, size, and CPU row stride.
-- Allocates an image-sized rectangle.
+- Allocates the full available content rectangle for the image.
+- Does not add internal aspect-fit padding; aspect ratio is restored by resizing the OS window.
 - Adds an `egui_wgpu::Callback` over that rectangle.
 - Updates cursor pixel info from hover coordinates.
+- Draws a compact in-image status overlay with image size and hover sRGBA values.
 - Reports secondary clicks so `Viewer` can toggle the controls window.
 
 The image is not submitted through an egui texture handle.
@@ -162,8 +165,9 @@ This gives one object responsibility for the image's CPU data and its associated
 During prepare it uploads `ImageItemData` to the GPU if needed.
 During paint it binds the image texture and draws a full-viewport quad.
 
-The current shader deliberately modifies color output so the custom path is visibly proven.
-It is a placeholder for the real viewer shader work: zooming, sampling modes, image display transforms, and annotation composition.
+The current shader samples and displays the image texture directly.
+The sampler uses nearest filtering for magnification and linear filtering for minification.
+This is faithful for color display and gives better downsampling than nearest-only, but it still does not implement true anti-aliased minification through mipmaps or custom reconstruction.
 
 ## Window Geometry
 
@@ -173,10 +177,22 @@ It ports the relevant C++ policy at a high level:
 - initial image window size matches the image size
 - image window is clamped to monitor size if needed
 - aspect ratio is preserved when clamped
+- normal resize uses the OS window content size directly
+- `n`, `a`, `m`, `<`, `>`, `.`, and `,` resize the OS window rather than adding padding inside the image viewport
 - controls window is placed to the left of the image window when possible, otherwise to the right
 
-Egui exposes viewport commands and monitor size, but it does not expose all of the same low-level window/work-area details as GLFW.
-So this is a faithful policy port using the available egui APIs, not a byte-for-byte platform port.
+`ImageWindowGeometryState` owns the C++-style geometry mode tracking:
+
+- normal size
+- aspect-ratio source size
+- last requested programmatic inner size
+- inferred user-defined geometry
+- cached platform maximum inner size for maxspect
+
+Egui exposes viewport commands, monitor size, inner rect, and outer rect, but it does not expose a portable monitor work area.
+The implementation estimates drawable inner area from the monitor size and observed window decoration size.
+If the OS clamps a maxspect request because a menu bar, dock, taskbar, or Wayland compositor work-area policy reduces the usable area, the next frame observes the granted size and treats it as platform max-size feedback rather than a user resize.
+This mirrors the intent of C++ ZV's `glfwGetMonitorWorkarea()` path while keeping a fallback for platforms where work area cannot be queried.
 
 ## Input and Quit Behavior
 
@@ -185,6 +201,11 @@ Current runtime input:
 - `q` quits from either root or controls viewport through the shared shortcut router.
 - right-click on the image toggles controls visibility.
 - arrow/space/backspace navigation works from either viewport through shared app actions.
+- `n` restores normal image size.
+- `a` restores the image aspect ratio by resizing the OS window.
+- `m` applies maxspect.
+- `<` / `>` halve or double the OS window size.
+- `.` / `,` increase or decrease the OS window size by ten percent.
 
 Shortcut handling is centralized in `shortcuts.rs`:
 
@@ -308,4 +329,3 @@ Open questions for the next milestones:
 - how to render annotations to a texture for final apply/export
 - when to split `zv-viewer` into smaller crates
 - how to preserve C++ behavior where it matters while accepting Rust/egui-specific structure
-

@@ -5,7 +5,7 @@ use eframe::egui_wgpu::{self, wgpu};
 
 use crate::image_item_data::ImageItemData;
 
-const IMAGE_SHADER: &str = r#"
+const IMAGE_SHADER_PREFIX: &str = r#"
 struct VertexOut {
     @builtin(position) position: vec4<f32>,
     @location(0) uv: vec2<f32>,
@@ -42,21 +42,35 @@ var image_texture: texture_2d<f32>;
 
 @group(0) @binding(1)
 var image_sampler: sampler;
+"#;
+
+const IMAGE_SHADER_FRAGMENT: &str = r#"
+fn linear_to_srgb_channel(linear: f32) -> f32 {
+    if (linear <= 0.0031308) {
+        return 12.92 * linear;
+    }
+    return 1.055 * pow(linear, 1.0 / 2.4) - 0.055;
+}
+
+fn linear_to_srgb(linear: vec3<f32>) -> vec3<f32> {
+    return vec3<f32>(
+        linear_to_srgb_channel(linear.r),
+        linear_to_srgb_channel(linear.g),
+        linear_to_srgb_channel(linear.b),
+    );
+}
 
 @fragment
 fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
+    // egui-wgpu prefers Rgba/Bgra8Unorm swapchain formats for UI rendering.
+    // Those targets are "gamma-space": the value written by the shader is
+    // stored directly as the display code value, with no hardware sRGB encode.
+    //
+    // Our image texture is still Rgba8UnormSrgb so sampling/filtering happens
+    // in linear light. Convert the sampled linear color back to sRGB here so a
+    // 1:1 texel round-trips to the original image byte on egui's usual target.
     let color = textureSample(image_texture, image_sampler, in.uv);
-
-    // Deliberately visible sample shader: keep red, attenuate green toward the
-    // left edge, and add a mild blue lift. This proves the image is going
-    // through our wgpu pipeline instead of egui's stock image widget.
-    let green_gain = 0.35 + 0.65 * in.uv.x;
-    return vec4<f32>(
-        color.r,
-        color.g * green_gain,
-        min(color.b + 0.12, 1.0),
-        color.a,
-    );
+    return vec4<f32>(linear_to_srgb(color.rgb), color.a);
 }
 "#;
 
@@ -68,9 +82,22 @@ pub struct WgpuImageRenderer {
 
 impl WgpuImageRenderer {
     pub fn new(device: &wgpu::Device, target_format: wgpu::TextureFormat) -> Self {
+        // egui-wgpu intentionally prefers non-sRGB Rgba/Bgra8Unorm surfaces
+        // for gamma-space UI rendering. ZV's image renderer assumes that same
+        // target contract and explicitly writes sRGB display code values.
+        assert!(
+            !target_format.is_srgb(),
+            "zv image renderer expects egui's non-sRGB gamma-space target, got {target_format:?}",
+        );
+        let shader_source = format!("{IMAGE_SHADER_PREFIX}\n{IMAGE_SHADER_FRAGMENT}");
+        tracing::info!(
+            ?target_format,
+            "creating image renderer"
+        );
+
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("zv image shader"),
-            source: wgpu::ShaderSource::Wgsl(IMAGE_SHADER.into()),
+            source: wgpu::ShaderSource::Wgsl(shader_source.into()),
         });
 
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -131,9 +158,9 @@ impl WgpuImageRenderer {
         });
 
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("zv image nearest sampler"),
+            label: Some("zv image display sampler"),
             mag_filter: wgpu::FilterMode::Nearest,
-            min_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Linear,
             mipmap_filter: wgpu::FilterMode::Nearest,
             address_mode_u: wgpu::AddressMode::ClampToEdge,
             address_mode_v: wgpu::AddressMode::ClampToEdge,

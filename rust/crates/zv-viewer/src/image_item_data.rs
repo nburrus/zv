@@ -1,14 +1,14 @@
 use eframe::egui_wgpu::wgpu;
 
-use crate::color_image::RgbaImage;
+use crate::color_image::{ImageSRGBA, PixelFormat, Srgba8Format};
 
 pub struct ImageItemData {
-    cpu_data: RgbaImage,
+    cpu_data: ImageSRGBA,
     texture_data: Option<WgpuImageTexture>,
 }
 
 impl ImageItemData {
-    pub fn new(cpu_data: RgbaImage) -> Self {
+    pub fn new(cpu_data: ImageSRGBA) -> Self {
         Self {
             cpu_data,
             texture_data: None,
@@ -28,7 +28,7 @@ impl ImageItemData {
     }
 
     pub fn pixel_rgba(&self, x: u32, y: u32) -> Option<[u8; 4]> {
-        self.cpu_data.pixel_rgba(x, y)
+        self.cpu_data.pixel(x, y).map(|pixel| pixel.as_array())
     }
 
     pub fn ensure_uploaded_to_gpu(
@@ -53,9 +53,9 @@ impl ImageItemData {
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8Unorm,
+            format: Srgba8Format::WGPU_FORMAT,
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-            view_formats: &[wgpu::TextureFormat::Rgba8Unorm],
+            view_formats: &[Srgba8Format::WGPU_FORMAT],
         });
 
         queue.write_texture(
@@ -65,7 +65,7 @@ impl ImageItemData {
                 origin: wgpu::Origin3d::ZERO,
                 aspect: wgpu::TextureAspect::All,
             },
-            self.cpu_data.pixels(),
+            self.cpu_data.bytes(),
             wgpu::TexelCopyBufferLayout {
                 offset: 0,
                 bytes_per_row: Some(self.cpu_data.bytes_per_row() as u32),

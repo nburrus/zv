@@ -24,6 +24,12 @@ The currently imagined stack is `egui` + `wgpu`, likely through `eframe` first f
 - Should image loading be synchronous at first, or do we need async/background loading immediately?
 - How much of the C++ editing pipeline should exist in the first Rust data model even if UI tools are deferred?
 
+Current validation notes:
+
+- `eframe` is sufficient for the current single-image viewer, controls viewport, custom WGPU image drawing, and C++-style window resize commands.
+- `eframe`/egui does not expose a portable monitor work-area rectangle. The current geometry code estimates drawable inner area from `inner_rect`/`outer_rect` decorations and handles OS clamp feedback after maxspect. Keep this fallback even if platform-specific work-area helpers are added, because work-area queries are not universally available, notably on Wayland.
+- The first custom WGPU image path is now in use rather than an `egui::Image` texture widget.
+
 ## Tentative Stack
 
 Potential first-pass crates:
@@ -230,6 +236,13 @@ struct GpuImage {
 
 Renderer resources should not live in the core image model.
 
+Current rendering status:
+
+- `ImageItemData` owns CPU image data plus optional WGPU texture/bind group state.
+- `WgpuImageRenderer` is registered as an egui-wgpu callback resource and renders image rectangles through a custom shader.
+- The shader currently displays sampled texture color directly.
+- The sampler uses nearest filtering for magnification and linear filtering for minification. True anti-aliased downsampling still needs mipmaps or a custom reconstruction path.
+
 ## Action Model Hypothesis
 
 Keep the C++ action vocabulary, but represent it as enums:
@@ -260,6 +273,16 @@ A useful first viewer-only milestone might include:
 7. Pixel-perfect nearest sampling by default.
 8. Mouse pixel inspection overlay with coordinates and RGBA.
 9. Basic file-open dialog.
+
+Progress so far:
+
+- CLI opens images and falls back to a generated default image.
+- Single native image viewport plus a secondary controls viewport are implemented.
+- Lazy CPU load and lazy WGPU upload are implemented.
+- The image viewport fills the OS window content area without internal aspect padding.
+- C++-style resize commands are implemented: `n`, `a`, `m`, `<`, `>`, `.`, and `,`.
+- Pixel hover reporting is implemented in both the controls viewport and a compact image overlay.
+- A JSON debug runner can inject input and write state/screenshot artifacts.
 
 Likely deferred:
 

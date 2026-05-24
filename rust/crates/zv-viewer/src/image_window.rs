@@ -57,53 +57,73 @@ impl ImageWindow {
                     return;
                 };
 
-                let image_size = egui::vec2(data.width() as f32, data.height() as f32);
-                let available = ui.available_size();
-                let scale = (available.x / image_size.x)
-                    .min(available.y / image_size.y)
-                    .min(1.0)
-                    .max(0.01);
-                let display_size = image_size * scale;
+                let available_rect = ui.available_rect_before_wrap();
+                let rect = available_rect;
+                let response = ui.allocate_rect(rect, egui::Sense::click());
+                output.image_rect = Some(rect);
+                output.secondary_clicked = response.secondary_clicked();
 
-                ui.vertical_centered(|ui| {
-                    ui.label(format!(
-                        "{image_name}  {} x {}  stride {} bytes",
-                        data.width(),
-                        data.height(),
-                        data.bytes_per_row(),
-                    ));
-                    ui.add_space(4.0);
-                    let (rect, response) =
-                        ui.allocate_exact_size(display_size, egui::Sense::click());
-                    output.image_rect = Some(rect);
-                    output.secondary_clicked = response.secondary_clicked();
+                let callback = egui_wgpu::Callback::new_paint_callback(
+                    rect,
+                    WgpuImageCallback::new(image_data.clone()),
+                );
+                ui.painter().add(callback);
 
-                    let callback = egui_wgpu::Callback::new_paint_callback(
-                        rect,
-                        WgpuImageCallback::new(image_data.clone()),
-                    );
-                    ui.painter().add(callback);
-
-                    if let Some(pointer_pos) = response.hover_pos() {
-                        let uv = (pointer_pos - rect.min) / rect.size();
-                        let x = (uv.x * data.width() as f32).floor() as u32;
-                        let y = (uv.y * data.height() as f32).floor() as u32;
-                        if let Some(rgba) = data.pixel_rgba(x, y) {
-                            if let Ok(mut info) = cursor_info.lock() {
-                                *info = Some(CursorPixelInfo {
-                                    image_name: image_name.clone(),
-                                    x,
-                                    y,
-                                    rgba,
-                                });
-                            }
+                let mut status = format!(
+                    "{}  {} x {}",
+                    image_name,
+                    data.width(),
+                    data.height(),
+                );
+                if let Some(pointer_pos) = response.hover_pos() {
+                    // This 0.5 offset is important since the mouse coordinate is an integer.
+                    // So when we are in the center of a pixel we'll return 0,0 instead of
+                    // 0.5,0.5.
+                    let image_pos = (pointer_pos + egui::vec2(0.5, 0.5)) - rect.min;
+                    let uv = image_pos / rect.size();
+                    let x = (uv.x * data.width() as f32).floor() as u32;
+                    let y = (uv.y * data.height() as f32).floor() as u32;
+                    if let Some(rgba) = data.pixel_rgba(x, y) {
+                        status = format!(
+                            "{status}    {x:4}, {y:4}  sRGBA {:3} {:3} {:3} {:3}",
+                            rgba[0], rgba[1], rgba[2], rgba[3],
+                        );
+                        if let Ok(mut info) = cursor_info.lock() {
+                            *info = Some(CursorPixelInfo {
+                                image_name: image_name.clone(),
+                                x,
+                                y,
+                                rgba,
+                            });
                         }
-                    } else if let Ok(mut info) = cursor_info.lock() {
-                        *info = None;
                     }
-                });
+                } else if let Ok(mut info) = cursor_info.lock() {
+                    *info = None;
+                }
+
+                paint_status_overlay(ui, rect, &status);
             });
 
         output
     }
+}
+
+fn paint_status_overlay(ui: &egui::Ui, image_rect: egui::Rect, text: &str) {
+    let painter = ui.painter();
+    let font_id = egui::TextStyle::Monospace.resolve(ui.style());
+    let galley = painter.layout_no_wrap(text.to_owned(), font_id, egui::Color32::WHITE);
+    let padding = egui::vec2(8.0, 5.0);
+    let overlay_size = galley.size() + padding * 2.0;
+    let overlay_rect = egui::Rect::from_min_size(
+        image_rect.left_bottom() + egui::vec2(8.0, -overlay_size.y - 8.0),
+        overlay_size,
+    )
+    .intersect(image_rect);
+
+    painter.rect_filled(
+        overlay_rect,
+        0.0,
+        egui::Color32::from_rgba_premultiplied(0, 0, 0, 190),
+    );
+    painter.galley(overlay_rect.min + padding, galley, egui::Color32::WHITE);
 }

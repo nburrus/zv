@@ -3,20 +3,24 @@ use std::sync::{Arc, Mutex};
 
 use eframe::egui;
 
+use crate::color_image::{ImageSRGBA, PixelSRGBA};
 use crate::controls_window::ControlsWindow;
 use crate::debug::{SelectedImageDebug, ViewerDebugState};
-use crate::geometry::{controls_position_for_image_window, initial_image_window_geometry};
+use crate::geometry::{
+    controls_position_for_image_window, ImageWindowGeometryState, ViewportGeometry,
+    ViewportResizeCommand, WindowResizeAction,
+};
 use crate::image_io::load_rgba_image;
 use crate::image_item_data::ImageItemData;
-use crate::color_image::RgbaImage;
 use crate::image_window::{CursorPixelInfo, ImageWindow};
-use crate::shortcuts::{ShortcutViewport, collect_shortcuts};
+use crate::shortcuts::{collect_shortcuts, ShortcutViewport};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AppAction {
     NextImage,
     PreviousImage,
     Quit,
+    ResizeWindow(WindowResizeAction),
 }
 
 pub struct Viewer {
@@ -27,8 +31,8 @@ pub struct Viewer {
     pending_actions: Vec<AppAction>,
     controls_action_queue: Arc<Mutex<Vec<AppAction>>>,
     cursor_info: Arc<Mutex<Option<CursorPixelInfo>>>,
-    applied_initial_root_origin: bool,
-    last_requested_root_size: Option<egui::Vec2>,
+    image_window_geometry: ImageWindowGeometryState,
+    last_displayed_index: Option<usize>,
 }
 
 struct ImageEntry {
@@ -52,18 +56,22 @@ impl Viewer {
         let controls_action_queue = Arc::new(Mutex::new(Vec::new()));
         Self {
             image_window: ImageWindow::default(),
-            controls_window: ControlsWindow::new(cursor_info.clone(), controls_action_queue.clone()),
+            controls_window: ControlsWindow::new(
+                cursor_info.clone(),
+                controls_action_queue.clone(),
+            ),
             entries,
             selected_index: 0,
             pending_actions: Vec::new(),
             controls_action_queue,
             cursor_info,
-            applied_initial_root_origin: false,
-            last_requested_root_size: None,
+            image_window_geometry: ImageWindowGeometryState::default(),
+            last_displayed_index: None,
         }
     }
 
     pub fn update(&mut self, ctx: &egui::Context) -> ViewerDebugState {
+        self.observe_root_viewport_geometry(ctx);
         self.collect_keyboard_actions(ctx);
         self.collect_controls_actions();
         self.apply_pending_actions(ctx);
@@ -125,6 +133,30 @@ impl Viewer {
             .extend(collect_shortcuts(ctx, ShortcutViewport::MainImage));
     }
 
+    fn observe_root_viewport_geometry(&mut self, ctx: &egui::Context) {
+        let (monitor_size, outer_rect, inner_rect) = ctx.input(|input| {
+            (
+                input.viewport().monitor_size,
+                input.viewport().outer_rect,
+                input.viewport().inner_rect,
+            )
+        });
+        let Some(monitor_size) = monitor_size else {
+            return;
+        };
+
+        if let Some(command) = self
+            .image_window_geometry
+            .observe_viewport(ViewportGeometry {
+                monitor_size,
+                outer_rect,
+                inner_rect,
+            })
+        {
+            send_resize_command(ctx, command);
+        }
+    }
+
     fn collect_controls_actions(&mut self) {
         if let Ok(mut queued) = self.controls_action_queue.lock() {
             self.pending_actions.append(&mut queued);
@@ -142,6 +174,7 @@ impl Viewer {
                     // In this app, ROOT is the main image viewport/window.
                     ctx.send_viewport_cmd_to(egui::ViewportId::ROOT, egui::ViewportCommand::Close)
                 }
+                AppAction::ResizeWindow(action) => self.apply_window_resize_action(ctx, action),
             }
         }
         if applied_any {
@@ -172,23 +205,65 @@ impl Viewer {
         let Ok(data) = data.lock() else {
             return;
         };
+        let image_size = egui::vec2(data.width() as f32, data.height() as f32);
+        drop(data);
 
-        let Some(monitor_size) = ctx.input(|input| input.viewport().monitor_size) else {
+        let (monitor_size, outer_rect, inner_rect) = ctx.input(|input| {
+            (
+                input.viewport().monitor_size,
+                input.viewport().outer_rect,
+                input.viewport().inner_rect,
+            )
+        });
+        let Some(monitor_size) = monitor_size else {
             return;
         };
 
-        let geometry = initial_image_window_geometry(
-            egui::vec2(data.width() as f32, data.height() as f32),
-            monitor_size,
-            0,
-        );
-        if !self.applied_initial_root_origin {
-            ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(geometry.origin));
-            self.applied_initial_root_origin = true;
+        if let Some(command) =
+            self.image_window_geometry
+                .prepare_initial_geometry(image_size, monitor_size, 0)
+        {
+            send_resize_command(ctx, command);
+            self.last_displayed_index = Some(self.selected_index);
+            return;
         }
-        if requested_size_changed(self.last_requested_root_size, geometry.size) {
-            ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(geometry.size));
-            self.last_requested_root_size = Some(geometry.size);
+
+        if self.last_displayed_index != Some(self.selected_index) {
+            self.last_displayed_index = Some(self.selected_index);
+            if let Some(command) = self.image_window_geometry.on_image_changed(
+                image_size,
+                ViewportGeometry {
+                    monitor_size,
+                    outer_rect,
+                    inner_rect,
+                },
+            ) {
+                send_resize_command(ctx, command);
+            }
+        }
+    }
+
+    fn apply_window_resize_action(&mut self, ctx: &egui::Context, action: WindowResizeAction) {
+        let (monitor_size, outer_rect, inner_rect) = ctx.input(|input| {
+            (
+                input.viewport().monitor_size,
+                input.viewport().outer_rect,
+                input.viewport().inner_rect,
+            )
+        });
+        let Some(monitor_size) = monitor_size else {
+            return;
+        };
+
+        if let Some(command) = self.image_window_geometry.apply_resize_action(
+            ViewportGeometry {
+                monitor_size,
+                outer_rect,
+                inner_rect,
+            },
+            action,
+        ) {
+            send_resize_command(ctx, command);
         }
     }
 
@@ -205,10 +280,12 @@ impl Viewer {
     }
 }
 
-fn requested_size_changed(last_requested: Option<egui::Vec2>, next: egui::Vec2) -> bool {
-    match last_requested {
-        Some(last) => (last.x - next.x).abs() > 1.0 || (last.y - next.y).abs() > 1.0,
-        None => true,
+fn send_resize_command(ctx: &egui::Context, command: ViewportResizeCommand) {
+    if let Some(position) = command.outer_position {
+        ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(position));
+    }
+    if let Some(size) = command.inner_size {
+        ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(size));
     }
 }
 
@@ -222,24 +299,19 @@ impl ImageEntry {
     }
 
     fn default_image() -> Self {
-        let mut image = RgbaImage::new(256, 256);
-        let bytes_per_row = image.bytes_per_row();
-        let width = image.width() as usize;
-        let height = image.height() as usize;
-        for (row, chunk) in image
-            .pixels_mut()
-            .chunks_mut(bytes_per_row)
-            .enumerate()
-            .take(height)
-        {
-            for (col, pixel) in chunk[..width * RgbaImage::BYTES_PER_PIXEL]
-                .chunks_mut(RgbaImage::BYTES_PER_PIXEL)
-                .enumerate()
-            {
-                pixel[0] = row as u8;
-                pixel[1] = col as u8;
-                pixel[2] = (row + col) as u8;
-                pixel[3] = 255;
+        let mut image = ImageSRGBA::new(256, 256);
+        let width = image.width();
+        let height = image.height();
+        for row in 0..height {
+            if let Some(row_pixels) = image.row_mut(row) {
+                for col in 0..width {
+                    row_pixels[col as usize] = PixelSRGBA {
+                        r: row as u8,
+                        g: col as u8,
+                        b: (row + col) as u8,
+                        a: 255,
+                    };
+                }
             }
         }
 
