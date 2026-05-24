@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 use eframe::egui;
 use eframe::egui_wgpu;
 
-use crate::image::ImageItemData;
+use crate::image_item_data::ImageItemData;
 use crate::render::WgpuImageCallback;
 
 #[derive(Clone, Debug)]

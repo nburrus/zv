@@ -2,7 +2,7 @@ use std::sync::{Arc, Mutex};
 
 use eframe::egui;
 
-use crate::actions::AppAction;
+use crate::viewer::AppAction;
 use crate::image_window::CursorPixelInfo;
 use crate::shortcuts::{ShortcutViewport, collect_shortcuts};
 

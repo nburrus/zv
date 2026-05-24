@@ -1,6 +1,6 @@
 use eframe::egui;
 
-use crate::actions::AppAction;
+use crate::viewer::AppAction;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ShortcutViewport {
@@ -16,6 +16,14 @@ enum ShortcutScope {
     ViewportOnly(ShortcutViewport),
 }
 
+const SHORTCUTS: &[(egui::Key, ShortcutScope, AppAction)] = &[
+    (egui::Key::ArrowDown,  ShortcutScope::GlobalWhenNotTyping, AppAction::NextImage),
+    (egui::Key::Space,      ShortcutScope::GlobalWhenNotTyping, AppAction::NextImage),
+    (egui::Key::ArrowUp,    ShortcutScope::GlobalWhenNotTyping, AppAction::PreviousImage),
+    (egui::Key::Backspace,  ShortcutScope::GlobalWhenNotTyping, AppAction::PreviousImage),
+    (egui::Key::Q,          ShortcutScope::GlobalWhenNotTyping, AppAction::Quit),
+];
+
 pub fn collect_shortcuts(
     ctx: &egui::Context,
     viewport: ShortcutViewport,
@@ -23,51 +31,9 @@ pub fn collect_shortcuts(
     let mut actions = Vec::new();
     let typing_text = ctx.wants_keyboard_input();
     ctx.input(|input| {
-        push_if_pressed(
-            input,
-            egui::Key::ArrowDown,
-            ShortcutScope::GlobalWhenNotTyping,
-            viewport,
-            typing_text,
-            AppAction::NextImage,
-            &mut actions,
-        );
-        push_if_pressed(
-            input,
-            egui::Key::Space,
-            ShortcutScope::GlobalWhenNotTyping,
-            viewport,
-            typing_text,
-            AppAction::NextImage,
-            &mut actions,
-        );
-        push_if_pressed(
-            input,
-            egui::Key::ArrowUp,
-            ShortcutScope::GlobalWhenNotTyping,
-            viewport,
-            typing_text,
-            AppAction::PreviousImage,
-            &mut actions,
-        );
-        push_if_pressed(
-            input,
-            egui::Key::Backspace,
-            ShortcutScope::GlobalWhenNotTyping,
-            viewport,
-            typing_text,
-            AppAction::PreviousImage,
-            &mut actions,
-        );
-        push_if_pressed(
-            input,
-            egui::Key::Q,
-            ShortcutScope::GlobalWhenNotTyping,
-            viewport,
-            typing_text,
-            AppAction::Quit,
-            &mut actions,
-        );
+        for &(key, scope, action) in SHORTCUTS {
+            push_if_pressed(input, key, scope, viewport, typing_text, action, &mut actions);
+        }
     });
     actions
 }

@@ -2,7 +2,7 @@ use std::path::Path;
 
 use anyhow::Context;
 
-use crate::image::RgbaImage;
+use crate::color_image::RgbaImage;
 
 pub fn load_rgba_image(path: &Path) -> anyhow::Result<RgbaImage> {
     let dynamic =

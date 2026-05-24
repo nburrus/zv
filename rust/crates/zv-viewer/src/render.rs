@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 use eframe::egui;
 use eframe::egui_wgpu::{self, wgpu};
 
-use crate::image::ImageItemData;
+use crate::image_item_data::ImageItemData;
 
 const IMAGE_SHADER: &str = r#"
 struct VertexOut {

@@ -3,13 +3,21 @@ use std::sync::{Arc, Mutex};
 
 use eframe::egui;
 
-use crate::actions::AppAction;
 use crate::controls_window::ControlsWindow;
 use crate::debug::{SelectedImageDebug, ViewerDebugState};
 use crate::geometry::{controls_position_for_image_window, initial_image_window_geometry};
-use crate::image::{ImageItemData, RgbaImage, load_rgba_image};
+use crate::image_io::load_rgba_image;
+use crate::image_item_data::ImageItemData;
+use crate::color_image::RgbaImage;
 use crate::image_window::{CursorPixelInfo, ImageWindow};
 use crate::shortcuts::{ShortcutViewport, collect_shortcuts};
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AppAction {
+    NextImage,
+    PreviousImage,
+    Quit,
+}
 
 pub struct Viewer {
     image_window: ImageWindow,
@@ -19,7 +27,8 @@ pub struct Viewer {
     pending_actions: Vec<AppAction>,
     controls_action_queue: Arc<Mutex<Vec<AppAction>>>,
     cursor_info: Arc<Mutex<Option<CursorPixelInfo>>>,
-    applied_image_geometry_for: Option<(u32, u32)>,
+    applied_initial_root_origin: bool,
+    last_requested_root_size: Option<egui::Vec2>,
 }
 
 struct ImageEntry {
@@ -49,7 +58,8 @@ impl Viewer {
             pending_actions: Vec::new(),
             controls_action_queue,
             cursor_info,
-            applied_image_geometry_for: None,
+            applied_initial_root_origin: false,
+            last_requested_root_size: None,
         }
     }
 
@@ -151,7 +161,6 @@ impl Viewer {
         let next = (self.selected_index as isize + offset).rem_euclid(count);
         if next as usize != self.selected_index {
             self.selected_index = next as usize;
-            self.applied_image_geometry_for = None;
         }
     }
 
@@ -163,10 +172,6 @@ impl Viewer {
         let Ok(data) = data.lock() else {
             return;
         };
-        let image_key = (data.width(), data.height());
-        if self.applied_image_geometry_for == Some(image_key) {
-            return;
-        }
 
         let Some(monitor_size) = ctx.input(|input| input.viewport().monitor_size) else {
             return;
@@ -177,9 +182,14 @@ impl Viewer {
             monitor_size,
             0,
         );
-        ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(geometry.origin));
-        ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(geometry.size));
-        self.applied_image_geometry_for = Some(image_key);
+        if !self.applied_initial_root_origin {
+            ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(geometry.origin));
+            self.applied_initial_root_origin = true;
+        }
+        if requested_size_changed(self.last_requested_root_size, geometry.size) {
+            ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(geometry.size));
+            self.last_requested_root_size = Some(geometry.size);
+        }
     }
 
     fn update_controls_position(&mut self, ctx: &egui::Context) {
@@ -195,6 +205,13 @@ impl Viewer {
     }
 }
 
+fn requested_size_changed(last_requested: Option<egui::Vec2>, next: egui::Vec2) -> bool {
+    match last_requested {
+        Some(last) => (last.x - next.x).abs() > 1.0 || (last.y - next.y).abs() > 1.0,
+        None => true,
+    }
+}
+
 impl ImageEntry {
     fn from_path(path: PathBuf) -> Self {
         Self {
@@ -206,17 +223,24 @@ impl ImageEntry {
 
     fn default_image() -> Self {
         let mut image = RgbaImage::new(256, 256);
-        let tight_bytes_per_row = image.width() as usize * RgbaImage::BYTES_PER_PIXEL;
-        for row in 0..image.height() as usize {
-            let row_start = row * image.bytes_per_row();
-            for col in 0..image.width() as usize {
-                let offset = row_start + col * RgbaImage::BYTES_PER_PIXEL;
-                image.pixels_mut()[offset] = row as u8;
-                image.pixels_mut()[offset + 1] = col as u8;
-                image.pixels_mut()[offset + 2] = (row + col) as u8;
-                image.pixels_mut()[offset + 3] = 255;
+        let bytes_per_row = image.bytes_per_row();
+        let width = image.width() as usize;
+        let height = image.height() as usize;
+        for (row, chunk) in image
+            .pixels_mut()
+            .chunks_mut(bytes_per_row)
+            .enumerate()
+            .take(height)
+        {
+            for (col, pixel) in chunk[..width * RgbaImage::BYTES_PER_PIXEL]
+                .chunks_mut(RgbaImage::BYTES_PER_PIXEL)
+                .enumerate()
+            {
+                pixel[0] = row as u8;
+                pixel[1] = col as u8;
+                pixel[2] = (row + col) as u8;
+                pixel[3] = 255;
             }
-            debug_assert!(tight_bytes_per_row <= image.bytes_per_row());
         }
 
         Self {

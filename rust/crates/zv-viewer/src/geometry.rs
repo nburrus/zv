@@ -40,6 +40,8 @@ pub fn initial_image_window_geometry(
     geometry
 }
 
+// Note: monitor_size has no origin; outer_rect.min may be negative or past
+// monitor_size.x on multi-monitor setups. This logic assumes a single screen.
 pub fn controls_position_for_image_window(
     viewer_outer_rect: egui::Rect,
     monitor_size: egui::Vec2,

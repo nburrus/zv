@@ -1,6 +1,6 @@
 use eframe::egui_wgpu::wgpu;
 
-use crate::image::RgbaImage;
+use crate::color_image::RgbaImage;
 
 pub struct ImageItemData {
     cpu_data: RgbaImage,
