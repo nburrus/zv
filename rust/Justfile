@@ -12,6 +12,9 @@ build:
 release:
     cargo build --release
 
+release-small:
+    cargo build --profile release-small
+
 fmt:
     cargo fmt
 

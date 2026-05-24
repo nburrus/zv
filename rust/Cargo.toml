@@ -4,3 +4,15 @@ members = [
 ]
 resolver = "3"
 
+[profile.release]
+opt-level = 3
+panic = "unwind"
+
+[profile.release-small]
+inherits = "release"
+strip = "symbols"
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+opt-level = "z"
+
