@@ -69,7 +69,13 @@ impl Viewer {
         let (image_load_timing, selected) = if let Ok(mut image_list) = self.image_list.lock() {
             image_list.poll_preloads();
             let image_load_timing = image_list.ensure_selected_loaded();
-            image_list.preload_next_from_selection();
+            // Wake the UI when the preload finishes; without this, navigating to an
+            // image mid-preload leaves the main view stuck on "Loading..." until the
+            // next user interaction triggers a repaint.
+            let ctx = ctx.clone();
+            image_list.preload_next_from_selection(move || {
+                ctx.request_repaint_of(egui::ViewportId::ROOT);
+            });
             let selected = image_list.selected_view();
             (image_load_timing, selected)
         } else {

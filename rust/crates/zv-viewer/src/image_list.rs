@@ -230,7 +230,7 @@ impl ImageList {
         self.get_data_for_index(index).and_then(|result| result.timing)
     }
 
-    pub fn preload_next_from_selection(&mut self) -> bool {
+    pub fn preload_next_from_selection(&mut self, on_done: impl FnOnce() + Send + 'static) -> bool {
         self.poll_preloads();
         let enabled = self.enabled_indices();
         if enabled.len() < 2 {
@@ -243,7 +243,7 @@ impl ImageList {
             .unwrap_or(0);
         let next_enabled_index = (current_enabled_index + 1) % enabled.len();
         let next_index = enabled[next_enabled_index];
-        self.start_preload_for_index(next_index)
+        self.start_preload_for_index(next_index, on_done)
     }
 
     pub fn selected_view(&self) -> Option<SelectedImageView> {
@@ -256,9 +256,6 @@ impl ImageList {
         })
     }
 
-    pub fn selected_size(&self) -> Option<(u32, u32)> {
-        self.selected_item().and_then(|item| item.metadata)
-    }
 
     fn selected_item(&self) -> Option<&ImageItem> {
         self.items.iter().find(|item| item.id == self.selected_id)
@@ -303,7 +300,7 @@ impl ImageList {
         Some(loaded)
     }
 
-    fn start_preload_for_index(&mut self, index: usize) -> bool {
+    fn start_preload_for_index(&mut self, index: usize, on_done: impl FnOnce() + Send + 'static) -> bool {
         let Some(item) = self.items.get(index) else {
             return false;
         };
@@ -330,6 +327,7 @@ impl ImageList {
                 elapsed: start.elapsed(),
                 result,
             });
+            on_done();
         });
         self.pending_preloads.insert(id, receiver);
         true
@@ -714,7 +712,7 @@ mod tests {
         let mut images = ImageList::new(vec![first.clone(), second.clone(), third.clone()]);
 
         images.ensure_selected_loaded();
-        assert!(images.preload_next_from_selection());
+        assert!(images.preload_next_from_selection(|| {}));
         for _ in 0..100 {
             images.poll_preloads();
             if images.cache.contains(ImageId(2)) {
