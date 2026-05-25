@@ -1,19 +1,27 @@
 use std::sync::{Arc, Mutex};
 
 use eframe::egui;
+use eframe::egui_wgpu;
 use egui_extras::{Column, TableBuilder};
 
+use crate::color_image::{
+    PixelSRGBA, closest_color_entries, convert_srgba_to_lab, convert_srgba_to_linear_rgb, convert_srgba_to_xyz,
+};
 use crate::image_list::ImageList;
 use crate::image_window::CursorPixelInfo;
 use crate::image_window_geometry::WindowResizeAction;
+use crate::render::WgpuImageCallback;
 use crate::shortcuts::{ShortcutViewport, collect_shortcuts};
 use crate::viewer::AppAction;
 
 const CONTROLS_WIDTH: f32 = 640.0;
-const CONTROLS_HEIGHT: f32 = 420.0;
+const CONTROLS_HEIGHT: f32 = 640.0;
+const CONTROLS_MIN_WIDTH: f32 = 360.0;
+const CONTROLS_MIN_HEIGHT: f32 = 300.0;
 const CONTROLS_WIDTH_WITH_PADDING: f32 = CONTROLS_WIDTH + 12.0;
 const CONTROLS_GAP: f32 = 8.0;
-
+const CURSOR_ROI_PIXELS: f32 = 15.0;
+const CURSOR_OVERLAY_EM_SCALE: f32 = 1.12;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ControlsTab {
@@ -49,6 +57,7 @@ impl Default for ControlsUiState {
 pub struct ControlsWindow {
     viewport_id: egui::ViewportId,
     image_list: Arc<Mutex<ImageList>>,
+    cursor_info: Arc<Mutex<Option<CursorPixelInfo>>>,
     image_widget_size: Arc<Mutex<Option<(u32, u32)>>>,
     action_queue: Arc<Mutex<Vec<AppAction>>>,
     ui_state: Arc<Mutex<ControlsUiState>>,
@@ -63,13 +72,14 @@ pub struct ControlsWindow {
 impl ControlsWindow {
     pub fn new(
         image_list: Arc<Mutex<ImageList>>,
-        _cursor_info: Arc<Mutex<Option<CursorPixelInfo>>>,
+        cursor_info: Arc<Mutex<Option<CursorPixelInfo>>>,
         image_widget_size: Arc<Mutex<Option<(u32, u32)>>>,
         action_queue: Arc<Mutex<Vec<AppAction>>>,
     ) -> Self {
         Self {
             viewport_id: egui::ViewportId::from_hash_of("zv-controls-window"),
             image_list,
+            cursor_info,
             image_widget_size,
             action_queue,
             ui_state: Arc::new(Mutex::new(ControlsUiState::default())),
@@ -127,6 +137,7 @@ impl ControlsWindow {
 
     pub fn show(&mut self, ctx: &egui::Context) {
         let image_list = self.image_list.clone();
+        let cursor_info = self.cursor_info.clone();
         let image_widget_size = self.image_widget_size.clone();
         let last_auto_scrolled_selected = self.last_auto_scrolled_selected.clone();
         let ui_state = self.ui_state.clone();
@@ -134,6 +145,7 @@ impl ControlsWindow {
         let mut builder = egui::ViewportBuilder::default()
             .with_title("zv controls")
             .with_inner_size(egui::vec2(CONTROLS_WIDTH, CONTROLS_HEIGHT))
+            .with_min_inner_size(egui::vec2(CONTROLS_MIN_WIDTH, CONTROLS_MIN_HEIGHT))
             .with_resizable(true)
             .with_visible(self.enabled);
         let apply_initial_position_on_show = self.apply_initial_position_on_show;
@@ -175,12 +187,7 @@ impl ControlsWindow {
                 ui.add_space(ui.spacing().item_spacing.y);
                 match active_tab {
                     ControlsTab::ImageList => {
-                        render_image_list_tab(
-                            ui,
-                            ctx,
-                            &image_list,
-                            &last_auto_scrolled_selected,
-                        );
+                        render_image_list_tab(ui, ctx, &image_list, &cursor_info, &last_auto_scrolled_selected);
                     }
                     ControlsTab::Modifiers => render_empty_tab(ui, "Modifiers"),
                     ControlsTab::ColorEditor => render_empty_tab(ui, "Color Editor"),
@@ -198,7 +205,6 @@ impl ControlsWindow {
 fn apply_controls_visuals(ctx: &egui::Context) {
     ctx.set_visuals(egui::Visuals::dark());
 }
-
 
 fn render_tabs(ui: &mut egui::Ui, ui_state: &Arc<Mutex<ControlsUiState>>) -> ControlsTab {
     if let Ok(mut state) = ui_state.lock() {
@@ -222,15 +228,24 @@ fn render_image_list_tab(
     ui: &mut egui::Ui,
     ctx: &egui::Context,
     image_list: &Arc<Mutex<ImageList>>,
+    cursor_info: &Arc<Mutex<Option<CursorPixelInfo>>>,
     last_auto_scrolled_selected: &Arc<Mutex<Option<usize>>>,
 ) {
+    let cursor = cursor_info.lock().ok().and_then(|info| info.clone());
+    let font_size = cursor_overlay_em(ui);
+    let overlay_height = cursor.as_ref().map_or(0.0, |_| font_size * 13.5);
+
     render_filter_row(ui, image_list, ctx);
     ui.add_space(ui.spacing().item_spacing.y);
-    let table_height = ui.available_height().max(80.0);
+    let table_height = (ui.available_height() - overlay_height).max(80.0);
     if let Ok(mut images) = image_list.lock() {
         render_image_list(ui, &mut images, last_auto_scrolled_selected, ctx, table_height);
     } else {
         ui.colored_label(egui::Color32::RED, "image list lock is poisoned");
+    }
+
+    if let Some(cursor) = cursor {
+        render_cursor_overlay(ui, &cursor, overlay_height);
     }
 }
 
@@ -294,10 +309,11 @@ fn render_image_list(
     TableBuilder::new(ui)
         .sense(egui::Sense::click_and_drag())
         .striped(true)
-        .resizable(true)
+        .resizable(false)
+        .auto_shrink([false, true])
         .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
-        .column(Column::remainder())
-        .column(Column::initial(size_col_width))
+        .column(Column::remainder().clip(true))
+        .column(Column::exact(size_col_width))
         .min_scrolled_height(0.0)
         .max_scroll_height(table_height - header_height)
         .header(header_height, |mut header| {
@@ -317,14 +333,16 @@ fn render_image_list(
                         ui.add(
                             egui::Label::new(&row_data.name)
                                 .sense(egui::Sense::empty())
-                                .selectable(false),
+                                .selectable(false)
+                                .truncate(),
                         );
                     });
                     row.col(|ui| {
                         ui.add(
                             egui::Label::new(&row_data.size_text)
                                 .sense(egui::Sense::empty())
-                                .selectable(false),
+                                .selectable(false)
+                                .truncate(),
                         );
                     });
 
@@ -351,8 +369,7 @@ fn render_image_list(
 
                     if let Some(payload) = response.dnd_hover_payload::<ImageDragPayload>() {
                         if payload.index != row_data.index {
-                            let insert_after =
-                                pointer_pos.is_some_and(|p| p.y > response.rect.center().y);
+                            let insert_after = pointer_pos.is_some_and(|p| p.y > response.rect.center().y);
                             let y = if insert_after {
                                 response.rect.bottom()
                             } else {
@@ -368,8 +385,7 @@ fn render_image_list(
 
                     if let Some(payload) = response.dnd_release_payload::<ImageDragPayload>() {
                         if payload.index != row_data.index {
-                            let insert_after =
-                                pointer_pos.is_some_and(|p| p.y > response.rect.center().y);
+                            let insert_after = pointer_pos.is_some_and(|p| p.y > response.rect.center().y);
                             let to = row_data.index + usize::from(insert_after);
                             pending_move = Some((payload.index, to));
                         }
@@ -385,6 +401,235 @@ fn render_image_list(
         image_list.select_index(index);
         ctx.request_repaint_of(egui::ViewportId::ROOT);
     }
+}
+
+fn render_cursor_overlay(ui: &mut egui::Ui, cursor: &CursorPixelInfo, overlay_height: f32) {
+    if overlay_height <= 0.0 {
+        return;
+    }
+
+    let mono_font = egui::TextStyle::Monospace.resolve(ui.style());
+    let em = cursor_overlay_em(ui);
+    let overlay_width = em * 21.0;
+    let available = ui.available_size();
+    let width = overlay_width.min(available.x.max(0.0));
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(available.x, overlay_height), egui::Sense::hover());
+    let overlay_rect = egui::Rect::from_min_size(
+        egui::pos2(rect.center().x - width * 0.5, rect.top()),
+        egui::vec2(width, overlay_height),
+    );
+
+    let painter = ui.painter();
+    painter.rect_filled(overlay_rect, 0.0, egui::Color32::from_rgba_premultiplied(0, 0, 0, 217));
+
+    let origin = overlay_rect.min + egui::vec2(em * 0.25, em * 0.25);
+    let square_size = em * 10.0;
+    let zoom_rect = egui::Rect::from_min_size(origin, egui::vec2(square_size, square_size));
+    render_cursor_zoom_patch(ui, cursor, zoom_rect);
+
+    let swatch_rect = egui::Rect::from_min_size(
+        egui::pos2(zoom_rect.right() + ui.spacing().item_spacing.x, zoom_rect.top()),
+        egui::vec2(square_size, square_size),
+    );
+    render_cursor_color_swatch(ui, cursor, swatch_rect, mono_font.clone(), em);
+
+    let closest = closest_color_entries(PixelSRGBA::from_array(cursor.rgba));
+    let color_row_y = zoom_rect.bottom() + em * 0.5;
+    render_nearest_color_row(ui, origin.x, color_row_y, em, &closest[0], false);
+    render_nearest_color_row(
+        ui,
+        origin.x,
+        color_row_y + em * 1.25,
+        em,
+        &closest[1],
+        closest[1].distance - closest[0].distance > 1.0,
+    );
+}
+
+fn render_cursor_zoom_patch(ui: &mut egui::Ui, cursor: &CursorPixelInfo, rect: egui::Rect) {
+    let half_uv = egui::vec2(
+        CURSOR_ROI_PIXELS / cursor.image_width as f32 * 0.5,
+        CURSOR_ROI_PIXELS / cursor.image_height as f32 * 0.5,
+    );
+    let uv_min = cursor.uv - half_uv;
+    let uv_max = cursor.uv + half_uv;
+    let callback = egui_wgpu::Callback::new_paint_callback(
+        rect,
+        WgpuImageCallback::new(cursor.image_data.clone(), [uv_min.x, uv_min.y], [uv_max.x, uv_max.y]),
+    );
+    ui.painter().add(callback);
+
+    let pixel_size = rect.size() / CURSOR_ROI_PIXELS;
+    let center_min = rect.min + pixel_size * (CURSOR_ROI_PIXELS as i32 / 2) as f32;
+    let center_rect = egui::Rect::from_min_size(center_min, pixel_size);
+    ui.painter().rect_stroke(
+        center_rect,
+        0.0,
+        egui::Stroke::new(1.0, egui::Color32::BLACK),
+        egui::StrokeKind::Inside,
+    );
+    ui.painter().rect_stroke(
+        center_rect.expand(1.0),
+        0.0,
+        egui::Stroke::new(1.0, egui::Color32::WHITE),
+        egui::StrokeKind::Inside,
+    );
+}
+
+fn cursor_overlay_em(ui: &egui::Ui) -> f32 {
+    ui.text_style_height(&egui::TextStyle::Monospace) * CURSOR_OVERLAY_EM_SCALE
+}
+
+fn render_cursor_color_swatch(
+    ui: &mut egui::Ui,
+    cursor: &CursorPixelInfo,
+    rect: egui::Rect,
+    mono_font: egui::FontId,
+    em: f32,
+) {
+    let rgba = cursor.rgba;
+    let color = egui::Color32::from_rgba_unmultiplied(rgba[0], rgba[1], rgba[2], 255);
+    let text_color = if contrast_prefers_black(rgba) {
+        egui::Color32::BLACK
+    } else {
+        egui::Color32::WHITE
+    };
+    let painter = ui.painter();
+    painter.rect_filled(rect, 0.0, color);
+
+    let srgb = PixelSRGBA::from_array(rgba);
+    let linear = convert_srgba_to_linear_rgb(srgb);
+    let lab = convert_srgba_to_lab(srgb);
+    let xyz = convert_srgba_to_xyz(srgb);
+    let hsv = srgb.to_hsv().display_hsv();
+    let lines = [
+        format!("HTML #{:02x}{:02x}{:02x}", rgba[0], rgba[1], rgba[2]),
+        format!("sRGB {:3} {:3} {:3}", rgba[0], rgba[1], rgba[2]),
+        format!(
+            " RGB {:3} {:3} {:3}",
+            (linear.r * 255.0).round() as i32,
+            (linear.g * 255.0).round() as i32,
+            (linear.b * 255.0).round() as i32
+        ),
+        format!(
+            " Lab {:3} {:3} {:3}",
+            lab.l.round() as i32,
+            lab.a.round() as i32,
+            lab.b.round() as i32
+        ),
+        format!(
+            " XYZ {:3} {:3} {:3}",
+            xyz.x.round() as i32,
+            xyz.y.round() as i32,
+            xyz.z.round() as i32
+        ),
+        format!(" HSV {:3} {:3} {:3}", hsv.0, hsv.1, hsv.2),
+    ];
+
+    let mut y = rect.top() + em * 1.5;
+    let x = rect.left() + em;
+    for line in lines {
+        painter.text(
+            egui::pos2(x, y),
+            egui::Align2::LEFT_TOP,
+            line,
+            mono_font.clone(),
+            text_color,
+        );
+        y += em * 1.05;
+    }
+}
+
+fn render_nearest_color_row(
+    ui: &mut egui::Ui,
+    x: f32,
+    y: f32,
+    em: f32,
+    color: &crate::color_image::ColorMatchingResult,
+    disabled: bool,
+) {
+    let padding = em * 0.5;
+    let swatch_rect = egui::Rect::from_min_size(egui::pos2(x, y), egui::vec2(em, em));
+    ui.painter().rect_filled(
+        swatch_rect,
+        0.0,
+        egui::Color32::from_rgb(color.entry.r, color.entry.g, color.entry.b),
+    );
+    let hsv = PixelSRGBA {
+        r: color.entry.r,
+        g: color.entry.g,
+        b: color.entry.b,
+        a: 255,
+    }
+    .to_hsv()
+    .display_hsv();
+    let text_color = if disabled {
+        ui.visuals().weak_text_color()
+    } else {
+        ui.visuals().text_color()
+    };
+    let font = egui::TextStyle::Monospace.resolve(ui.style());
+    let text_x = swatch_rect.right() + padding;
+    let delta_x = x + em * 11.2 - padding;
+    let hsv_x = x + em * 14.0 - padding;
+    let name = fitted_color_name(
+        ui,
+        format!("{} ({})", color.entry.class_name, color.entry.color_name),
+        &font,
+        (delta_x - text_x - padding).max(em),
+    );
+    ui.painter().text(
+        egui::pos2(text_x, y),
+        egui::Align2::LEFT_TOP,
+        name,
+        font.clone(),
+        text_color,
+    );
+    ui.painter().text(
+        egui::pos2(delta_x, y),
+        egui::Align2::LEFT_TOP,
+        format!("ΔE={:2.0}", color.distance),
+        font.clone(),
+        text_color,
+    );
+    ui.painter().text(
+        egui::pos2(hsv_x, y),
+        egui::Align2::LEFT_TOP,
+        format!("HSV {:3} {:3} {:3}", hsv.0, hsv.1, hsv.2),
+        font,
+        text_color,
+    );
+}
+
+fn fitted_color_name(ui: &egui::Ui, mut name: String, font: &egui::FontId, max_width: f32) -> String {
+    let painter = ui.painter();
+    if painter
+        .layout_no_wrap(name.clone(), font.clone(), egui::Color32::WHITE)
+        .size()
+        .x
+        <= max_width
+    {
+        return name;
+    }
+
+    while !name.is_empty() {
+        name.pop();
+        let candidate = format!("{name}...");
+        if painter
+            .layout_no_wrap(candidate.clone(), font.clone(), egui::Color32::WHITE)
+            .size()
+            .x
+            <= max_width
+        {
+            return candidate;
+        }
+    }
+    "...".to_owned()
+}
+
+fn contrast_prefers_black(rgba: [u8; 4]) -> bool {
+    let luminance = 0.2126 * rgba[0] as f32 + 0.7152 * rgba[1] as f32 + 0.0722 * rgba[2] as f32;
+    luminance > 150.0
 }
 
 fn render_size_footer(
@@ -445,10 +690,7 @@ fn render_size_footer(
 
             if apply {
                 state.size_being_edited = [false, false];
-                if let (Ok(w), Ok(h)) = (
-                    state.size_texts[0].parse::<u32>(),
-                    state.size_texts[1].parse::<u32>(),
-                ) {
+                if let (Ok(w), Ok(h)) = (state.size_texts[0].parse::<u32>(), state.size_texts[1].parse::<u32>()) {
                     if let Ok(mut actions) = action_queue.lock() {
                         actions.push(AppAction::ResizeWindow(WindowResizeAction::Custom {
                             width: w,

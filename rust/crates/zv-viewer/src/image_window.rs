@@ -7,12 +7,30 @@ use crate::color_image::PixelSRGBA;
 use crate::image_item_data::ImageItemData;
 use crate::render::WgpuImageCallback;
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct CursorPixelInfo {
     pub image_name: String,
     pub x: u32,
     pub y: u32,
+    pub image_width: u32,
+    pub image_height: u32,
+    pub uv: egui::Vec2,
     pub rgba: [u8; 4],
+    pub image_data: Arc<Mutex<ImageItemData>>,
+}
+
+impl std::fmt::Debug for CursorPixelInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CursorPixelInfo")
+            .field("image_name", &self.image_name)
+            .field("x", &self.x)
+            .field("y", &self.y)
+            .field("image_width", &self.image_width)
+            .field("image_height", &self.image_height)
+            .field("uv", &self.uv)
+            .field("rgba", &self.rgba)
+            .finish_non_exhaustive()
+    }
 }
 
 struct ZoomState {
@@ -133,7 +151,11 @@ impl ImageWindow {
                                 image_name: image_name.clone(),
                                 x,
                                 y,
+                                image_width: data.width(),
+                                image_height: data.height(),
+                                uv: tex_uv,
                                 rgba,
+                                image_data: image_data.clone(),
                             });
                         }
                     }

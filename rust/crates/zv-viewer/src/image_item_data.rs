@@ -31,14 +31,7 @@ impl ImageItemData {
         self.cpu_data.pixel(x, y).map(|pixel| pixel.as_array())
     }
 
-    pub fn ensure_uploaded_to_gpu(
-        &mut self,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        bind_group_layout: &wgpu::BindGroupLayout,
-        sampler: &wgpu::Sampler,
-        zoom_uniform_buffer: &wgpu::Buffer,
-    ) {
+    pub fn ensure_uploaded_to_gpu(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
         if self.texture_data.is_some() {
             return;
         }
@@ -64,41 +57,21 @@ impl ImageItemData {
         upload_mip_levels(queue, &texture, &self.cpu_data, mip_level_count);
 
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("zv image item bind group"),
-            layout: bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Sampler(sampler),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: zoom_uniform_buffer.as_entire_binding(),
-                },
-            ],
-        });
 
         self.texture_data = Some(WgpuImageTexture {
             _texture: texture,
-            _view: view,
-            bind_group,
+            view,
         });
     }
 
-    pub fn gpu_bind_group(&self) -> Option<&wgpu::BindGroup> {
-        self.texture_data.as_ref().map(|texture_data| &texture_data.bind_group)
+    pub fn gpu_texture_view(&self) -> Option<&wgpu::TextureView> {
+        self.texture_data.as_ref().map(|texture_data| &texture_data.view)
     }
 }
 
 pub struct WgpuImageTexture {
     _texture: wgpu::Texture,
-    _view: wgpu::TextureView,
-    bind_group: wgpu::BindGroup,
+    view: wgpu::TextureView,
 }
 
 fn upload_mip_levels(queue: &wgpu::Queue, texture: &wgpu::Texture, base_level: &ImageSRGBA, mip_level_count: u32) {

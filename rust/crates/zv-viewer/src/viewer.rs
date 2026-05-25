@@ -107,6 +107,7 @@ impl Viewer {
                 }
             }
 
+            let cursor_before = self.current_cursor_signature();
             let image_output = self.image_window.show(
                 ctx,
                 selected.name,
@@ -114,6 +115,10 @@ impl Viewer {
                 selected.error.as_deref(),
                 self.cursor_info.clone(),
             );
+            let cursor_after = self.current_cursor_signature();
+            if cursor_before != cursor_after && self.controls_window.is_enabled() {
+                ctx.request_repaint_of(self.controls_window.viewport_id());
+            }
             if image_output.secondary_clicked {
                 self.controls_window.toggle();
             }
@@ -286,6 +291,13 @@ impl Viewer {
             _ => None,
         };
         self.controls_window.set_target_position(target_position);
+    }
+
+    fn current_cursor_signature(&self) -> Option<(String, u32, u32, [u8; 4])> {
+        self.cursor_info.lock().ok().and_then(|info| {
+            info.as_ref()
+                .map(|cursor| (cursor.image_name.clone(), cursor.x, cursor.y, cursor.rgba))
+        })
     }
 }
 

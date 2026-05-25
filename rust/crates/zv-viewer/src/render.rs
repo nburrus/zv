@@ -87,7 +87,6 @@ pub struct WgpuImageRenderer {
     pipeline: wgpu::RenderPipeline,
     bind_group_layout: wgpu::BindGroupLayout,
     sampler: wgpu::Sampler,
-    zoom_uniform_buffer: wgpu::Buffer,
 }
 
 impl WgpuImageRenderer {
@@ -184,55 +183,72 @@ impl WgpuImageRenderer {
             ..Default::default()
         });
 
-        // Default zoom: show full image (uv_min=0,0  uv_max=1,1).
-        let zoom_uniform_data: [f32; 4] = [0.0, 0.0, 1.0, 1.0];
-        let zoom_uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("zv zoom uniform buffer"),
-            size: std::mem::size_of::<[f32; 4]>() as u64,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: true,
-        });
-        zoom_uniform_buffer
-            .slice(..)
-            .get_mapped_range_mut()
-            .copy_from_slice(bytemuck::cast_slice(&zoom_uniform_data));
-        zoom_uniform_buffer.unmap();
-
         Self {
             pipeline,
             bind_group_layout,
             sampler,
-            zoom_uniform_buffer,
         }
     }
 
-    fn prepare_image_data(
+    fn create_callback_resources(
         &self,
         device: &wgpu::Device,
+        texture_view: &wgpu::TextureView,
+    ) -> WgpuImageCallbackResources {
+        // Each paint callback owns its own tiny UV uniform so two callbacks can
+        // render different regions of the same shared texture in one frame.
+        let zoom_uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("zv image callback zoom uniform buffer"),
+            size: std::mem::size_of::<[f32; 4]>() as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("zv image callback bind group"),
+            layout: &self.bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(texture_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&self.sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: zoom_uniform_buffer.as_entire_binding(),
+                },
+            ],
+        });
+
+        WgpuImageCallbackResources {
+            zoom_uniform_buffer,
+            bind_group,
+        }
+    }
+
+    fn write_uv_uniform(
+        &self,
         queue: &wgpu::Queue,
-        image_data: &mut ImageItemData,
+        resources: &WgpuImageCallbackResources,
         uv_min: [f32; 2],
         uv_max: [f32; 2],
     ) {
-        image_data.ensure_uploaded_to_gpu(
-            device,
-            queue,
-            &self.bind_group_layout,
-            &self.sampler,
-            &self.zoom_uniform_buffer,
-        );
         let zoom_data: [f32; 4] = [uv_min[0], uv_min[1], uv_max[0], uv_max[1]];
-        queue.write_buffer(&self.zoom_uniform_buffer, 0, bytemuck::cast_slice(&zoom_data));
+        queue.write_buffer(&resources.zoom_uniform_buffer, 0, bytemuck::cast_slice(&zoom_data));
     }
 
-    fn paint_image_data(&self, image_data: &ImageItemData, render_pass: &mut wgpu::RenderPass<'static>) {
-        let Some(bind_group) = image_data.gpu_bind_group() else {
-            return;
-        };
+    fn paint_bind_group(&self, bind_group: &wgpu::BindGroup, render_pass: &mut wgpu::RenderPass<'static>) {
         render_pass.set_pipeline(&self.pipeline);
         render_pass.set_bind_group(0, bind_group, &[]);
         render_pass.draw(0..6, 0..1);
     }
+}
+
+struct WgpuImageCallbackResources {
+    zoom_uniform_buffer: wgpu::Buffer,
+    bind_group: wgpu::BindGroup,
 }
 
 #[derive(Clone)]
@@ -240,6 +256,7 @@ pub struct WgpuImageCallback {
     image_data: Arc<Mutex<ImageItemData>>,
     uv_min: [f32; 2],
     uv_max: [f32; 2],
+    resources: Arc<Mutex<Option<WgpuImageCallbackResources>>>,
 }
 
 impl WgpuImageCallback {
@@ -248,6 +265,7 @@ impl WgpuImageCallback {
             image_data,
             uv_min,
             uv_max,
+            resources: Arc::new(Mutex::new(None)),
         }
     }
 }
@@ -271,7 +289,22 @@ impl egui_wgpu::CallbackTrait for WgpuImageCallback {
             return Vec::new();
         };
 
-        renderer.prepare_image_data(device, queue, &mut image_data, self.uv_min, self.uv_max);
+        image_data.ensure_uploaded_to_gpu(device, queue);
+        let Some(texture_view) = image_data.gpu_texture_view() else {
+            return Vec::new();
+        };
+
+        let Ok(mut resources) = self.resources.lock() else {
+            tracing::warn!("image callback resources lock is poisoned");
+            return Vec::new();
+        };
+        if resources.is_none() {
+            *resources = Some(renderer.create_callback_resources(device, texture_view));
+        }
+        if let Some(resources) = resources.as_ref() {
+            renderer.write_uv_uniform(queue, resources, self.uv_min, self.uv_max);
+        }
+
         Vec::new()
     }
 
@@ -285,10 +318,13 @@ impl egui_wgpu::CallbackTrait for WgpuImageCallback {
             return;
         };
 
-        let Ok(image_data) = self.image_data.lock() else {
+        let Ok(resources) = self.resources.lock() else {
+            return;
+        };
+        let Some(resources) = resources.as_ref() else {
             return;
         };
 
-        renderer.paint_image_data(&image_data, render_pass);
+        renderer.paint_bind_group(&resources.bind_group, render_pass);
     }
 }
