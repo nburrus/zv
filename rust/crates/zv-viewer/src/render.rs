@@ -11,6 +11,20 @@ struct VertexOut {
     @location(0) uv: vec2<f32>,
 };
 
+struct ZoomUniforms {
+    uv_min: vec2<f32>,
+    uv_max: vec2<f32>,
+};
+
+@group(0) @binding(0)
+var image_texture: texture_2d<f32>;
+
+@group(0) @binding(1)
+var image_sampler: sampler;
+
+@group(0) @binding(2)
+var<uniform> zoom: ZoomUniforms;
+
 @vertex
 fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOut {
     var positions = array<vec2<f32>, 6>(
@@ -22,7 +36,7 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOut {
         vec2<f32>(-1.0,  1.0),
     );
 
-    var uvs = array<vec2<f32>, 6>(
+    var base_uvs = array<vec2<f32>, 6>(
         vec2<f32>(0.0, 1.0),
         vec2<f32>(1.0, 1.0),
         vec2<f32>(1.0, 0.0),
@@ -33,15 +47,10 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOut {
 
     var out: VertexOut;
     out.position = vec4<f32>(positions[vertex_index], 0.0, 1.0);
-    out.uv = uvs[vertex_index];
+    let t = base_uvs[vertex_index];
+    out.uv = zoom.uv_min + t * (zoom.uv_max - zoom.uv_min);
     return out;
 }
-
-@group(0) @binding(0)
-var image_texture: texture_2d<f32>;
-
-@group(0) @binding(1)
-var image_sampler: sampler;
 "#;
 
 const IMAGE_SHADER_FRAGMENT: &str = r#"
@@ -78,6 +87,7 @@ pub struct WgpuImageRenderer {
     pipeline: wgpu::RenderPipeline,
     bind_group_layout: wgpu::BindGroupLayout,
     sampler: wgpu::Sampler,
+    zoom_uniform_buffer: wgpu::Buffer,
 }
 
 impl WgpuImageRenderer {
@@ -117,6 +127,16 @@ impl WgpuImageRenderer {
                     binding: 1,
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
                     count: None,
                 },
             ],
@@ -167,10 +187,25 @@ impl WgpuImageRenderer {
             ..Default::default()
         });
 
+        // Default zoom: show full image (uv_min=0,0  uv_max=1,1).
+        let zoom_uniform_data: [f32; 4] = [0.0, 0.0, 1.0, 1.0];
+        let zoom_uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("zv zoom uniform buffer"),
+            size: std::mem::size_of::<[f32; 4]>() as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: true,
+        });
+        zoom_uniform_buffer
+            .slice(..)
+            .get_mapped_range_mut()
+            .copy_from_slice(bytemuck::cast_slice(&zoom_uniform_data));
+        zoom_uniform_buffer.unmap();
+
         Self {
             pipeline,
             bind_group_layout,
             sampler,
+            zoom_uniform_buffer,
         }
     }
 
@@ -179,8 +214,18 @@ impl WgpuImageRenderer {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         image_data: &mut ImageItemData,
+        uv_min: [f32; 2],
+        uv_max: [f32; 2],
     ) {
-        image_data.ensure_uploaded_to_gpu(device, queue, &self.bind_group_layout, &self.sampler);
+        image_data.ensure_uploaded_to_gpu(
+            device,
+            queue,
+            &self.bind_group_layout,
+            &self.sampler,
+            &self.zoom_uniform_buffer,
+        );
+        let zoom_data: [f32; 4] = [uv_min[0], uv_min[1], uv_max[0], uv_max[1]];
+        queue.write_buffer(&self.zoom_uniform_buffer, 0, bytemuck::cast_slice(&zoom_data));
     }
 
     fn paint_image_data(
@@ -200,11 +245,17 @@ impl WgpuImageRenderer {
 #[derive(Clone)]
 pub struct WgpuImageCallback {
     image_data: Arc<Mutex<ImageItemData>>,
+    uv_min: [f32; 2],
+    uv_max: [f32; 2],
 }
 
 impl WgpuImageCallback {
-    pub fn new(image_data: Arc<Mutex<ImageItemData>>) -> Self {
-        Self { image_data }
+    pub fn new(image_data: Arc<Mutex<ImageItemData>>, uv_min: [f32; 2], uv_max: [f32; 2]) -> Self {
+        Self {
+            image_data,
+            uv_min,
+            uv_max,
+        }
     }
 }
 
@@ -227,7 +278,7 @@ impl egui_wgpu::CallbackTrait for WgpuImageCallback {
             return Vec::new();
         };
 
-        renderer.prepare_image_data(device, queue, &mut image_data);
+        renderer.prepare_image_data(device, queue, &mut image_data, self.uv_min, self.uv_max);
         Vec::new()
     }
 

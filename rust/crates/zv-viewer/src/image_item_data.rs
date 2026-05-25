@@ -37,6 +37,7 @@ impl ImageItemData {
         queue: &wgpu::Queue,
         bind_group_layout: &wgpu::BindGroupLayout,
         sampler: &wgpu::Sampler,
+        zoom_uniform_buffer: &wgpu::Buffer,
     ) {
         if self.texture_data.is_some() {
             return;
@@ -86,6 +87,10 @@ impl ImageItemData {
                 wgpu::BindGroupEntry {
                     binding: 1,
                     resource: wgpu::BindingResource::Sampler(sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: zoom_uniform_buffer.as_entire_binding(),
                 },
             ],
         });

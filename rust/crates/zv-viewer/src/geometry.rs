@@ -46,8 +46,8 @@ enum WindowGeometryMode {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ViewportGeometry {
     pub monitor_size: egui::Vec2,
-    pub outer_rect: Option<egui::Rect>,
-    pub inner_rect: Option<egui::Rect>,
+    pub outer_rect: Option<egui::Rect>, // window size, including decorations
+    pub inner_rect: Option<egui::Rect>, // window size, only the content rendered by us
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
