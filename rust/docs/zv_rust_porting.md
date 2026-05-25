@@ -281,6 +281,7 @@ Progress so far:
 - Lazy CPU load and lazy WGPU upload are implemented.
 - The image viewport fills the OS window content area without internal aspect padding.
 - C++-style resize commands are implemented: `n`, `a`, `m`, `<`, `>`, `.`, and `,`.
+- Image viewport resize state, generic viewport geometry, and controls-window placement now live in separate Rust modules.
 - Pixel hover reporting is implemented in both the controls viewport and a compact image overlay.
 - A JSON debug runner can inject input and write state/screenshot artifacts.
 

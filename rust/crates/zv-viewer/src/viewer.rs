@@ -6,14 +6,12 @@ use eframe::egui;
 use crate::color_image::{ImageSRGBA, PixelSRGBA};
 use crate::controls_window::ControlsWindow;
 use crate::debug::{SelectedImageDebug, ViewerDebugState};
-use crate::geometry::{
-    controls_position_for_image_window, ImageWindowGeometryState, ViewportGeometry,
-    ViewportResizeCommand, WindowResizeAction,
-};
 use crate::image_io::load_rgba_image;
 use crate::image_item_data::ImageItemData;
 use crate::image_window::{CursorPixelInfo, ImageWindow};
-use crate::shortcuts::{collect_shortcuts, ShortcutViewport};
+use crate::image_window_geometry::{ImageWindowGeometryState, WindowResizeAction};
+use crate::shortcuts::{ShortcutViewport, collect_shortcuts};
+use crate::viewport_geometry::{ViewportGeometry, ViewportResizeCommand};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AppAction {
@@ -272,7 +270,7 @@ impl Viewer {
             ctx.input(|input| (input.viewport().monitor_size, input.viewport().outer_rect));
         let target_position = match (monitor_size, outer_rect) {
             (Some(monitor_size), Some(outer_rect)) => {
-                controls_position_for_image_window(outer_rect, monitor_size)
+                ControlsWindow::position_for_image_window(outer_rect, monitor_size)
             }
             _ => None,
         };

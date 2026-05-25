@@ -1,26 +1,11 @@
-#![allow(dead_code)]
-
 use eframe::egui;
 
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct Point {
-    pub x: f32,
-    pub y: f32,
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct Rect {
-    pub origin: Point,
-    pub size: Point,
-}
-
-const CONTROLS_WIDTH_WITH_PADDING: f32 = 320.0 + 12.0;
-const CONTROLS_GAP: f32 = 8.0;
+use crate::viewport_geometry::{InnerArea, ViewportGeometry, ViewportResizeCommand};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct WindowGeometry {
-    pub origin: egui::Pos2,
-    pub size: egui::Vec2,
+struct WindowGeometry {
+    origin: egui::Pos2,
+    size: egui::Vec2,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -41,26 +26,6 @@ enum WindowGeometryMode {
     AspectRatio,
     ScaleSpect,
     Maxspect,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct ViewportGeometry {
-    pub monitor_size: egui::Vec2,
-    pub outer_rect: Option<egui::Rect>, // window size, including decorations
-    pub inner_rect: Option<egui::Rect>, // window size, only the content rendered by us
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct ViewportResizeCommand {
-    pub outer_position: Option<egui::Pos2>,
-    pub inner_size: Option<egui::Vec2>,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-struct InnerArea {
-    origin: egui::Pos2,
-    size: egui::Vec2,
-    outer_extra_size: egui::Vec2,
 }
 
 #[derive(Debug)]
@@ -93,7 +58,7 @@ impl Default for ImageWindowGeometryState {
     }
 }
 
-pub fn initial_image_window_geometry(
+fn initial_image_window_geometry(
     image_size: egui::Vec2,
     monitor_size: egui::Vec2,
     viewer_index: usize,
@@ -341,66 +306,6 @@ impl ImageWindowGeometryState {
         } else {
             inner_area.size
         }
-    }
-}
-
-impl InnerArea {
-    fn from_viewport(viewport: ViewportGeometry) -> Self {
-        // Approximate the maximum drawable image area from the monitor size and
-        // observed window decoration size. Menu bars/docks are not represented
-        // here; clamped maxspect feedback above corrects platforms that enforce
-        // a smaller usable work area.
-        let outer_extra_size = match (viewport.outer_rect, viewport.inner_rect) {
-            (Some(outer), Some(inner)) => (outer.size() - inner.size()).max(egui::Vec2::ZERO),
-            _ => egui::Vec2::ZERO,
-        };
-        let inner_offset = match (viewport.outer_rect, viewport.inner_rect) {
-            (Some(outer), Some(inner)) => inner.min - outer.min,
-            _ => egui::Vec2::ZERO,
-        };
-        let size = (viewport.monitor_size - outer_extra_size).max(egui::vec2(1.0, 1.0));
-        let origin = egui::pos2(inner_offset.x, inner_offset.y);
-        Self {
-            origin,
-            size,
-            outer_extra_size,
-        }
-    }
-
-    fn outer_position_for_centered_inner_size(self, inner_size: egui::Vec2) -> egui::Pos2 {
-        // self.origin is the inner-to-outer offset (e.g. title bar height).
-        // Deliberately unused here: we're positioning the outer window, so
-        // centering uses outer dimensions against the full monitor extent
-        // (self.size + outer_extra_size).
-        let outer_size = inner_size + self.outer_extra_size;
-        let outer_origin = egui::pos2(
-            (self.size.x + self.outer_extra_size.x - outer_size.x) * 0.5,
-            (self.size.y + self.outer_extra_size.y - outer_size.y) * 0.5,
-        );
-        outer_origin
-    }
-}
-
-// Note: monitor_size has no origin; outer_rect.min may be negative or past
-// monitor_size.x on multi-monitor setups. This logic assumes a single screen.
-pub fn controls_position_for_image_window(
-    viewer_outer_rect: egui::Rect,
-    monitor_size: egui::Vec2,
-) -> Option<egui::Pos2> {
-    if viewer_outer_rect.min.x > CONTROLS_WIDTH_WITH_PADDING {
-        Some(egui::pos2(
-            viewer_outer_rect.min.x - CONTROLS_WIDTH_WITH_PADDING,
-            viewer_outer_rect.min.y,
-        ))
-    } else if monitor_size.x - viewer_outer_rect.min.x - viewer_outer_rect.width()
-        > CONTROLS_WIDTH_WITH_PADDING
-    {
-        Some(egui::pos2(
-            viewer_outer_rect.min.x + viewer_outer_rect.width() + CONTROLS_GAP,
-            viewer_outer_rect.min.y,
-        ))
-    } else {
-        None
     }
 }
 

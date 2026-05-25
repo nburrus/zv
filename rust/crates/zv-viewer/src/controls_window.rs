@@ -2,9 +2,12 @@ use std::sync::{Arc, Mutex};
 
 use eframe::egui;
 
-use crate::viewer::AppAction;
 use crate::image_window::CursorPixelInfo;
 use crate::shortcuts::{ShortcutViewport, collect_shortcuts};
+use crate::viewer::AppAction;
+
+const CONTROLS_WIDTH_WITH_PADDING: f32 = 320.0 + 12.0;
+const CONTROLS_GAP: f32 = 8.0;
 
 pub struct ControlsWindow {
     viewport_id: egui::ViewportId,
@@ -57,6 +60,29 @@ impl ControlsWindow {
 
     pub fn target_position(&self) -> Option<egui::Pos2> {
         self.target_position
+    }
+
+    // Note: monitor_size has no origin; outer_rect.min may be negative or past
+    // monitor_size.x on multi-monitor setups. This logic assumes a single screen.
+    pub fn position_for_image_window(
+        viewer_outer_rect: egui::Rect,
+        monitor_size: egui::Vec2,
+    ) -> Option<egui::Pos2> {
+        if viewer_outer_rect.min.x > CONTROLS_WIDTH_WITH_PADDING {
+            Some(egui::pos2(
+                viewer_outer_rect.min.x - CONTROLS_WIDTH_WITH_PADDING,
+                viewer_outer_rect.min.y,
+            ))
+        } else if monitor_size.x - viewer_outer_rect.min.x - viewer_outer_rect.width()
+            > CONTROLS_WIDTH_WITH_PADDING
+        {
+            Some(egui::pos2(
+                viewer_outer_rect.min.x + viewer_outer_rect.width() + CONTROLS_GAP,
+                viewer_outer_rect.min.y,
+            ))
+        } else {
+            None
+        }
     }
 
     pub fn show(&mut self, ctx: &egui::Context) {

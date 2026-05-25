@@ -1,14 +1,15 @@
 mod app;
+mod color_image;
 mod controls_window;
 mod debug;
-mod geometry;
 mod image_io;
-mod image_window;
 mod image_item_data;
+mod image_window;
+mod image_window_geometry;
 mod render;
-mod color_image;
 mod shortcuts;
 mod viewer;
+mod viewport_geometry;
 
 use std::path::PathBuf;
 use std::time::Instant;

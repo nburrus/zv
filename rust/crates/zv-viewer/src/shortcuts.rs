@@ -1,6 +1,6 @@
 use eframe::egui;
 
-use crate::geometry::WindowResizeAction;
+use crate::image_window_geometry::WindowResizeAction;
 use crate::viewer::AppAction;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
