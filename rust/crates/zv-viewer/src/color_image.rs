@@ -172,8 +172,7 @@ pub fn downsample_2x_srgba(source: &ImageSRGBA) -> ImageSRGBA {
     for dst_y in 0..safe_dst_h {
         let y0 = dst_y * 2;
         let row0: &[u32] = bytemuck::cast_slice(&source.row_bytes(y0 as u32).unwrap()[..src_w * 4]);
-        let row1: &[u32] =
-            bytemuck::cast_slice(&source.row_bytes((y0 + 1) as u32).unwrap()[..src_w * 4]);
+        let row1: &[u32] = bytemuck::cast_slice(&source.row_bytes((y0 + 1) as u32).unwrap()[..src_w * 4]);
         let dst_bytes = target.row_bytes_mut(dst_y as u32).unwrap();
         let dst_row: &mut [u32] = bytemuck::cast_slice_mut(&mut dst_bytes[..dst_w * 4]);
         // Safe x loop: pre-sliced so LLVM can prove all accesses in-bounds and
@@ -248,8 +247,7 @@ fn avg4_packed_rgba(a: u32, b: u32, c: u32, d: u32) -> u32 {
     // Lane 0 = R (bits 0-7), Lane 1 = B (bits 16-23)
     let lo = (a & MASK) + (b & MASK) + (c & MASK) + (d & MASK) + 0x0002_0002;
     // Lane 0 = G (bits 0-7), Lane 1 = A (bits 16-23), shifted from odd byte positions
-    let hi =
-        ((a >> 8) & MASK) + ((b >> 8) & MASK) + ((c >> 8) & MASK) + ((d >> 8) & MASK) + 0x0002_0002;
+    let hi = ((a >> 8) & MASK) + ((b >> 8) & MASK) + ((c >> 8) & MASK) + ((d >> 8) & MASK) + 0x0002_0002;
     ((lo >> 2) & MASK) | (((hi >> 2) & MASK) << 8)
 }
 

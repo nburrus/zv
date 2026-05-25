@@ -222,18 +222,10 @@ impl WgpuImageRenderer {
             &self.zoom_uniform_buffer,
         );
         let zoom_data: [f32; 4] = [uv_min[0], uv_min[1], uv_max[0], uv_max[1]];
-        queue.write_buffer(
-            &self.zoom_uniform_buffer,
-            0,
-            bytemuck::cast_slice(&zoom_data),
-        );
+        queue.write_buffer(&self.zoom_uniform_buffer, 0, bytemuck::cast_slice(&zoom_data));
     }
 
-    fn paint_image_data(
-        &self,
-        image_data: &ImageItemData,
-        render_pass: &mut wgpu::RenderPass<'static>,
-    ) {
+    fn paint_image_data(&self, image_data: &ImageItemData, render_pass: &mut wgpu::RenderPass<'static>) {
         let Some(bind_group) = image_data.gpu_bind_group() else {
             return;
         };

@@ -99,23 +99,14 @@ impl ImageWindow {
                 let (uv_min, uv_max) = self.zoom.uv_region();
                 let callback = egui_wgpu::Callback::new_paint_callback(
                     rect,
-                    WgpuImageCallback::new(
-                        image_data.clone(),
-                        [uv_min.x, uv_min.y],
-                        [uv_max.x, uv_max.y],
-                    ),
+                    WgpuImageCallback::new(image_data.clone(), [uv_min.x, uv_min.y], [uv_max.x, uv_max.y]),
                 );
                 ui.painter().add(callback);
 
                 // Pixel under cursor in texture UV space, needed for zoom center.
                 let mut mouse_uv_in_texture: Option<egui::Vec2> = None;
 
-                let mut status = format!(
-                    "{}  {} x {}",
-                    image_name,
-                    data.width(),
-                    data.height(),
-                );
+                let mut status = format!("{}  {} x {}", image_name, data.width(), data.height(),);
                 if let Some(pointer_pos) = response.hover_pos() {
                     // This 0.5 offset is important since the mouse coordinate is an integer.
                     // So when we are in the center of a pixel we'll return 0,0 instead of
@@ -186,10 +177,6 @@ fn paint_status_overlay(ui: &egui::Ui, image_rect: egui::Rect, text: &str) {
     )
     .intersect(image_rect);
 
-    painter.rect_filled(
-        overlay_rect,
-        0.0,
-        egui::Color32::from_rgba_premultiplied(0, 0, 0, 190),
-    );
+    painter.rect_filled(overlay_rect, 0.0, egui::Color32::from_rgba_premultiplied(0, 0, 0, 190));
     painter.galley(overlay_rect.min + padding, galley, egui::Color32::WHITE);
 }

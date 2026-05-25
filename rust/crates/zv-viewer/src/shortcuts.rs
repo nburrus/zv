@@ -38,11 +38,7 @@ const SHORTCUTS: &[(egui::Key, ShortcutScope, AppAction)] = &[
         ShortcutScope::GlobalWhenNotTyping,
         AppAction::PreviousImage,
     ),
-    (
-        egui::Key::Q,
-        ShortcutScope::GlobalWhenNotTyping,
-        AppAction::Quit,
-    ),
+    (egui::Key::Q, ShortcutScope::GlobalWhenNotTyping, AppAction::Quit),
     (
         egui::Key::N,
         ShortcutScope::GlobalWhenNotTyping,
@@ -65,15 +61,7 @@ pub fn collect_shortcuts(ctx: &egui::Context, viewport: ShortcutViewport) -> Vec
     let typing_text = ctx.wants_keyboard_input();
     ctx.input(|input| {
         for &(key, scope, action) in SHORTCUTS {
-            push_if_pressed(
-                input,
-                key,
-                scope,
-                viewport,
-                typing_text,
-                action,
-                &mut actions,
-            );
+            push_if_pressed(input, key, scope, viewport, typing_text, action, &mut actions);
         }
         push_resize_text_shortcuts(input, viewport, typing_text, &mut actions);
     });
@@ -110,14 +98,10 @@ fn push_resize_text_shortcuts(
     }
 
     if input.key_pressed(egui::Key::Period) {
-        out_actions.push(AppAction::ResizeWindow(
-            WindowResizeAction::Increase10Percent,
-        ));
+        out_actions.push(AppAction::ResizeWindow(WindowResizeAction::Increase10Percent));
     }
     if input.key_pressed(egui::Key::Comma) {
-        out_actions.push(AppAction::ResizeWindow(
-            WindowResizeAction::Decrease10Percent,
-        ));
+        out_actions.push(AppAction::ResizeWindow(WindowResizeAction::Decrease10Percent));
     }
 }
 

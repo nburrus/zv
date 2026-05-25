@@ -1,8 +1,6 @@
 use eframe::egui_wgpu::wgpu;
 
-use crate::color_image::{
-    ImageSRGBA, PixelFormat, Srgba8Format, downsample_2x_srgba, mip_level_count,
-};
+use crate::color_image::{ImageSRGBA, PixelFormat, Srgba8Format, downsample_2x_srgba, mip_level_count};
 
 pub struct ImageItemData {
     cpu_data: ImageSRGBA,
@@ -93,9 +91,7 @@ impl ImageItemData {
     }
 
     pub fn gpu_bind_group(&self) -> Option<&wgpu::BindGroup> {
-        self.texture_data
-            .as_ref()
-            .map(|texture_data| &texture_data.bind_group)
+        self.texture_data.as_ref().map(|texture_data| &texture_data.bind_group)
     }
 }
 
@@ -105,12 +101,7 @@ pub struct WgpuImageTexture {
     bind_group: wgpu::BindGroup,
 }
 
-fn upload_mip_levels(
-    queue: &wgpu::Queue,
-    texture: &wgpu::Texture,
-    base_level: &ImageSRGBA,
-    mip_level_count: u32,
-) {
+fn upload_mip_levels(queue: &wgpu::Queue, texture: &wgpu::Texture, base_level: &ImageSRGBA, mip_level_count: u32) {
     let mut previous_level = base_level.clone();
     for mip_level in 1..mip_level_count {
         let next_level = downsample_2x_srgba(&previous_level);
@@ -119,12 +110,7 @@ fn upload_mip_levels(
     }
 }
 
-fn write_image_to_texture_level(
-    queue: &wgpu::Queue,
-    texture: &wgpu::Texture,
-    mip_level: u32,
-    image: &ImageSRGBA,
-) {
+fn write_image_to_texture_level(queue: &wgpu::Queue, texture: &wgpu::Texture, mip_level: u32, image: &ImageSRGBA) {
     queue.write_texture(
         wgpu::TexelCopyTextureInfo {
             texture,

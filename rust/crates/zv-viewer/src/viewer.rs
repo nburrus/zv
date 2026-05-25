@@ -11,7 +11,7 @@ use crate::image_io::load_rgba_image;
 use crate::image_item_data::ImageItemData;
 use crate::image_window::{CursorPixelInfo, ImageWindow};
 use crate::image_window_geometry::{ImageWindowGeometryState, WindowResizeAction};
-use crate::shortcuts::{collect_shortcuts, ShortcutViewport};
+use crate::shortcuts::{ShortcutViewport, collect_shortcuts};
 use crate::viewport_geometry::{ViewportGeometry, ViewportResizeCommand};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -52,20 +52,14 @@ impl Viewer {
         let entries = if image_paths.is_empty() {
             vec![ImageEntry::default_image()]
         } else {
-            image_paths
-                .into_iter()
-                .map(ImageEntry::from_path)
-                .collect::<Vec<_>>()
+            image_paths.into_iter().map(ImageEntry::from_path).collect::<Vec<_>>()
         };
 
         let cursor_info = Arc::new(Mutex::new(None));
         let controls_action_queue = Arc::new(Mutex::new(Vec::new()));
         Self {
             image_window: ImageWindow::default(),
-            controls_window: ControlsWindow::new(
-                cursor_info.clone(),
-                controls_action_queue.clone(),
-            ),
+            controls_window: ControlsWindow::new(cursor_info.clone(), controls_action_queue.clone()),
             entries,
             selected_index: 0,
             pending_actions: Vec::new(),
@@ -88,11 +82,7 @@ impl Viewer {
         let mut image_load_timing = None;
         let selected = if let Some(entry) = self.entries.get_mut(self.selected_index) {
             image_load_timing = entry.ensure_loaded();
-            Some((
-                entry.display_name(),
-                entry.data.clone(),
-                entry.error.clone(),
-            ))
+            Some((entry.display_name(), entry.data.clone(), entry.error.clone()))
         } else {
             None
         };
@@ -121,13 +111,9 @@ impl Viewer {
                 }
             }
 
-            let image_output = self.image_window.show(
-                ctx,
-                image_name,
-                data,
-                error.as_deref(),
-                self.cursor_info.clone(),
-            );
+            let image_output =
+                self.image_window
+                    .show(ctx, image_name, data, error.as_deref(), self.cursor_info.clone());
             if image_output.secondary_clicked {
                 self.controls_window.toggle();
             }
@@ -164,14 +150,11 @@ impl Viewer {
             return;
         };
 
-        if let Some(command) = self
-            .image_window_geometry
-            .observe_viewport(ViewportGeometry {
-                monitor_size,
-                outer_rect,
-                inner_rect,
-            })
-        {
+        if let Some(command) = self.image_window_geometry.observe_viewport(ViewportGeometry {
+            monitor_size,
+            outer_rect,
+            inner_rect,
+        }) {
             send_resize_command(ctx, command);
         }
     }
@@ -216,11 +199,7 @@ impl Viewer {
         }
     }
 
-    fn apply_image_window_geometry(
-        &mut self,
-        ctx: &egui::Context,
-        data: &Arc<Mutex<ImageItemData>>,
-    ) {
+    fn apply_image_window_geometry(&mut self, ctx: &egui::Context, data: &Arc<Mutex<ImageItemData>>) {
         let Ok(data) = data.lock() else {
             return;
         };
@@ -255,10 +234,7 @@ impl Viewer {
 
         if self.last_displayed_index != Some(self.selected_index) {
             self.last_displayed_index = Some(self.selected_index);
-            if let Some(command) = self
-                .image_window_geometry
-                .on_image_changed(image_size, viewport)
-            {
+            if let Some(command) = self.image_window_geometry.on_image_changed(image_size, viewport) {
                 send_resize_command(ctx, command);
             }
         }

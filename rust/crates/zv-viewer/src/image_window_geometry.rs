@@ -113,10 +113,7 @@ impl ImageWindowGeometryState {
         action: WindowResizeAction,
     ) -> Option<ViewportResizeCommand> {
         let normal_size = self.normal_size?;
-        let current_size = viewport
-            .inner_rect
-            .map(|rect| rect.size())
-            .unwrap_or(normal_size);
+        let current_size = viewport.inner_rect.map(|rect| rect.size()).unwrap_or(normal_size);
         self.observe_current_inner_size(current_size, InnerArea::from_viewport(viewport));
         let inner_area = InnerArea::from_viewport(viewport);
 
@@ -127,8 +124,7 @@ impl ImageWindowGeometryState {
                 let max_inner_size = self.max_inner_size(inner_area);
                 let target_size = aspect_fit_size(normal_size, normal_size, max_inner_size, true);
                 if target_size.x < normal_size.x || target_size.y < normal_size.y {
-                    target_origin =
-                        Some(inner_area.outer_position_for_centered_inner_size(target_size));
+                    target_origin = Some(inner_area.outer_position_for_centered_inner_size(target_size));
                 }
                 self.last_geometry_mode = WindowGeometryMode::Normal;
                 self.platform_max_inner_size = None;
@@ -181,10 +177,8 @@ impl ImageWindowGeometryState {
             }
             WindowResizeAction::Maxspect => {
                 let max_inner_size = self.max_inner_size(inner_area);
-                let target_size =
-                    aspect_fit_size(max_inner_size * 2.0, normal_size, max_inner_size, true);
-                target_origin =
-                    Some(inner_area.outer_position_for_centered_inner_size(target_size));
+                let target_size = aspect_fit_size(max_inner_size * 2.0, normal_size, max_inner_size, true);
+                target_origin = Some(inner_area.outer_position_for_centered_inner_size(target_size));
                 self.last_geometry_mode = WindowGeometryMode::Maxspect;
                 target_size
             }
@@ -197,19 +191,12 @@ impl ImageWindowGeometryState {
         })
     }
 
-    pub fn observe_viewport(
-        &mut self,
-        viewport: ViewportGeometry,
-    ) -> Option<ViewportResizeCommand> {
+    pub fn observe_viewport(&mut self, viewport: ViewportGeometry) -> Option<ViewportResizeCommand> {
         let current_size = viewport.inner_rect.map(|rect| rect.size())?;
         self.observe_current_inner_size(current_size, InnerArea::from_viewport(viewport))
     }
 
-    fn record_programmatic_resize(
-        &mut self,
-        inner_size: egui::Vec2,
-        action: Option<WindowResizeAction>,
-    ) {
+    fn record_programmatic_resize(&mut self, inner_size: egui::Vec2, action: Option<WindowResizeAction>) {
         self.last_requested_inner_size = Some(inner_size);
         self.last_requested_action = action;
     }
@@ -272,11 +259,7 @@ impl ImageWindowGeometryState {
         })
     }
 
-    fn aspect_ratio_adjusted_size(
-        &mut self,
-        current_size: egui::Vec2,
-        normal_size: egui::Vec2,
-    ) -> egui::Vec2 {
+    fn aspect_ratio_adjusted_size(&mut self, current_size: egui::Vec2, normal_size: egui::Vec2) -> egui::Vec2 {
         let source_size = if self.last_geometry_mode == WindowGeometryMode::AspectRatio {
             self.aspect_ratio_source_size.unwrap_or(current_size)
         } else {
@@ -503,12 +486,7 @@ mod tests {
 
         let normal = state
             .apply_resize_action(
-                decorated_viewport(
-                    monitor_size,
-                    egui::pos2(100.0, 100.0),
-                    egui::vec2(600.0, 500.0),
-                    28.0,
-                ),
+                decorated_viewport(monitor_size, egui::pos2(100.0, 100.0), egui::vec2(600.0, 500.0), 28.0),
                 WindowResizeAction::Normal,
             )
             .expect("normal should apply");
@@ -525,12 +503,7 @@ mod tests {
 
         let normal = state
             .apply_resize_action(
-                decorated_viewport(
-                    monitor_size,
-                    egui::pos2(100.0, 100.0),
-                    egui::vec2(600.0, 500.0),
-                    0.0,
-                ),
+                decorated_viewport(monitor_size, egui::pos2(100.0, 100.0), egui::vec2(600.0, 500.0), 0.0),
                 WindowResizeAction::Normal,
             )
             .expect("normal should apply");
@@ -595,12 +568,7 @@ mod tests {
 
         let maxspect = state
             .apply_resize_action(
-                decorated_viewport(
-                    monitor_size,
-                    egui::pos2(100.0, 100.0),
-                    egui::vec2(600.0, 500.0),
-                    0.0,
-                ),
+                decorated_viewport(monitor_size, egui::pos2(100.0, 100.0), egui::vec2(600.0, 500.0), 0.0),
                 WindowResizeAction::Maxspect,
             )
             .expect("maxspect should apply");
@@ -623,12 +591,9 @@ mod tests {
         inner_size: egui::Vec2,
         decoration_top: f32,
     ) -> ViewportGeometry {
-        let outer_rect = egui::Rect::from_min_size(
-            outer_position,
-            egui::vec2(inner_size.x, inner_size.y + decoration_top),
-        );
-        let inner_rect =
-            egui::Rect::from_min_size(outer_position + egui::vec2(0.0, decoration_top), inner_size);
+        let outer_rect =
+            egui::Rect::from_min_size(outer_position, egui::vec2(inner_size.x, inner_size.y + decoration_top));
+        let inner_rect = egui::Rect::from_min_size(outer_position + egui::vec2(0.0, decoration_top), inner_size);
         ViewportGeometry {
             monitor_size,
             outer_rect: Some(outer_rect),
@@ -637,9 +602,6 @@ mod tests {
     }
 
     fn assert_size_near(a: egui::Vec2, b: egui::Vec2) {
-        assert!(
-            sizes_nearly_equal(a, b),
-            "expected {a:?} to be nearly equal to {b:?}"
-        );
+        assert!(sizes_nearly_equal(a, b), "expected {a:?} to be nearly equal to {b:?}");
     }
 }

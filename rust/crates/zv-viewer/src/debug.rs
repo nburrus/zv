@@ -161,11 +161,7 @@ struct PosSnapshot {
 }
 
 impl DebugConfig {
-    pub fn new(
-        script_json: Option<PathBuf>,
-        artifact_dir: Option<PathBuf>,
-        wait_frames: Option<u64>,
-    ) -> Self {
+    pub fn new(script_json: Option<PathBuf>, artifact_dir: Option<PathBuf>, wait_frames: Option<u64>) -> Self {
         Self {
             script_json,
             artifact_dir,
@@ -176,22 +172,12 @@ impl DebugConfig {
     pub fn into_runtime(self) -> Option<RuntimeDebug> {
         let path = self.script_json?;
 
-        let artifact_dir = self
-            .artifact_dir
-            .unwrap_or_else(|| PathBuf::from("debug-artifacts"));
-        let contents = std::fs::read_to_string(&path).unwrap_or_else(|err| {
-            panic!("failed to read debug script JSON {}: {err}", path.display())
-        });
-        let script: DebugScriptFile = serde_json::from_str(&contents).unwrap_or_else(|err| {
-            panic!(
-                "failed to parse debug script JSON {}: {err}",
-                path.display()
-            )
-        });
-        let actions = expand_default_waits(
-            script.actions,
-            self.wait_frames.or(script.wait_frames_default),
-        );
+        let artifact_dir = self.artifact_dir.unwrap_or_else(|| PathBuf::from("debug-artifacts"));
+        let contents = std::fs::read_to_string(&path)
+            .unwrap_or_else(|err| panic!("failed to read debug script JSON {}: {err}", path.display()));
+        let script: DebugScriptFile = serde_json::from_str(&contents)
+            .unwrap_or_else(|err| panic!("failed to parse debug script JSON {}: {err}", path.display()));
+        let actions = expand_default_waits(script.actions, self.wait_frames.or(script.wait_frames_default));
 
         Some(RuntimeDebug {
             actions,
@@ -240,12 +226,7 @@ impl RuntimeDebug {
         }
     }
 
-    fn apply_action(
-        &mut self,
-        ctx: &egui::Context,
-        state: &ViewerDebugState,
-        action: DebugAction,
-    ) -> bool {
+    fn apply_action(&mut self, ctx: &egui::Context, state: &ViewerDebugState, action: DebugAction) -> bool {
         match action {
             DebugAction::WaitForImage { timeout_frames } => {
                 if state.image_rect.is_some() {
@@ -253,9 +234,7 @@ impl RuntimeDebug {
                     self.advance_action();
                     true
                 } else {
-                    let start = *self
-                        .wait_for_image_started_at_frame
-                        .get_or_insert(self.frame_index);
+                    let start = *self.wait_for_image_started_at_frame.get_or_insert(self.frame_index);
                     assert!(
                         self.frame_index.saturating_sub(start) <= timeout_frames,
                         "debug script timed out waiting for image after {timeout_frames} frames"
@@ -264,9 +243,7 @@ impl RuntimeDebug {
                 }
             }
             DebugAction::WaitFrames { frames } => {
-                let wait_until = *self
-                    .wait_until_frame
-                    .get_or_insert(self.frame_index + frames);
+                let wait_until = *self.wait_until_frame.get_or_insert(self.frame_index + frames);
                 if self.frame_index >= wait_until {
                     self.wait_until_frame = None;
                     self.advance_action();
@@ -405,23 +382,11 @@ impl RuntimeDebug {
         );
     }
 
-    fn queue_events(
-        &mut self,
-        viewport_id: egui::ViewportId,
-        events: impl IntoIterator<Item = egui::Event>,
-    ) {
-        self.events_by_viewport
-            .entry(viewport_id)
-            .or_default()
-            .extend(events);
+    fn queue_events(&mut self, viewport_id: egui::ViewportId, events: impl IntoIterator<Item = egui::Event>) {
+        self.events_by_viewport.entry(viewport_id).or_default().extend(events);
     }
 
-    fn request_screenshot(
-        &mut self,
-        ctx: &egui::Context,
-        viewport_id: egui::ViewportId,
-        name: String,
-    ) {
+    fn request_screenshot(&mut self, ctx: &egui::Context, viewport_id: egui::ViewportId, name: String) {
         let path = self.artifact_dir.join(format!("{name}.png"));
         let request = ScreenshotRequest {
             name: name.clone(),
@@ -445,10 +410,7 @@ impl RuntimeDebug {
     fn save_screenshot_events(&mut self, events: &[egui::Event]) {
         let mut saved = VecDeque::new();
         for event in events {
-            let egui::Event::Screenshot {
-                user_data, image, ..
-            } = event
-            else {
+            let egui::Event::Screenshot { user_data, image, .. } = event else {
                 continue;
             };
 
@@ -467,12 +429,7 @@ impl RuntimeDebug {
                 image.size[1] as u32,
                 image::ColorType::Rgba8,
             )
-            .unwrap_or_else(|err| {
-                panic!(
-                    "failed to save debug screenshot {}: {err}",
-                    request.path.display()
-                )
-            });
+            .unwrap_or_else(|err| panic!("failed to save debug screenshot {}: {err}", request.path.display()));
             saved.push_back(request.name.clone());
         }
 
@@ -505,8 +462,7 @@ impl RuntimeDebug {
                 rgba: cursor.rgba,
             }),
         };
-        let json =
-            serde_json::to_string_pretty(&snapshot).expect("debug state snapshot should serialize");
+        let json = serde_json::to_string_pretty(&snapshot).expect("debug state snapshot should serialize");
         std::fs::write(&path, json)
             .unwrap_or_else(|err| panic!("failed to write debug state {}: {err}", path.display()));
 
@@ -555,10 +511,7 @@ impl From<egui::Pos2> for PosSnapshot {
     }
 }
 
-fn expand_default_waits(
-    actions: Vec<DebugAction>,
-    wait_frames_default: Option<u64>,
-) -> Vec<DebugAction> {
+fn expand_default_waits(actions: Vec<DebugAction>, wait_frames_default: Option<u64>) -> Vec<DebugAction> {
     let Some(default_frames) = wait_frames_default else {
         return actions;
     };
@@ -566,9 +519,7 @@ fn expand_default_waits(
     actions
         .into_iter()
         .map(|action| match action {
-            DebugAction::WaitFrames { frames: 0 } => DebugAction::WaitFrames {
-                frames: default_frames,
-            },
+            DebugAction::WaitFrames { frames: 0 } => DebugAction::WaitFrames { frames: default_frames },
             action => action,
         })
         .collect()
@@ -577,9 +528,7 @@ fn expand_default_waits(
 fn resolve_target_pos(target: DebugTarget, at: [f32; 2], state: &ViewerDebugState) -> egui::Pos2 {
     match target {
         DebugTarget::Image => {
-            let rect = state
-                .image_rect
-                .expect("debug script target 'image' is unavailable");
+            let rect = state.image_rect.expect("debug script target 'image' is unavailable");
             rect.min + rect.size() * egui::vec2(at[0], at[1])
         }
     }
@@ -595,12 +544,8 @@ fn resolve_viewport(viewport: DebugViewport, state: &ViewerDebugState) -> egui::
 
 fn ensure_parent_dir(path: &std::path::Path) {
     if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).unwrap_or_else(|err| {
-            panic!(
-                "failed to create debug artifact directory {}: {err}",
-                parent.display()
-            )
-        });
+        std::fs::create_dir_all(parent)
+            .unwrap_or_else(|err| panic!("failed to create debug artifact directory {}: {err}", parent.display()));
     }
 }
 

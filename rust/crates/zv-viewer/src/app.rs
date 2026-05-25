@@ -24,14 +24,11 @@ impl ZvApp {
         tracing::info!("creating zv-viewer app");
         if let Some(render_state) = &cc.wgpu_render_state {
             let mut renderer = render_state.renderer.write();
-            renderer.callback_resources.insert(WgpuImageRenderer::new(
-                &render_state.device,
-                render_state.target_format,
-            ));
+            renderer
+                .callback_resources
+                .insert(WgpuImageRenderer::new(&render_state.device, render_state.target_format));
         } else {
-            tracing::warn!(
-                "eframe did not provide a wgpu render state; image callbacks will not render"
-            );
+            tracing::warn!("eframe did not provide a wgpu render state; image callbacks will not render");
         }
 
         let runtime_debug = debug_config.into_runtime();

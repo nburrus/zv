@@ -21,10 +21,7 @@ pub struct ControlsWindow {
 }
 
 impl ControlsWindow {
-    pub fn new(
-        cursor_info: Arc<Mutex<Option<CursorPixelInfo>>>,
-        action_queue: Arc<Mutex<Vec<AppAction>>>,
-    ) -> Self {
+    pub fn new(cursor_info: Arc<Mutex<Option<CursorPixelInfo>>>, action_queue: Arc<Mutex<Vec<AppAction>>>) -> Self {
         Self {
             viewport_id: egui::ViewportId::from_hash_of("zv-controls-window"),
             cursor_info,
@@ -64,18 +61,13 @@ impl ControlsWindow {
 
     // Note: monitor_size has no origin; outer_rect.min may be negative or past
     // monitor_size.x on multi-monitor setups. This logic assumes a single screen.
-    pub fn position_for_image_window(
-        viewer_outer_rect: egui::Rect,
-        monitor_size: egui::Vec2,
-    ) -> Option<egui::Pos2> {
+    pub fn position_for_image_window(viewer_outer_rect: egui::Rect, monitor_size: egui::Vec2) -> Option<egui::Pos2> {
         if viewer_outer_rect.min.x > CONTROLS_WIDTH_WITH_PADDING {
             Some(egui::pos2(
                 viewer_outer_rect.min.x - CONTROLS_WIDTH_WITH_PADDING,
                 viewer_outer_rect.min.y,
             ))
-        } else if monitor_size.x - viewer_outer_rect.min.x - viewer_outer_rect.width()
-            > CONTROLS_WIDTH_WITH_PADDING
-        {
+        } else if monitor_size.x - viewer_outer_rect.min.x - viewer_outer_rect.width() > CONTROLS_WIDTH_WITH_PADDING {
             Some(egui::pos2(
                 viewer_outer_rect.min.x + viewer_outer_rect.width() + CONTROLS_GAP,
                 viewer_outer_rect.min.y,

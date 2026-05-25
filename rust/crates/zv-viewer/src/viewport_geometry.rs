@@ -43,10 +43,7 @@ impl InnerArea {
         }
     }
 
-    pub(crate) fn outer_position_for_centered_inner_size(
-        self,
-        inner_size: egui::Vec2,
-    ) -> egui::Pos2 {
+    pub(crate) fn outer_position_for_centered_inner_size(self, inner_size: egui::Vec2) -> egui::Pos2 {
         // self.origin is the inner-to-outer offset (e.g. title bar height).
         // Deliberately unused here: we're positioning the outer window, so
         // centering uses outer dimensions against the full monitor extent
