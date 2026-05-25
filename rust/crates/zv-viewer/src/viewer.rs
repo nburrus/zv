@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use eframe::egui;
 
@@ -10,7 +11,7 @@ use crate::image_io::load_rgba_image;
 use crate::image_item_data::ImageItemData;
 use crate::image_window::{CursorPixelInfo, ImageWindow};
 use crate::image_window_geometry::{ImageWindowGeometryState, WindowResizeAction};
-use crate::shortcuts::{ShortcutViewport, collect_shortcuts};
+use crate::shortcuts::{collect_shortcuts, ShortcutViewport};
 use crate::viewport_geometry::{ViewportGeometry, ViewportResizeCommand};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -31,12 +32,19 @@ pub struct Viewer {
     cursor_info: Arc<Mutex<Option<CursorPixelInfo>>>,
     image_window_geometry: ImageWindowGeometryState,
     last_displayed_index: Option<usize>,
+    logged_first_image_load: bool,
 }
 
 struct ImageEntry {
     path: PathBuf,
     data: Option<Arc<Mutex<ImageItemData>>>,
     error: Option<String>,
+}
+
+struct ImageLoadTiming {
+    path: PathBuf,
+    elapsed: Duration,
+    succeeded: bool,
 }
 
 impl Viewer {
@@ -65,6 +73,7 @@ impl Viewer {
             cursor_info,
             image_window_geometry: ImageWindowGeometryState::default(),
             last_displayed_index: None,
+            logged_first_image_load: false,
         }
     }
 
@@ -76,8 +85,9 @@ impl Viewer {
 
         let mut image_rect = None;
         let mut selected_image_debug = None;
+        let mut image_load_timing = None;
         let selected = if let Some(entry) = self.entries.get_mut(self.selected_index) {
-            entry.ensure_loaded();
+            image_load_timing = entry.ensure_loaded();
             Some((
                 entry.display_name(),
                 entry.data.clone(),
@@ -86,6 +96,17 @@ impl Viewer {
         } else {
             None
         };
+        if !self.logged_first_image_load {
+            if let Some(timing) = image_load_timing {
+                self.logged_first_image_load = true;
+                tracing::info!(
+                    elapsed_ms = timing.elapsed.as_millis(),
+                    image = %timing.path.display(),
+                    succeeded = timing.succeeded,
+                    "first image loaded"
+                );
+            }
+        }
 
         if let Some((image_name, data, error)) = selected {
             if let Some(data) = data.as_ref() {
@@ -217,9 +238,15 @@ impl Viewer {
             return;
         };
 
-        if let Some(command) =
-            self.image_window_geometry
-                .prepare_initial_geometry(image_size, monitor_size, 0)
+        let viewport = ViewportGeometry {
+            monitor_size,
+            outer_rect,
+            inner_rect,
+        };
+
+        if let Some(command) = self
+            .image_window_geometry
+            .prepare_initial_geometry(image_size, viewport, 0)
         {
             send_resize_command(ctx, command);
             self.last_displayed_index = Some(self.selected_index);
@@ -228,14 +255,10 @@ impl Viewer {
 
         if self.last_displayed_index != Some(self.selected_index) {
             self.last_displayed_index = Some(self.selected_index);
-            if let Some(command) = self.image_window_geometry.on_image_changed(
-                image_size,
-                ViewportGeometry {
-                    monitor_size,
-                    outer_rect,
-                    inner_rect,
-                },
-            ) {
+            if let Some(command) = self
+                .image_window_geometry
+                .on_image_changed(image_size, viewport)
+            {
                 send_resize_command(ctx, command);
             }
         }
@@ -320,15 +343,21 @@ impl ImageEntry {
         }
     }
 
-    fn ensure_loaded(&mut self) {
+    fn ensure_loaded(&mut self) -> Option<ImageLoadTiming> {
         if self.data.is_some() || self.error.is_some() {
-            return;
+            return None;
         }
 
+        let start = Instant::now();
         match load_rgba_image(&self.path) {
             Ok(image) => self.data = Some(Arc::new(Mutex::new(ImageItemData::new(image)))),
             Err(err) => self.error = Some(format!("{err:#}")),
         }
+        Some(ImageLoadTiming {
+            path: self.path.clone(),
+            elapsed: start.elapsed(),
+            succeeded: self.data.is_some(),
+        })
     }
 
     fn display_name(&self) -> String {

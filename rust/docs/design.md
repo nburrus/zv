@@ -171,11 +171,12 @@ This is faithful for color display and gives better downsampling than nearest-on
 
 ## Window Geometry
 
-Window geometry is implemented in `geometry.rs`.
+Window geometry is implemented in `image_window_geometry.rs`, with raw egui
+viewport measurements normalized in `viewport_geometry.rs`.
 It ports the relevant C++ policy at a high level:
 
 - initial image window size matches the image size
-- image window is clamped to monitor size if needed
+- image window is clamped to the available inner image area if needed
 - aspect ratio is preserved when clamped
 - normal resize uses the OS window content size directly
 - `n`, `a`, `m`, `<`, `>`, `.`, and `,` resize the OS window rather than adding padding inside the image viewport

@@ -109,7 +109,8 @@ rust/
         render/
           mod.rs
           texture.rs
-        geometry.rs
+        image_window_geometry.rs
+        viewport_geometry.rs
         actions.rs
 ```
 

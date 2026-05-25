@@ -58,28 +58,11 @@ impl Default for ImageWindowGeometryState {
     }
 }
 
-fn initial_image_window_geometry(
-    image_size: egui::Vec2,
-    monitor_size: egui::Vec2,
-    viewer_index: usize,
-) -> WindowGeometry {
-    let mut geometry = WindowGeometry {
-        origin: egui::pos2(
-            monitor_size.x * (0.10 + 0.15 * viewer_index as f32),
-            monitor_size.y * 0.10,
-        ),
-        size: image_size,
-    };
-
-    fit_widget_rect_in_screen(&mut geometry, image_size, monitor_size, true);
-    geometry
-}
-
 impl ImageWindowGeometryState {
     pub fn prepare_initial_geometry(
         &mut self,
         image_size: egui::Vec2,
-        monitor_size: egui::Vec2,
+        viewport: ViewportGeometry,
         viewer_index: usize,
     ) -> Option<ViewportResizeCommand> {
         self.normal_size = Some(image_size);
@@ -87,9 +70,16 @@ impl ImageWindowGeometryState {
             return None;
         }
 
-        let geometry = initial_image_window_geometry(image_size, monitor_size, viewer_index);
+        let (geometry, clamped_to_screen) =
+            initial_image_window_geometry_for_viewport(image_size, viewport, viewer_index);
         self.initial_geometry_applied = true;
-        self.record_programmatic_resize(geometry.size, None);
+        if clamped_to_screen {
+            self.last_geometry_mode = WindowGeometryMode::Maxspect;
+            self.record_programmatic_resize(geometry.size, Some(WindowResizeAction::Maxspect));
+        } else {
+            self.last_geometry_mode = WindowGeometryMode::Normal;
+            self.record_programmatic_resize(geometry.size, None);
+        }
         Some(ViewportResizeCommand {
             outer_position: Some(geometry.origin),
             inner_size: Some(geometry.size),
@@ -309,36 +299,27 @@ impl ImageWindowGeometryState {
     }
 }
 
-fn fit_widget_rect_in_screen(
-    geometry: &mut WindowGeometry,
-    normal_size: egui::Vec2,
-    monitor_size: egui::Vec2,
-    keep_aspect_ratio: bool,
-) {
-    let mut image_larger_than_screen = false;
+fn initial_image_window_geometry_for_viewport(
+    image_size: egui::Vec2,
+    viewport: ViewportGeometry,
+    viewer_index: usize,
+) -> (WindowGeometry, bool) {
+    let inner_area = InnerArea::from_viewport(viewport);
+    let max_inner_size = inner_area.size;
+    let clamped_to_screen = image_size.x > max_inner_size.x || image_size.y > max_inner_size.y;
+    let mut geometry = WindowGeometry {
+        origin: egui::pos2(
+            viewport.monitor_size.x * (0.10 + 0.15 * viewer_index as f32),
+            viewport.monitor_size.y * 0.10,
+        ),
+        size: aspect_fit_size(image_size, image_size, max_inner_size, true),
+    };
 
-    if geometry.size.x > monitor_size.x {
-        geometry.size.x = monitor_size.x;
-        if keep_aspect_ratio {
-            let sx = monitor_size.x / normal_size.x;
-            geometry.size.y = (normal_size.y * sx + 0.5).floor();
-        }
-        image_larger_than_screen = true;
+    if clamped_to_screen {
+        geometry.origin = inner_area.outer_position_for_centered_inner_size(geometry.size);
     }
 
-    if geometry.size.y > monitor_size.y {
-        geometry.size.y = monitor_size.y;
-        if keep_aspect_ratio {
-            let sy = monitor_size.y / normal_size.y;
-            geometry.size.x = (normal_size.x * sy + 0.5).floor();
-        }
-        image_larger_than_screen = true;
-    }
-
-    if image_larger_than_screen {
-        geometry.origin.x = (monitor_size.x - geometry.size.x) * 0.5;
-        geometry.origin.y = (monitor_size.y - geometry.size.y) * 0.5;
-    }
+    (geometry, clamped_to_screen)
 }
 
 fn sizes_nearly_equal(a: egui::Vec2, b: egui::Vec2) -> bool {
@@ -390,6 +371,53 @@ fn move_window_if_needed(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn initial_geometry_preserves_aspect_for_large_image_with_window_decorations() {
+        let mut state = ImageWindowGeometryState::default();
+        let command = state
+            .prepare_initial_geometry(
+                egui::vec2(3264.0, 2448.0),
+                decorated_viewport(
+                    egui::vec2(1000.0, 800.0),
+                    egui::pos2(100.0, 100.0),
+                    egui::vec2(640.0, 480.0),
+                    28.0,
+                ),
+                0,
+            )
+            .expect("initial resize command should apply");
+
+        assert_size_near(command.inner_size.unwrap(), egui::vec2(1000.0, 750.0));
+    }
+
+    #[test]
+    fn initial_large_image_uses_maxspect_clamp_feedback() {
+        let mut state = ImageWindowGeometryState::default();
+        let command = state
+            .prepare_initial_geometry(
+                egui::vec2(1024.0, 1024.0),
+                decorated_viewport(
+                    egui::vec2(1000.0, 1000.0),
+                    egui::pos2(100.0, 100.0),
+                    egui::vec2(640.0, 480.0),
+                    0.0,
+                ),
+                0,
+            )
+            .expect("initial resize command should apply");
+        assert_size_near(command.inner_size.unwrap(), egui::vec2(1000.0, 1000.0));
+
+        let correction = state
+            .observe_viewport(decorated_viewport(
+                egui::vec2(1000.0, 1000.0),
+                egui::pos2(0.0, 0.0),
+                egui::vec2(1000.0, 930.0),
+                0.0,
+            ))
+            .expect("initial clamped maxspect should be corrected");
+        assert_size_near(correction.inner_size.unwrap(), egui::vec2(930.0, 930.0));
+    }
 
     #[test]
     fn aspect_and_maxspect_commands_are_stable_with_window_decorations() {

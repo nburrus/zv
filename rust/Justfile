@@ -27,6 +27,9 @@ clippy:
 run *args:
     cargo run -- {{args}}
 
+run-release *args:
+    cargo run --release -- {{args}}
+
 test:
     cargo run -- ../tests/baboon.png
 
