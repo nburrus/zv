@@ -14,5 +14,5 @@ strip = "symbols"
 lto = "thin"
 codegen-units = 1
 panic = "abort"
-opt-level = "z"
+opt-level = 3
 
