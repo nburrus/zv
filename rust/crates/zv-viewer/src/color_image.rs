@@ -25,6 +25,64 @@ impl PixelSRGBA {
     pub fn as_array(self) -> [u8; 4] {
         [self.r, self.g, self.b, self.a]
     }
+
+    pub fn from_array(rgba: [u8; 4]) -> Self {
+        Self {
+            r: rgba[0],
+            g: rgba[1],
+            b: rgba[2],
+            a: rgba[3],
+        }
+    }
+
+    pub fn to_hsv(self) -> PixelHSV {
+        convert_srgba_to_hsv(self)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct PixelHSV {
+    /// Hue normalized to [0, 1].
+    pub h: f32,
+    /// Saturation normalized to [0, 1].
+    pub s: f32,
+    /// Value in display-code units, [0, 255].
+    pub v: f32,
+}
+
+impl PixelHSV {
+    pub fn display_hsv(self) -> (i32, i32, i32) {
+        (
+            (self.h * 360.0).round() as i32,
+            (self.s * 100.0).round() as i32,
+            (self.v * 100.0 / 255.0).round() as i32,
+        )
+    }
+}
+
+pub fn convert_srgba_to_hsv(srgba: PixelSRGBA) -> PixelHSV {
+    // HSV is usually computed from raw RGB code values, not linear RGB.
+    // This follows libzv/ColorConversion.cpp::convertToHSV.
+    let mut r = srgba.r as f32;
+    let mut g = srgba.g as f32;
+    let mut b = srgba.b as f32;
+
+    let mut k = 0.0;
+    if g < b {
+        std::mem::swap(&mut g, &mut b);
+        k = -1.0;
+    }
+    if r < g {
+        std::mem::swap(&mut r, &mut g);
+        k = -2.0 / 6.0 - k;
+    }
+
+    let chroma = r - g.min(b);
+    PixelHSV {
+        h: (k + (g - b) / (6.0 * chroma + 1e-20)).abs(),
+        s: chroma / (r + 1e-20),
+        v: r,
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -254,6 +312,26 @@ fn avg4_packed_rgba(a: u32, b: u32, c: u32, d: u32) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn converts_srgba_to_hsv_display_values() {
+        assert_eq!(
+            PixelSRGBA::from_array([255, 0, 0, 255]).to_hsv().display_hsv(),
+            (0, 100, 100)
+        );
+        assert_eq!(
+            PixelSRGBA::from_array([0, 255, 0, 255]).to_hsv().display_hsv(),
+            (120, 100, 100)
+        );
+        assert_eq!(
+            PixelSRGBA::from_array([0, 0, 255, 255]).to_hsv().display_hsv(),
+            (240, 100, 100)
+        );
+        assert_eq!(
+            PixelSRGBA::from_array([128, 128, 128, 255]).to_hsv().display_hsv(),
+            (0, 0, 50)
+        );
+    }
 
     #[test]
     fn mip_level_count_includes_base_level_and_1x1() {

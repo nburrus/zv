@@ -3,6 +3,7 @@ use std::sync::{Arc, Mutex};
 use eframe::egui;
 use eframe::egui_wgpu;
 
+use crate::color_image::PixelSRGBA;
 use crate::image_item_data::ImageItemData;
 use crate::render::WgpuImageCallback;
 
@@ -105,8 +106,8 @@ impl ImageWindow {
 
                 // Pixel under cursor in texture UV space, needed for zoom center.
                 let mut mouse_uv_in_texture: Option<egui::Vec2> = None;
+                let mut status: Option<StatusBarInfo> = None;
 
-                let mut status = format!("{}  {} x {}", image_name, data.width(), data.height(),);
                 if let Some(pointer_pos) = response.hover_pos() {
                     // This 0.5 offset is important since the mouse coordinate is an integer.
                     // So when we are in the center of a pixel we'll return 0,0 instead of
@@ -117,13 +118,16 @@ impl ImageWindow {
                     let tex_uv = uv_min + uv_window * (uv_max - uv_min);
                     mouse_uv_in_texture = Some(tex_uv);
 
-                    let x = (tex_uv.x * data.width() as f32).floor() as u32;
-                    let y = (tex_uv.y * data.height() as f32).floor() as u32;
+                    let x = ((tex_uv.x * data.width() as f32).floor() as u32).min(data.width().saturating_sub(1));
+                    let y = ((tex_uv.y * data.height() as f32).floor() as u32).min(data.height().saturating_sub(1));
                     if let Some(rgba) = data.pixel_rgba(x, y) {
-                        status = format!(
-                            "{status}    {x:4}, {y:4}  sRGBA {:3} {:3} {:3} {:3}",
-                            rgba[0], rgba[1], rgba[2], rgba[3],
-                        );
+                        status = Some(StatusBarInfo {
+                            image_name: image_name.clone(),
+                            x,
+                            y,
+                            rgba,
+                            pointer_pos,
+                        });
                         if let Ok(mut info) = cursor_info.lock() {
                             *info = Some(CursorPixelInfo {
                                 image_name: image_name.clone(),
@@ -158,25 +162,74 @@ impl ImageWindow {
                     output.secondary_clicked = false;
                 }
 
-                paint_status_overlay(ui, rect, &status);
+                if let Some(status) = status {
+                    paint_status_bar(ui, rect, &status);
+                }
             });
 
         output
     }
 }
 
-fn paint_status_overlay(ui: &egui::Ui, image_rect: egui::Rect, text: &str) {
+struct StatusBarInfo {
+    image_name: String,
+    x: u32,
+    y: u32,
+    rgba: [u8; 4],
+    pointer_pos: egui::Pos2,
+}
+
+fn paint_status_bar(ui: &egui::Ui, image_rect: egui::Rect, status: &StatusBarInfo) {
     let painter = ui.painter();
     let font_id = egui::TextStyle::Monospace.resolve(ui.style());
-    let galley = painter.layout_no_wrap(text.to_owned(), font_id, egui::Color32::WHITE);
-    let padding = egui::vec2(8.0, 5.0);
-    let overlay_size = galley.size() + padding * 2.0;
-    let overlay_rect = egui::Rect::from_min_size(
-        image_rect.left_bottom() + egui::vec2(8.0, -overlay_size.y - 8.0),
-        overlay_size,
-    )
-    .intersect(image_rect);
+    let font_size = font_id.size;
 
-    painter.rect_filled(overlay_rect, 0.0, egui::Color32::from_rgba_premultiplied(0, 0, 0, 190));
-    painter.galley(overlay_rect.min + padding, galley, egui::Color32::WHITE);
+    let hsv = PixelSRGBA::from_array(status.rgba).to_hsv().display_hsv();
+    let line1 = status.image_name.clone();
+    let line2 = format!(
+        "{:4}, {:4} (sRGBA {:3} {:3} {:3} {:3}) (HSV {:3} {:3} {:3})",
+        status.x, status.y, status.rgba[0], status.rgba[1], status.rgba[2], status.rgba[3], hsv.0, hsv.1, hsv.2,
+    );
+
+    let line1_galley = painter.layout_no_wrap(line1, font_id.clone(), egui::Color32::WHITE);
+    let line2_galley = painter.layout_no_wrap(line2, font_id, egui::Color32::WHITE);
+    let line1_height = line1_galley.size().y;
+    let line2_height = line2_galley.size().y;
+    let line_gap = 0.0;
+    let text_height = line1_height + line_gap + line2_height;
+    let top_bar_height = (font_size * 2.2).max(text_height + font_size * 0.35);
+    let bottom_bar_height = (font_size * 2.55).max(text_height + font_size * 0.55);
+
+    let mouse_y_in_widget = status.pointer_pos.y - image_rect.top();
+    let show_on_bottom = (image_rect.height() - mouse_y_in_widget) > top_bar_height;
+    let bar_height = if show_on_bottom {
+        bottom_bar_height
+    } else {
+        top_bar_height
+    };
+
+    let bar_rect = if show_on_bottom {
+        egui::Rect::from_min_max(
+            egui::pos2(image_rect.left(), image_rect.bottom() - bar_height),
+            image_rect.right_bottom(),
+        )
+    } else {
+        egui::Rect::from_min_max(
+            image_rect.left_top(),
+            egui::pos2(image_rect.right(), image_rect.top() + bar_height),
+        )
+    };
+
+    let text_x = image_rect.left() + font_size * 0.5;
+    let text_y = bar_rect.top() + (bar_rect.height() - text_height) * 0.5;
+    let clip_rect = bar_rect;
+
+    painter.rect_filled(bar_rect, 0.0, egui::Color32::from_rgba_premultiplied(0, 0, 0, 127));
+    let clipped = painter.with_clip_rect(clip_rect);
+    clipped.galley(egui::pos2(text_x, text_y), line1_galley, egui::Color32::WHITE);
+    clipped.galley(
+        egui::pos2(text_x, text_y + line1_height + line_gap),
+        line2_galley,
+        egui::Color32::WHITE,
+    );
 }
