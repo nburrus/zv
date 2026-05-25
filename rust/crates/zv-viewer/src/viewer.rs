@@ -27,6 +27,7 @@ pub struct Viewer {
     pending_actions: Vec<AppAction>,
     controls_action_queue: Arc<Mutex<Vec<AppAction>>>,
     cursor_info: Arc<Mutex<Option<CursorPixelInfo>>>,
+    image_widget_size: Arc<Mutex<Option<(u32, u32)>>>,
     image_window_geometry: ImageWindowGeometryState,
     last_displayed_id: Option<ImageId>,
     logged_first_image_load: bool,
@@ -36,18 +37,21 @@ impl Viewer {
     pub fn new(image_paths: Vec<PathBuf>) -> Self {
         let image_list = Arc::new(Mutex::new(ImageList::new(image_paths)));
         let cursor_info = Arc::new(Mutex::new(None));
+        let image_widget_size = Arc::new(Mutex::new(None));
         let controls_action_queue = Arc::new(Mutex::new(Vec::new()));
         Self {
             image_window: ImageWindow::default(),
             controls_window: ControlsWindow::new(
                 image_list.clone(),
                 cursor_info.clone(),
+                image_widget_size.clone(),
                 controls_action_queue.clone(),
             ),
             image_list,
             pending_actions: Vec::new(),
             controls_action_queue,
             cursor_info,
+            image_widget_size,
             image_window_geometry: ImageWindowGeometryState::default(),
             last_displayed_id: None,
             logged_first_image_load: false,
@@ -108,6 +112,18 @@ impl Viewer {
                 self.controls_window.toggle();
             }
             image_rect = image_output.image_rect;
+            if let Ok(mut size) = self.image_widget_size.lock() {
+                let new_size = image_output.image_rect.map(|r| (r.width() as u32, r.height() as u32));
+                if *size != new_size {
+                    *size = new_size;
+                    // The controls window displays the image widget size in its footer.
+                    // It lives in a separate viewport and won't repaint on its own when
+                    // the image window is resized, so we nudge it explicitly.
+                    if self.controls_window.is_enabled() {
+                        ctx.request_repaint_of(self.controls_window.viewport_id());
+                    }
+                }
+            }
         }
 
         self.update_controls_position(ctx);

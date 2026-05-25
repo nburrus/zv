@@ -13,7 +13,7 @@ const CONTROLS_WIDTH: f32 = 640.0;
 const CONTROLS_HEIGHT: f32 = 420.0;
 const CONTROLS_WIDTH_WITH_PADDING: f32 = CONTROLS_WIDTH + 12.0;
 const CONTROLS_GAP: f32 = 8.0;
-const FOOTER_HEIGHT: f32 = 36.0;
+
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ControlsTab {
@@ -30,8 +30,8 @@ struct ImageDragPayload {
 #[derive(Debug)]
 struct ControlsUiState {
     active_tab: ControlsTab,
-    width_text: String,
-    height_text: String,
+    size_texts: [String; 2],
+    size_being_edited: [bool; 2],
     lock_ratio: bool,
 }
 
@@ -39,8 +39,8 @@ impl Default for ControlsUiState {
     fn default() -> Self {
         Self {
             active_tab: ControlsTab::ImageList,
-            width_text: String::new(),
-            height_text: String::new(),
+            size_texts: [String::new(), String::new()],
+            size_being_edited: [false, false],
             lock_ratio: true,
         }
     }
@@ -49,6 +49,7 @@ impl Default for ControlsUiState {
 pub struct ControlsWindow {
     viewport_id: egui::ViewportId,
     image_list: Arc<Mutex<ImageList>>,
+    image_widget_size: Arc<Mutex<Option<(u32, u32)>>>,
     action_queue: Arc<Mutex<Vec<AppAction>>>,
     ui_state: Arc<Mutex<ControlsUiState>>,
     enabled: bool,
@@ -63,11 +64,13 @@ impl ControlsWindow {
     pub fn new(
         image_list: Arc<Mutex<ImageList>>,
         _cursor_info: Arc<Mutex<Option<CursorPixelInfo>>>,
+        image_widget_size: Arc<Mutex<Option<(u32, u32)>>>,
         action_queue: Arc<Mutex<Vec<AppAction>>>,
     ) -> Self {
         Self {
             viewport_id: egui::ViewportId::from_hash_of("zv-controls-window"),
             image_list,
+            image_widget_size,
             action_queue,
             ui_state: Arc::new(Mutex::new(ControlsUiState::default())),
             enabled: false,
@@ -124,6 +127,7 @@ impl ControlsWindow {
 
     pub fn show(&mut self, ctx: &egui::Context) {
         let image_list = self.image_list.clone();
+        let image_widget_size = self.image_widget_size.clone();
         let last_auto_scrolled_selected = self.last_auto_scrolled_selected.clone();
         let ui_state = self.ui_state.clone();
         let action_queue = self.action_queue.clone();
@@ -161,6 +165,10 @@ impl ControlsWindow {
                 });
             });
 
+            egui::TopBottomPanel::bottom("size_footer").show(ctx, |ui| {
+                render_size_footer(ui, &image_widget_size, &ui_state, &action_queue, ctx);
+            });
+
             egui::CentralPanel::default().show(ctx, |ui| {
                 let active_tab = render_tabs(ui, &ui_state);
                 ui.separator();
@@ -172,8 +180,6 @@ impl ControlsWindow {
                             ctx,
                             &image_list,
                             &last_auto_scrolled_selected,
-                            &ui_state,
-                            &action_queue,
                         );
                     }
                     ControlsTab::Modifiers => render_empty_tab(ui, "Modifiers"),
@@ -217,18 +223,15 @@ fn render_image_list_tab(
     ctx: &egui::Context,
     image_list: &Arc<Mutex<ImageList>>,
     last_auto_scrolled_selected: &Arc<Mutex<Option<usize>>>,
-    ui_state: &Arc<Mutex<ControlsUiState>>,
-    action_queue: &Arc<Mutex<Vec<AppAction>>>,
 ) {
     render_filter_row(ui, image_list, ctx);
     ui.add_space(ui.spacing().item_spacing.y);
-    let table_height = (ui.available_height() - FOOTER_HEIGHT).max(80.0);
+    let table_height = ui.available_height().max(80.0);
     if let Ok(mut images) = image_list.lock() {
         render_image_list(ui, &mut images, last_auto_scrolled_selected, ctx, table_height);
     } else {
         ui.colored_label(egui::Color32::RED, "image list lock is poisoned");
     }
-    render_size_footer(ui, image_list, ui_state, action_queue, ctx);
 }
 
 fn render_filter_row(ui: &mut egui::Ui, image_list: &Arc<Mutex<ImageList>>, ctx: &egui::Context) {
@@ -386,31 +389,70 @@ fn render_image_list(
 
 fn render_size_footer(
     ui: &mut egui::Ui,
-    image_list: &Arc<Mutex<ImageList>>,
+    image_widget_size: &Arc<Mutex<Option<(u32, u32)>>>,
     ui_state: &Arc<Mutex<ControlsUiState>>,
     action_queue: &Arc<Mutex<Vec<AppAction>>>,
     ctx: &egui::Context,
 ) {
-    let selected_size = image_list.lock().ok().and_then(|images| images.selected_size());
+    let widget_size = image_widget_size.lock().ok().and_then(|s| *s);
+
     if let Ok(mut state) = ui_state.lock() {
-        if state.width_text.is_empty() || state.height_text.is_empty() {
-            if let Some((width, height)) = selected_size {
-                state.width_text = width.to_string();
-                state.height_text = height.to_string();
+        // When neither field is being edited, always sync from the actual widget size.
+        if !state.size_being_edited[0] && !state.size_being_edited[1] {
+            if let Some((w, h)) = widget_size {
+                state.size_texts[0] = w.to_string();
+                state.size_texts[1] = h.to_string();
             }
         }
+
+        // Live aspect ratio: derive the non-edited dimension from the edited one.
+        // Uses the current widget size as the ratio reference, matching C++ imageRect.size.
+        if state.lock_ratio {
+            if let Some((ref_w, ref_h)) = widget_size {
+                if state.size_being_edited[0] && !state.size_being_edited[1] {
+                    if let Ok(w) = state.size_texts[0].parse::<u32>() {
+                        let h = (w as f64 * ref_h as f64 / ref_w as f64).round() as u32;
+                        state.size_texts[1] = h.to_string();
+                    }
+                } else if state.size_being_edited[1] && !state.size_being_edited[0] {
+                    if let Ok(h) = state.size_texts[1].parse::<u32>() {
+                        let w = (h as f64 * ref_w as f64 / ref_h as f64).round() as u32;
+                        state.size_texts[0] = w.to_string();
+                    }
+                }
+            }
+        }
+
         ui.horizontal(|ui| {
-            let width_done = size_text_edit(ui, &mut state.width_text);
-            let lock_response = ui.add_sized([24.0, 22.0], egui::Checkbox::without_text(&mut state.lock_ratio));
-            let height_done = size_text_edit(ui, &mut state.height_text);
-            if width_done || height_done || lock_response.changed() {
-                if let (Ok(width), Ok(height)) =
-                    (state.width_text.parse::<u32>(), state.height_text.parse::<u32>())
-                {
+            let w_resp = size_text_edit(ui, &mut state.size_texts[0]);
+            if w_resp.changed() {
+                state.size_being_edited[0] = true;
+                state.size_being_edited[1] = false;
+            }
+
+            ui.checkbox(&mut state.lock_ratio, "");
+
+            let h_resp = size_text_edit(ui, &mut state.size_texts[1]);
+            if h_resp.changed() {
+                state.size_being_edited[1] = true;
+                state.size_being_edited[0] = false;
+            }
+
+            // Apply when either field loses focus after being edited (matches ImGui's
+            // IsItemDeactivatedAfterEdit — fires on Tab, Enter, or click away).
+            let apply = (w_resp.lost_focus() && state.size_being_edited[0])
+                || (h_resp.lost_focus() && state.size_being_edited[1]);
+
+            if apply {
+                state.size_being_edited = [false, false];
+                if let (Ok(w), Ok(h)) = (
+                    state.size_texts[0].parse::<u32>(),
+                    state.size_texts[1].parse::<u32>(),
+                ) {
                     if let Ok(mut actions) = action_queue.lock() {
                         actions.push(AppAction::ResizeWindow(WindowResizeAction::Custom {
-                            width,
-                            height,
+                            width: w,
+                            height: h,
                             lock_ratio: state.lock_ratio,
                         }));
                     }
@@ -421,13 +463,20 @@ fn render_size_footer(
     }
 }
 
-fn size_text_edit(ui: &mut egui::Ui, text: &mut String) -> bool {
-    let response = ui.add_sized(
-        [48.0, 22.0],
-        egui::TextEdit::singleline(text)
-            .frame(true)
-            .char_limit(5)
-            .horizontal_align(egui::Align::Center),
-    );
-    response.lost_focus() && ui.input(|input| input.key_pressed(egui::Key::Enter))
+fn size_text_edit(ui: &mut egui::Ui, text: &mut String) -> egui::Response {
+    let char_width = ui.text_style_height(&egui::TextStyle::Body) * 0.6;
+    let desired_width = char_width * 5.0 + ui.spacing().button_padding.x * 2.0;
+    ui.scope(|ui| {
+        let r = egui::CornerRadius::same(4);
+        ui.visuals_mut().widgets.inactive.corner_radius = r;
+        ui.visuals_mut().widgets.hovered.corner_radius = r;
+        ui.visuals_mut().widgets.active.corner_radius = r;
+        ui.add(
+            egui::TextEdit::singleline(text)
+                .desired_width(desired_width)
+                .char_limit(5)
+                .horizontal_align(egui::Align::Center),
+        )
+    })
+    .inner
 }
