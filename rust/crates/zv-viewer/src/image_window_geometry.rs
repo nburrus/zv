@@ -17,6 +17,7 @@ pub enum WindowResizeAction {
     Half,
     Increase10Percent,
     Decrease10Percent,
+    Custom { width: u32, height: u32, lock_ratio: bool },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -182,6 +183,21 @@ impl ImageWindowGeometryState {
                 self.last_geometry_mode = WindowGeometryMode::Maxspect;
                 target_size
             }
+            WindowResizeAction::Custom {
+                width,
+                height,
+                lock_ratio,
+            } => {
+                let requested = egui::vec2(width.max(1) as f32, height.max(1) as f32);
+                let target_size = if lock_ratio {
+                    aspect_fit_size(requested, normal_size, requested, false)
+                } else {
+                    requested
+                };
+                target_origin = move_window_if_needed(target_origin, target_size, inner_area);
+                self.last_geometry_mode = WindowGeometryMode::UserDefined;
+                target_size
+            }
         };
 
         self.record_programmatic_resize(target_size, Some(action));
@@ -250,6 +266,7 @@ impl ImageWindowGeometryState {
         self.last_geometry_mode = match self.last_requested_action {
             Some(WindowResizeAction::Normal) => WindowGeometryMode::Normal,
             Some(WindowResizeAction::Maxspect) => WindowGeometryMode::Maxspect,
+            Some(WindowResizeAction::Custom { .. }) => WindowGeometryMode::UserDefined,
             _ => self.last_geometry_mode,
         };
         self.aspect_ratio_source_size = None;

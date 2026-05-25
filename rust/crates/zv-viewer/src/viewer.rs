@@ -1,20 +1,18 @@
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
 
 use eframe::egui;
 
-use crate::color_image::{ImageSRGBA, PixelSRGBA};
 use crate::controls_window::ControlsWindow;
 use crate::debug::{SelectedImageDebug, ViewerDebugState};
-use crate::image_io::load_rgba_image;
 use crate::image_item_data::ImageItemData;
+use crate::image_list::{ImageId, ImageList};
 use crate::image_window::{CursorPixelInfo, ImageWindow};
 use crate::image_window_geometry::{ImageWindowGeometryState, WindowResizeAction};
 use crate::shortcuts::{ShortcutViewport, collect_shortcuts};
 use crate::viewport_geometry::{ViewportGeometry, ViewportResizeCommand};
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AppAction {
     NextImage,
     PreviousImage,
@@ -25,48 +23,33 @@ pub enum AppAction {
 pub struct Viewer {
     image_window: ImageWindow,
     controls_window: ControlsWindow,
-    entries: Vec<ImageEntry>,
-    selected_index: usize,
+    image_list: Arc<Mutex<ImageList>>,
     pending_actions: Vec<AppAction>,
     controls_action_queue: Arc<Mutex<Vec<AppAction>>>,
     cursor_info: Arc<Mutex<Option<CursorPixelInfo>>>,
     image_window_geometry: ImageWindowGeometryState,
-    last_displayed_index: Option<usize>,
+    last_displayed_id: Option<ImageId>,
     logged_first_image_load: bool,
-}
-
-struct ImageEntry {
-    path: PathBuf,
-    data: Option<Arc<Mutex<ImageItemData>>>,
-    error: Option<String>,
-}
-
-struct ImageLoadTiming {
-    path: PathBuf,
-    elapsed: Duration,
-    succeeded: bool,
 }
 
 impl Viewer {
     pub fn new(image_paths: Vec<PathBuf>) -> Self {
-        let entries = if image_paths.is_empty() {
-            vec![ImageEntry::default_image()]
-        } else {
-            image_paths.into_iter().map(ImageEntry::from_path).collect::<Vec<_>>()
-        };
-
+        let image_list = Arc::new(Mutex::new(ImageList::new(image_paths)));
         let cursor_info = Arc::new(Mutex::new(None));
         let controls_action_queue = Arc::new(Mutex::new(Vec::new()));
         Self {
             image_window: ImageWindow::default(),
-            controls_window: ControlsWindow::new(cursor_info.clone(), controls_action_queue.clone()),
-            entries,
-            selected_index: 0,
+            controls_window: ControlsWindow::new(
+                image_list.clone(),
+                cursor_info.clone(),
+                controls_action_queue.clone(),
+            ),
+            image_list,
             pending_actions: Vec::new(),
             controls_action_queue,
             cursor_info,
             image_window_geometry: ImageWindowGeometryState::default(),
-            last_displayed_index: None,
+            last_displayed_id: None,
             logged_first_image_load: false,
         }
     }
@@ -79,12 +62,15 @@ impl Viewer {
 
         let mut image_rect = None;
         let mut selected_image_debug = None;
-        let mut image_load_timing = None;
-        let selected = if let Some(entry) = self.entries.get_mut(self.selected_index) {
-            image_load_timing = entry.ensure_loaded();
-            Some((entry.display_name(), entry.data.clone(), entry.error.clone()))
+        let (image_load_timing, selected) = if let Ok(mut image_list) = self.image_list.lock() {
+            image_list.poll_preloads();
+            let image_load_timing = image_list.ensure_selected_loaded();
+            image_list.preload_next_from_selection();
+            let selected = image_list.selected_view();
+            (image_load_timing, selected)
         } else {
-            None
+            tracing::warn!("image list lock is poisoned");
+            (None, None)
         };
         if !self.logged_first_image_load {
             if let Some(timing) = image_load_timing {
@@ -98,12 +84,12 @@ impl Viewer {
             }
         }
 
-        if let Some((image_name, data, error)) = selected {
-            if let Some(data) = data.as_ref() {
-                self.apply_image_window_geometry(ctx, data);
+        if let Some(selected) = selected {
+            if let Some(data) = selected.data.as_ref() {
+                self.apply_image_window_geometry(ctx, selected.id, data);
                 if let Ok(data) = data.lock() {
                     selected_image_debug = Some(SelectedImageDebug {
-                        name: image_name.clone(),
+                        name: selected.name.clone(),
                         width: data.width(),
                         height: data.height(),
                         bytes_per_row: data.bytes_per_row(),
@@ -111,9 +97,13 @@ impl Viewer {
                 }
             }
 
-            let image_output =
-                self.image_window
-                    .show(ctx, image_name, data, error.as_deref(), self.cursor_info.clone());
+            let image_output = self.image_window.show(
+                ctx,
+                selected.name,
+                selected.data,
+                selected.error.as_deref(),
+                self.cursor_info.clone(),
+            );
             if image_output.secondary_clicked {
                 self.controls_window.toggle();
             }
@@ -170,8 +160,16 @@ impl Viewer {
         let applied_any = !actions.is_empty();
         for action in actions {
             match action {
-                AppAction::NextImage => self.select_relative(1),
-                AppAction::PreviousImage => self.select_relative(-1),
+                AppAction::NextImage => {
+                    if let Ok(mut image_list) = self.image_list.lock() {
+                        image_list.select_relative(1);
+                    }
+                }
+                AppAction::PreviousImage => {
+                    if let Ok(mut image_list) = self.image_list.lock() {
+                        image_list.select_relative(-1);
+                    }
+                }
                 AppAction::Quit => {
                     // In this app, ROOT is the main image viewport/window.
                     ctx.send_viewport_cmd_to(egui::ViewportId::ROOT, egui::ViewportCommand::Close)
@@ -186,20 +184,12 @@ impl Viewer {
         }
     }
 
-    fn select_relative(&mut self, offset: isize) {
-        if self.entries.is_empty() {
-            self.selected_index = 0;
-            return;
-        }
-
-        let count = self.entries.len() as isize;
-        let next = (self.selected_index as isize + offset).rem_euclid(count);
-        if next as usize != self.selected_index {
-            self.selected_index = next as usize;
-        }
-    }
-
-    fn apply_image_window_geometry(&mut self, ctx: &egui::Context, data: &Arc<Mutex<ImageItemData>>) {
+    fn apply_image_window_geometry(
+        &mut self,
+        ctx: &egui::Context,
+        image_id: ImageId,
+        data: &Arc<Mutex<ImageItemData>>,
+    ) {
         let Ok(data) = data.lock() else {
             return;
         };
@@ -228,12 +218,12 @@ impl Viewer {
             .prepare_initial_geometry(image_size, viewport, 0)
         {
             send_resize_command(ctx, command);
-            self.last_displayed_index = Some(self.selected_index);
+            self.last_displayed_id = Some(image_id);
             return;
         }
 
-        if self.last_displayed_index != Some(self.selected_index) {
-            self.last_displayed_index = Some(self.selected_index);
+        if self.last_displayed_id != Some(image_id) {
+            self.last_displayed_id = Some(image_id);
             if let Some(command) = self.image_window_geometry.on_image_changed(image_size, viewport) {
                 send_resize_command(ctx, command);
             }
@@ -283,64 +273,5 @@ fn send_resize_command(ctx: &egui::Context, command: ViewportResizeCommand) {
     }
     if let Some(size) = command.inner_size {
         ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(size));
-    }
-}
-
-impl ImageEntry {
-    fn from_path(path: PathBuf) -> Self {
-        Self {
-            path,
-            data: None,
-            error: None,
-        }
-    }
-
-    fn default_image() -> Self {
-        let mut image = ImageSRGBA::new(256, 256);
-        let width = image.width();
-        let height = image.height();
-        for row in 0..height {
-            if let Some(row_pixels) = image.row_mut(row) {
-                for col in 0..width {
-                    row_pixels[col as usize] = PixelSRGBA {
-                        r: row as u8,
-                        g: col as u8,
-                        b: (row + col) as u8,
-                        a: 255,
-                    };
-                }
-            }
-        }
-
-        Self {
-            path: PathBuf::from("<<default>>"),
-            data: Some(Arc::new(Mutex::new(ImageItemData::new(image)))),
-            error: None,
-        }
-    }
-
-    fn ensure_loaded(&mut self) -> Option<ImageLoadTiming> {
-        if self.data.is_some() || self.error.is_some() {
-            return None;
-        }
-
-        let start = Instant::now();
-        match load_rgba_image(&self.path) {
-            Ok(image) => self.data = Some(Arc::new(Mutex::new(ImageItemData::new(image)))),
-            Err(err) => self.error = Some(format!("{err:#}")),
-        }
-        Some(ImageLoadTiming {
-            path: self.path.clone(),
-            elapsed: start.elapsed(),
-            succeeded: self.data.is_some(),
-        })
-    }
-
-    fn display_name(&self) -> String {
-        self.path
-            .file_name()
-            .and_then(|name| name.to_str())
-            .map(ToOwned::to_owned)
-            .unwrap_or_else(|| self.path.display().to_string())
     }
 }

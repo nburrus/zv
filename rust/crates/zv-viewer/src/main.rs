@@ -4,6 +4,7 @@ mod controls_window;
 mod debug;
 mod image_io;
 mod image_item_data;
+mod image_list;
 mod image_window;
 mod image_window_geometry;
 mod render;

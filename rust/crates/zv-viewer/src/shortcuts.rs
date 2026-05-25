@@ -60,8 +60,8 @@ pub fn collect_shortcuts(ctx: &egui::Context, viewport: ShortcutViewport) -> Vec
     let mut actions = Vec::new();
     let typing_text = ctx.wants_keyboard_input();
     ctx.input(|input| {
-        for &(key, scope, action) in SHORTCUTS {
-            push_if_pressed(input, key, scope, viewport, typing_text, action, &mut actions);
+        for &(key, scope, ref action) in SHORTCUTS {
+            push_if_pressed(input, key, scope, viewport, typing_text, action.clone(), &mut actions);
         }
         push_resize_text_shortcuts(input, viewport, typing_text, &mut actions);
     });
