@@ -100,10 +100,7 @@ impl WgpuImageRenderer {
             "zv image renderer expects egui's non-sRGB gamma-space target, got {target_format:?}",
         );
         let shader_source = format!("{IMAGE_SHADER_PREFIX}\n{IMAGE_SHADER_FRAGMENT}");
-        tracing::info!(
-            ?target_format,
-            "creating image renderer"
-        );
+        tracing::info!(?target_format, "creating image renderer");
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("zv image shader"),
@@ -181,7 +178,7 @@ impl WgpuImageRenderer {
             label: Some("zv image display sampler"),
             mag_filter: wgpu::FilterMode::Nearest,
             min_filter: wgpu::FilterMode::Linear,
-            mipmap_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::FilterMode::Linear,
             address_mode_u: wgpu::AddressMode::ClampToEdge,
             address_mode_v: wgpu::AddressMode::ClampToEdge,
             ..Default::default()
@@ -225,7 +222,11 @@ impl WgpuImageRenderer {
             &self.zoom_uniform_buffer,
         );
         let zoom_data: [f32; 4] = [uv_min[0], uv_min[1], uv_max[0], uv_max[1]];
-        queue.write_buffer(&self.zoom_uniform_buffer, 0, bytemuck::cast_slice(&zoom_data));
+        queue.write_buffer(
+            &self.zoom_uniform_buffer,
+            0,
+            bytemuck::cast_slice(&zoom_data),
+        );
     }
 
     fn paint_image_data(

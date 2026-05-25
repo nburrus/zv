@@ -1,6 +1,8 @@
 use eframe::egui_wgpu::wgpu;
 
-use crate::color_image::{ImageSRGBA, PixelFormat, Srgba8Format};
+use crate::color_image::{
+    ImageSRGBA, PixelFormat, Srgba8Format, downsample_2x_srgba, mip_level_count,
+};
 
 pub struct ImageItemData {
     cpu_data: ImageSRGBA,
@@ -48,10 +50,11 @@ impl ImageItemData {
             height: self.cpu_data.height(),
             depth_or_array_layers: 1,
         };
+        let mip_level_count = mip_level_count(size.width, size.height);
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("zv image item texture"),
             size,
-            mip_level_count: 1,
+            mip_level_count,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: Srgba8Format::WGPU_FORMAT,
@@ -59,21 +62,8 @@ impl ImageItemData {
             view_formats: &[Srgba8Format::WGPU_FORMAT],
         });
 
-        queue.write_texture(
-            wgpu::TexelCopyTextureInfo {
-                texture: &texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            self.cpu_data.bytes(),
-            wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(self.cpu_data.bytes_per_row() as u32),
-                rows_per_image: Some(self.cpu_data.height()),
-            },
-            size,
-        );
+        write_image_to_texture_level(queue, &texture, 0, &self.cpu_data);
+        upload_mip_levels(queue, &texture, &self.cpu_data, mip_level_count);
 
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -113,4 +103,45 @@ pub struct WgpuImageTexture {
     _texture: wgpu::Texture,
     _view: wgpu::TextureView,
     bind_group: wgpu::BindGroup,
+}
+
+fn upload_mip_levels(
+    queue: &wgpu::Queue,
+    texture: &wgpu::Texture,
+    base_level: &ImageSRGBA,
+    mip_level_count: u32,
+) {
+    let mut previous_level = base_level.clone();
+    for mip_level in 1..mip_level_count {
+        let next_level = downsample_2x_srgba(&previous_level);
+        write_image_to_texture_level(queue, texture, mip_level, &next_level);
+        previous_level = next_level;
+    }
+}
+
+fn write_image_to_texture_level(
+    queue: &wgpu::Queue,
+    texture: &wgpu::Texture,
+    mip_level: u32,
+    image: &ImageSRGBA,
+) {
+    queue.write_texture(
+        wgpu::TexelCopyTextureInfo {
+            texture,
+            mip_level,
+            origin: wgpu::Origin3d::ZERO,
+            aspect: wgpu::TextureAspect::All,
+        },
+        image.bytes(),
+        wgpu::TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(image.bytes_per_row() as u32),
+            rows_per_image: Some(image.height()),
+        },
+        wgpu::Extent3d {
+            width: image.width(),
+            height: image.height(),
+            depth_or_array_layers: 1,
+        },
+    );
 }
