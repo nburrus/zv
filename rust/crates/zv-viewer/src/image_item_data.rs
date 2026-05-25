@@ -102,8 +102,14 @@ pub struct WgpuImageTexture {
 }
 
 fn upload_mip_levels(queue: &wgpu::Queue, texture: &wgpu::Texture, base_level: &ImageSRGBA, mip_level_count: u32) {
-    let mut previous_level = base_level.clone();
-    for mip_level in 1..mip_level_count {
+    if mip_level_count <= 1 {
+        return;
+    }
+
+    let mut previous_level = downsample_2x_srgba(base_level);
+    write_image_to_texture_level(queue, texture, 1, &previous_level);
+
+    for mip_level in 2..mip_level_count {
         let next_level = downsample_2x_srgba(&previous_level);
         write_image_to_texture_level(queue, texture, mip_level, &next_level);
         previous_level = next_level;
