@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::sync::{Arc, Mutex};
 
 use eframe::egui;
@@ -314,7 +315,23 @@ fn render_image_list(
     let painter = ui.painter().clone();
     let pointer_pos = ui.input(|i| i.pointer.hover_pos());
 
-    TableBuilder::new(ui)
+    // Find the selected row's *visible* index (position within `rows`, not the
+    // image_list index) so we can drive scroll_to_row in the virtualized table.
+    let selected_visible_idx = rows.iter().position(|r| r.selected);
+    let scroll_target = match (selected_visible_idx, last_auto_scrolled_selected.lock()) {
+        (Some(visible_idx), Ok(mut last)) => {
+            let image_idx = rows[visible_idx].index;
+            if *last != Some(image_idx) {
+                *last = Some(image_idx);
+                Some(visible_idx)
+            } else {
+                None
+            }
+        }
+        _ => None,
+    };
+
+    let mut table = TableBuilder::new(ui)
         .sense(egui::Sense::click_and_drag())
         .striped(true)
         .resizable(false)
@@ -323,7 +340,11 @@ fn render_image_list(
         .column(Column::remainder().clip(true).at_least(name_col_min_width))
         .column(Column::exact(size_col_width))
         .min_scrolled_height(0.0)
-        .max_scroll_height(table_height - header_height)
+        .max_scroll_height(table_height - header_height);
+    if let Some(idx) = scroll_target {
+        table = table.scroll_to_row(idx, Some(egui::Align::Center));
+    }
+    table
         .header(header_height, |mut header| {
             header.col(|ui| {
                 ui.strong("Name");
@@ -332,81 +353,78 @@ fn render_image_list(
                 ui.strong("Size");
             });
         })
-        .body(|mut body| {
-            for row_data in &rows {
-                body.row(row_height, |mut row| {
-                    row.set_selected(row_data.selected);
+        .body(|body| {
+            body.rows(row_height, rows.len(), |mut row| {
+                let row_data = &rows[row.index()];
+                row.set_selected(row_data.selected);
 
-                    row.col(|ui| {
-                        // Paint the name through the painter (no widget) so this cell
-                        // contributes 0 to max_used_widths. Using egui::Label would
-                        // report the natural text width as the column's "used width",
-                        // which egui_extras then turns into a sticky `at_least(...)`
-                        // floor — preventing the column from shrinking past the
-                        // longest filename.
-                        let avail = ui.available_width();
-                        let elided = elide_by_char_count(&row_data.name, avail, approx_char_width);
-                        let color = ui.visuals().text_color();
-                        let galley = ui.painter().layout_no_wrap(elided, name_font.clone(), color);
-                        let cursor = ui.cursor();
-                        let y = cursor.top() + (row_height - galley.size().y) * 0.5;
-                        ui.painter().galley(egui::pos2(cursor.left(), y), galley, color);
-                    });
-                    row.col(|ui| {
-                        ui.add(
-                            egui::Label::new(&row_data.size_text)
-                                .sense(egui::Sense::empty())
-                                .selectable(false)
-                                .truncate(),
-                        );
-                    });
-
-                    let response = row.response();
-
-                    if let Some(ref text) = row_data.hover_text {
-                        response.clone().on_hover_text(text);
-                    }
-
-                    if row_data.selected {
-                        if let Ok(mut last) = last_auto_scrolled_selected.lock() {
-                            if *last != Some(row_data.index) {
-                                response.scroll_to_me(Some(egui::Align::Center));
-                                *last = Some(row_data.index);
-                            }
-                        }
-                    }
-
-                    if response.clicked() {
-                        pending_select = Some(row_data.index);
-                    }
-
-                    response.dnd_set_drag_payload(ImageDragPayload { index: row_data.index });
-
-                    if let Some(payload) = response.dnd_hover_payload::<ImageDragPayload>() {
-                        if payload.index != row_data.index {
-                            let insert_after = pointer_pos.is_some_and(|p| p.y > response.rect.center().y);
-                            let y = if insert_after {
-                                response.rect.bottom()
-                            } else {
-                                response.rect.top()
-                            };
-                            painter.hline(
-                                response.rect.left()..=response.rect.right(),
-                                y,
-                                egui::Stroke::new(2.0, egui::Color32::from_rgb(100, 150, 255)),
-                            );
-                        }
-                    }
-
-                    if let Some(payload) = response.dnd_release_payload::<ImageDragPayload>() {
-                        if payload.index != row_data.index {
-                            let insert_after = pointer_pos.is_some_and(|p| p.y > response.rect.center().y);
-                            let to = row_data.index + usize::from(insert_after);
-                            pending_move = Some((payload.index, to));
-                        }
-                    }
+                row.col(|ui| {
+                    // Paint the name through the painter (no widget) so this cell
+                    // contributes 0 to max_used_widths. Using egui::Label would
+                    // report the natural text width as the column's "used width",
+                    // which egui_extras then turns into a sticky `at_least(...)`
+                    // floor — preventing the column from shrinking past the
+                    // longest filename.
+                    let avail = ui.available_width();
+                    // One small String allocation per visible row per frame, from
+                    // painter.text's `impl ToString` clone. Elision returns Cow so
+                    // the "already fits" branch doesn't add a second alloc.
+                    // Virtualization caps this at ~visible-rows.
+                    let elided = elide_by_char_count(&row_data.name, avail, approx_char_width);
+                    let cursor = ui.cursor();
+                    ui.painter().text(
+                        egui::pos2(cursor.left(), cursor.top() + row_height * 0.5),
+                        egui::Align2::LEFT_CENTER,
+                        elided,
+                        name_font.clone(),
+                        ui.visuals().text_color(),
+                    );
                 });
-            }
+                row.col(|ui| {
+                    ui.add(
+                        egui::Label::new(&row_data.size_text)
+                            .sense(egui::Sense::empty())
+                            .selectable(false)
+                            .truncate(),
+                    );
+                });
+
+                let response = row.response();
+
+                if let Some(ref text) = row_data.hover_text {
+                    response.clone().on_hover_text(text);
+                }
+
+                if response.clicked() {
+                    pending_select = Some(row_data.index);
+                }
+
+                response.dnd_set_drag_payload(ImageDragPayload { index: row_data.index });
+
+                if let Some(payload) = response.dnd_hover_payload::<ImageDragPayload>() {
+                    if payload.index != row_data.index {
+                        let insert_after = pointer_pos.is_some_and(|p| p.y > response.rect.center().y);
+                        let y = if insert_after {
+                            response.rect.bottom()
+                        } else {
+                            response.rect.top()
+                        };
+                        painter.hline(
+                            response.rect.left()..=response.rect.right(),
+                            y,
+                            egui::Stroke::new(2.0, egui::Color32::from_rgb(100, 150, 255)),
+                        );
+                    }
+                }
+
+                if let Some(payload) = response.dnd_release_payload::<ImageDragPayload>() {
+                    if payload.index != row_data.index {
+                        let insert_after = pointer_pos.is_some_and(|p| p.y > response.rect.center().y);
+                        let to = row_data.index + usize::from(insert_after);
+                        pending_move = Some((payload.index, to));
+                    }
+                }
+            });
         });
 
     if let Some((from, to)) = pending_move {
@@ -618,20 +636,21 @@ fn render_nearest_color_row(
 
 // Cheap elision: estimate fit by char count assuming a fixed average char width.
 // Inaccurate for proportional fonts but called per-row-per-frame, so we trade
-// pixel-perfect fit for O(1) layout.
-fn elide_by_char_count(text: &str, max_width: f32, char_width: f32) -> String {
+// pixel-perfect fit for O(1) layout. Cow lets the common "already fits" path
+// avoid an allocation.
+fn elide_by_char_count(text: &str, max_width: f32, char_width: f32) -> Cow<'_, str> {
     let max_chars = (max_width / char_width).floor().max(0.0) as usize;
     let total = text.chars().count();
     if total <= max_chars {
-        return text.to_owned();
+        return Cow::Borrowed(text);
     }
     if max_chars <= 1 {
-        return "…".to_owned();
+        return Cow::Borrowed("…");
     }
     let keep = max_chars - 1; // leave room for the ellipsis
     let mut out: String = text.chars().take(keep).collect();
     out.push('…');
-    out
+    Cow::Owned(out)
 }
 
 fn fitted_color_name(ui: &egui::Ui, mut name: String, font: &egui::FontId, max_width: f32) -> String {
