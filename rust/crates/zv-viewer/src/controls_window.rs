@@ -353,7 +353,11 @@ fn render_image_list(
                 ui.strong("Size");
             });
         })
-        .body(|body| {
+        .body(|mut body| {
+            if scroll_target.is_none() {
+                auto_scroll_image_list_drag(body.ui_mut(), ctx, pointer_pos, row_height);
+            }
+
             body.rows(row_height, rows.len(), |mut row| {
                 let row_data = &rows[row.index()];
                 row.set_selected(row_data.selected);
@@ -433,6 +437,43 @@ fn render_image_list(
     } else if let Some(index) = pending_select {
         image_list.select_index(index);
         ctx.request_repaint_of(egui::ViewportId::ROOT);
+    }
+}
+
+fn auto_scroll_image_list_drag(
+    ui: &mut egui::Ui,
+    ctx: &egui::Context,
+    pointer_pos: Option<egui::Pos2>,
+    row_height: f32,
+) {
+    if !egui::DragAndDrop::has_payload_of_type::<ImageDragPayload>(ctx) {
+        return;
+    }
+
+    let Some(pointer_pos) = pointer_pos else {
+        return;
+    };
+
+    let viewport = ui.clip_rect();
+    if pointer_pos.x < viewport.left() || pointer_pos.x > viewport.right() {
+        return;
+    }
+
+    let edge_zone = row_height * 1.5;
+    let max_delta = row_height;
+    let scroll_delta_y = if pointer_pos.y < viewport.top() + edge_zone {
+        let strength = ((viewport.top() + edge_zone - pointer_pos.y) / edge_zone).clamp(0.0, 1.0);
+        strength * max_delta
+    } else if pointer_pos.y > viewport.bottom() - edge_zone {
+        let strength = ((pointer_pos.y - (viewport.bottom() - edge_zone)) / edge_zone).clamp(0.0, 1.0);
+        -strength * max_delta
+    } else {
+        0.0
+    };
+
+    if scroll_delta_y != 0.0 {
+        ui.scroll_with_delta(egui::vec2(0.0, scroll_delta_y));
+        ctx.request_repaint();
     }
 }
 
