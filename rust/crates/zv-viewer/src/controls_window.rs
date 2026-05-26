@@ -16,7 +16,7 @@ use crate::viewer::AppAction;
 
 const CONTROLS_WIDTH: f32 = 640.0;
 const CONTROLS_HEIGHT: f32 = 640.0;
-const CONTROLS_MIN_WIDTH: f32 = 360.0;
+const CONTROLS_MIN_WIDTH: f32 = 280.0;
 const CONTROLS_MIN_HEIGHT: f32 = 300.0;
 const CONTROLS_WIDTH_WITH_PADDING: f32 = CONTROLS_WIDTH + 12.0;
 const CONTROLS_GAP: f32 = 8.0;
@@ -284,6 +284,14 @@ fn render_image_list(
     let row_height = 22.0;
     let header_height = 22.0;
     let size_col_width = 96.0;
+    // Floor for the Name column: enough to show ~32 elided characters. Below this
+    // the column refuses to shrink further; above this, the cell paints the name
+    // manually so it never widens max_used_widths and lets the column shrink freely.
+    // Approximate average proportional-char width as 0.55 * font height — good enough,
+    // and cheaper than laying out a real galley per row.
+    let name_font = egui::TextStyle::Body.resolve(ui.style());
+    let approx_char_width = name_font.size * 0.55;
+    let name_col_min_width = approx_char_width * 24.0;
     // Collect rows to release the borrow on image_list before the closures.
     let rows: Vec<CollectedRow> = image_list
         .visible_rows()
@@ -312,7 +320,7 @@ fn render_image_list(
         .resizable(false)
         .auto_shrink([false, true])
         .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
-        .column(Column::remainder().clip(true))
+        .column(Column::remainder().clip(true).at_least(name_col_min_width))
         .column(Column::exact(size_col_width))
         .min_scrolled_height(0.0)
         .max_scroll_height(table_height - header_height)
@@ -330,12 +338,19 @@ fn render_image_list(
                     row.set_selected(row_data.selected);
 
                     row.col(|ui| {
-                        ui.add(
-                            egui::Label::new(&row_data.name)
-                                .sense(egui::Sense::empty())
-                                .selectable(false)
-                                .truncate(),
-                        );
+                        // Paint the name through the painter (no widget) so this cell
+                        // contributes 0 to max_used_widths. Using egui::Label would
+                        // report the natural text width as the column's "used width",
+                        // which egui_extras then turns into a sticky `at_least(...)`
+                        // floor — preventing the column from shrinking past the
+                        // longest filename.
+                        let avail = ui.available_width();
+                        let elided = elide_by_char_count(&row_data.name, avail, approx_char_width);
+                        let color = ui.visuals().text_color();
+                        let galley = ui.painter().layout_no_wrap(elided, name_font.clone(), color);
+                        let cursor = ui.cursor();
+                        let y = cursor.top() + (row_height - galley.size().y) * 0.5;
+                        ui.painter().galley(egui::pos2(cursor.left(), y), galley, color);
                     });
                     row.col(|ui| {
                         ui.add(
@@ -599,6 +614,24 @@ fn render_nearest_color_row(
         font,
         text_color,
     );
+}
+
+// Cheap elision: estimate fit by char count assuming a fixed average char width.
+// Inaccurate for proportional fonts but called per-row-per-frame, so we trade
+// pixel-perfect fit for O(1) layout.
+fn elide_by_char_count(text: &str, max_width: f32, char_width: f32) -> String {
+    let max_chars = (max_width / char_width).floor().max(0.0) as usize;
+    let total = text.chars().count();
+    if total <= max_chars {
+        return text.to_owned();
+    }
+    if max_chars <= 1 {
+        return "…".to_owned();
+    }
+    let keep = max_chars - 1; // leave room for the ellipsis
+    let mut out: String = text.chars().take(keep).collect();
+    out.push('…');
+    out
 }
 
 fn fitted_color_name(ui: &egui::Ui, mut name: String, font: &egui::FontId, max_width: f32) -> String {
