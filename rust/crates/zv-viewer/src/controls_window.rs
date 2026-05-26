@@ -11,6 +11,7 @@ use crate::color_image::{
 use crate::image_list::ImageList;
 use crate::image_window::CursorPixelInfo;
 use crate::image_window_geometry::WindowResizeAction;
+use crate::layout::LAYOUT_MENU_ENTRIES;
 use crate::render::WgpuImageCallback;
 use crate::shortcuts::{ShortcutViewport, collect_shortcuts};
 use crate::viewer::AppAction;
@@ -172,9 +173,34 @@ impl ControlsWindow {
 
             egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
                 egui::MenuBar::new().ui(ui, |ui| {
-                    for label in ["File", "Edit", "Tools", "Window", "Help"] {
-                        ui.menu_button(label, |_ui| {});
-                    }
+                    ui.menu_button("File", |_ui| {});
+                    ui.menu_button("Edit", |_ui| {});
+                    ui.menu_button("Tools", |_ui| {});
+                    ui.menu_button("Window", |ui| {
+                        ui.menu_button("Layout", |ui| {
+                            if ui
+                                .add(egui::Button::new("Automatic mosaic").shortcut_text("0"))
+                                .clicked()
+                            {
+                                push_action(&action_queue, AppAction::AutoLayout);
+                                ctx.request_repaint_of(egui::ViewportId::ROOT);
+                                ui.close();
+                            }
+                            for entry in LAYOUT_MENU_ENTRIES {
+                                let button = if let Some(shortcut) = entry.shortcut {
+                                    egui::Button::new(entry.label).shortcut_text(shortcut)
+                                } else {
+                                    egui::Button::new(entry.label)
+                                };
+                                if ui.add(button).clicked() {
+                                    push_action(&action_queue, AppAction::SetLayout(entry.config));
+                                    ctx.request_repaint_of(egui::ViewportId::ROOT);
+                                    ui.close();
+                                }
+                            }
+                        });
+                    });
+                    ui.menu_button("Help", |_ui| {});
                 });
             });
 
@@ -723,6 +749,12 @@ fn fitted_color_name(ui: &egui::Ui, mut name: String, font: &egui::FontId, max_w
 fn contrast_prefers_black(rgba: [u8; 4]) -> bool {
     let luminance = 0.2126 * rgba[0] as f32 + 0.7152 * rgba[1] as f32 + 0.0722 * rgba[2] as f32;
     luminance > 150.0
+}
+
+fn push_action(action_queue: &Arc<Mutex<Vec<AppAction>>>, action: AppAction) {
+    if let Ok(mut actions) = action_queue.lock() {
+        actions.push(action);
+    }
 }
 
 fn render_size_footer(

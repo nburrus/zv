@@ -35,7 +35,8 @@ pub struct ImageLoadTiming {
 
 pub struct ImageList {
     items: Vec<ImageItem>,
-    selected_id: ImageId,
+    selection_start: usize,
+    selection_count: usize,
     filter_text: String,
     cache: ImageItemCache,
     pending_preloads: HashMap<ImageId, Receiver<PreloadResult>>,
@@ -123,13 +124,12 @@ impl ImageList {
         };
 
         refresh_pretty_names(&mut items);
-        let selected_id = items.first().map(|item| item.id).unwrap_or(ImageId(0));
-
         Self {
             items,
-            selected_id,
+            selection_start: 0,
+            selection_count: 1,
             filter_text: String::new(),
-            cache: ImageItemCache::new(8),
+            cache: ImageItemCache::new(16),
             pending_preloads: HashMap::new(),
         }
     }
@@ -138,11 +138,16 @@ impl ImageList {
         &self.filter_text
     }
 
+    pub fn num_enabled_images(&self) -> usize {
+        self.enabled_indices().len()
+    }
+
     pub fn visible_rows(&self) -> impl Iterator<Item = ImageListRow<'_>> {
-        self.items.iter().enumerate().filter_map(|(index, item)| {
+        let selected_indices = self.selected_indices();
+        self.items.iter().enumerate().filter_map(move |(index, item)| {
             self.item_enabled(index).then_some(ImageListRow {
                 index,
-                selected: item.id == self.selected_id,
+                selected: selected_indices.contains(&Some(index)),
                 name: &item.pretty_name,
                 source_path: item.source_image_path.as_deref(),
                 size: item.metadata,
@@ -154,17 +159,18 @@ impl ImageList {
         if self.filter_text == filter_text {
             return;
         }
+        let selected_index = self.selected_index().unwrap_or(0);
         self.filter_text = filter_text;
-        if !self.selected_index().is_some_and(|index| self.item_enabled(index)) {
-            if let Some(index) = self.enabled_indices().first().copied() {
-                self.selected_id = self.items[index].id;
-            }
-        }
+        self.select_closest_enabled_index(selected_index);
     }
 
     pub fn select_index(&mut self, index: usize) {
         if index < self.items.len() && self.item_enabled(index) {
-            self.selected_id = self.items[index].id;
+            self.selection_start = self
+                .enabled_indices()
+                .iter()
+                .position(|&enabled_index| enabled_index == index)
+                .unwrap_or(0);
         }
     }
 
@@ -174,13 +180,8 @@ impl ImageList {
             return;
         }
 
-        let current_enabled_index = self
-            .selected_index()
-            .and_then(|selected| enabled.iter().position(|&index| index == selected))
-            .unwrap_or(0);
         let count = enabled.len() as isize;
-        let next = (current_enabled_index as isize + offset).rem_euclid(count) as usize;
-        self.selected_id = self.items[enabled[next]].id;
+        self.selection_start = (self.selection_start as isize + offset).rem_euclid(count) as usize;
     }
 
     pub fn move_item(&mut self, from: usize, to: usize) {
@@ -193,13 +194,29 @@ impl ImageList {
             return;
         }
 
-        let selected_id = self.selected_id;
+        let selected_id = self.selected_item().map(|item| item.id);
         let item = self.items.remove(from);
         if from < target {
             target -= 1;
         }
         self.items.insert(target, item);
-        self.selected_id = selected_id;
+        if let Some(selected_id) = selected_id {
+            if let Some(index) = self.items.iter().position(|item| item.id == selected_id) {
+                self.select_closest_enabled_index(index);
+            }
+        }
+    }
+
+    pub fn selection_count(&self) -> usize {
+        self.selection_count
+    }
+
+    pub fn set_selection_count(&mut self, count: usize) {
+        self.selection_count = count.max(1);
+        let enabled_count = self.enabled_indices().len();
+        if enabled_count > 0 && self.selection_start >= enabled_count {
+            self.selection_start = enabled_count - 1;
+        }
     }
 
     pub fn poll_preloads(&mut self) {
@@ -223,11 +240,19 @@ impl ImageList {
 
     pub fn ensure_selected_loaded(&mut self) -> Option<ImageLoadTiming> {
         self.poll_preloads();
-        let index = self.selected_index()?;
-        if self.pending_preloads.contains_key(&self.items[index].id) {
-            return None;
+        let indices = self.selected_indices();
+        let mut first_timing = None;
+        for index in indices.into_iter().flatten() {
+            if self.pending_preloads.contains_key(&self.items[index].id) {
+                continue;
+            }
+            if first_timing.is_none() {
+                first_timing = self.get_data_for_index(index).and_then(|result| result.timing);
+            } else {
+                let _ = self.get_data_for_index(index);
+            }
         }
-        self.get_data_for_index(index).and_then(|result| result.timing)
+        first_timing
     }
 
     pub fn preload_next_from_selection(&mut self, on_done: impl FnOnce() + Send + 'static) -> bool {
@@ -237,32 +262,51 @@ impl ImageList {
             return false;
         }
 
-        let current_enabled_index = self
-            .selected_index()
-            .and_then(|selected| enabled.iter().position(|&index| index == selected))
-            .unwrap_or(0);
-        let next_enabled_index = (current_enabled_index + 1) % enabled.len();
+        let next_enabled_index = (self.selection_start + self.selection_count) % enabled.len();
         let next_index = enabled[next_enabled_index];
         self.start_preload_for_index(next_index, on_done)
     }
 
-    pub fn selected_view(&self) -> Option<SelectedImageView> {
-        let item = self.selected_item()?;
-        Some(SelectedImageView {
-            id: item.id,
-            name: item.pretty_name.clone(),
-            data: self.cache.get_cached(item.id),
-            error: item.error.clone(),
-        })
+    pub fn selected_range_views(&self) -> Vec<Option<SelectedImageView>> {
+        self.selected_indices()
+            .into_iter()
+            .map(|index| {
+                let item = self.items.get(index?)?;
+                Some(SelectedImageView {
+                    id: item.id,
+                    name: item.pretty_name.clone(),
+                    data: self.cache.get_cached(item.id),
+                    error: item.error.clone(),
+                })
+            })
+            .collect()
     }
 
-
     fn selected_item(&self) -> Option<&ImageItem> {
-        self.items.iter().find(|item| item.id == self.selected_id)
+        self.items.get(self.selected_index()?)
     }
 
     fn selected_index(&self) -> Option<usize> {
-        self.items.iter().position(|item| item.id == self.selected_id)
+        self.selected_indices().into_iter().flatten().next()
+    }
+
+    fn selected_indices(&self) -> Vec<Option<usize>> {
+        let enabled = self.enabled_indices();
+        (0..self.selection_count)
+            .map(|offset| enabled.get(self.selection_start + offset).copied())
+            .collect()
+    }
+
+    fn select_closest_enabled_index(&mut self, index: usize) {
+        let enabled = self.enabled_indices();
+        if enabled.is_empty() {
+            self.selection_start = 0;
+            return;
+        }
+        self.selection_start = enabled
+            .iter()
+            .position(|&enabled_index| enabled_index >= index)
+            .unwrap_or(enabled.len() - 1);
     }
 
     fn enabled_indices(&self) -> Vec<usize> {
@@ -592,6 +636,14 @@ mod tests {
             .find_map(|(visible_index, row)| row.selected.then_some(visible_index))
     }
 
+    fn selected_visible_indices(images: &ImageList) -> Vec<usize> {
+        images
+            .visible_rows()
+            .enumerate()
+            .filter_map(|(visible_index, row)| row.selected.then_some(visible_index))
+            .collect()
+    }
+
     #[test]
     fn default_image_when_empty() {
         let images = ImageList::new(Vec::new());
@@ -625,6 +677,42 @@ mod tests {
         assert_eq!(images.selected_index(), Some(0));
         images.select_relative(-1);
         assert_eq!(images.selected_index(), Some(2));
+    }
+
+    #[test]
+    fn selection_count_marks_contiguous_visible_range() {
+        let mut images = list(&["a.png", "b.png", "c.png", "d.png"]);
+        images.set_selection_count(3);
+        assert_eq!(selected_visible_indices(&images), [0, 1, 2]);
+
+        images.select_index(1);
+        assert_eq!(selected_visible_indices(&images), [1, 2, 3]);
+        assert_eq!(images.selected_range_views().len(), 3);
+    }
+
+    #[test]
+    fn selection_range_keeps_empty_slots_past_end() {
+        let mut images = list(&["a.png", "b.png"]);
+        images.set_selection_count(4);
+        let range = images.selected_range_views();
+        assert_eq!(range.len(), 4);
+        assert!(range[0].is_some());
+        assert!(range[1].is_some());
+        assert!(range[2].is_none());
+        assert!(range[3].is_none());
+    }
+
+    #[test]
+    fn grid_navigation_advances_by_selection_count() {
+        let mut images = list(&["a.png", "b.png", "c.png", "d.png", "e.png"]);
+        images.set_selection_count(2);
+        let step = images.selection_count() as isize;
+
+        images.select_relative(step);
+        assert_eq!(selected_visible_indices(&images), [2, 3]);
+
+        images.select_relative(-step);
+        assert_eq!(selected_visible_indices(&images), [0, 1]);
     }
 
     #[test]
@@ -671,6 +759,16 @@ mod tests {
     }
 
     #[test]
+    fn filtering_repairs_multi_selection_to_nearest_enabled_row() {
+        let mut images = list(&["a.png", "b.png", "c.png", "d.png"]);
+        images.set_selection_count(2);
+        images.select_index(2);
+        images.set_filter("a".to_owned());
+        assert_eq!(selected_visible_indices(&images), [0]);
+        assert_eq!(images.selected_range_views().len(), 2);
+    }
+
+    #[test]
     fn move_preserves_selected_id_when_moving_down() {
         let mut images = list(&["a.png", "b.png", "c.png"]);
         images.select_index(1);
@@ -693,11 +791,11 @@ mod tests {
         let path = write_test_png("selected", [1, 2, 3, 255]);
         let mut images = ImageList::new(vec![path.clone()]);
 
-        assert!(images.selected_view().unwrap().data.is_none());
+        assert!(images.selected_range_views()[0].as_ref().unwrap().data.is_none());
         let timing = images.ensure_selected_loaded().expect("load selected");
         assert!(timing.succeeded);
 
-        let selected = images.selected_view().unwrap();
+        let selected = images.selected_range_views()[0].as_ref().unwrap().clone();
         assert!(selected.data.is_some());
         assert!(images.cache.contains(ImageId(1)));
 

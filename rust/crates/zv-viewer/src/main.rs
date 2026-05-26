@@ -7,6 +7,7 @@ mod image_item_data;
 mod image_list;
 mod image_window;
 mod image_window_geometry;
+mod layout;
 mod render;
 mod shortcuts;
 mod viewer;

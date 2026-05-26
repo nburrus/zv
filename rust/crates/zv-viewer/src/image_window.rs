@@ -5,6 +5,8 @@ use eframe::egui_wgpu;
 
 use crate::color_image::PixelSRGBA;
 use crate::image_item_data::ImageItemData;
+use crate::image_list::SelectedImageView;
+use crate::layout::LayoutConfig;
 use crate::render::WgpuImageCallback;
 
 #[derive(Clone)]
@@ -78,9 +80,8 @@ impl ImageWindow {
     pub fn show(
         &mut self,
         ctx: &egui::Context,
-        image_name: String,
-        image_data: Option<Arc<Mutex<ImageItemData>>>,
-        error: Option<&str>,
+        layout: LayoutConfig,
+        images: Vec<Option<SelectedImageView>>,
         cursor_info: Arc<Mutex<Option<CursorPixelInfo>>>,
     ) -> ImageWindowOutput {
         let mut output = ImageWindowOutput {
@@ -91,101 +92,104 @@ impl ImageWindow {
         egui::CentralPanel::default()
             .frame(egui::Frame::NONE.fill(egui::Color32::BLACK))
             .show(ctx, |ui| {
-                if let Some(error) = error {
-                    ui.colored_label(
-                        egui::Color32::from_rgb(255, 96, 96),
-                        format!("ERROR: could not load {image_name}\n{error}"),
-                    );
-                    return;
-                }
+                let available_rect = ui.available_rect_before_wrap();
+                output.image_rect = Some(available_rect);
 
-                let Some(image_data) = image_data else {
+                if images.is_empty() {
                     ui.label("Loading...");
                     return;
-                };
-
-                let Ok(data) = image_data.lock() else {
-                    ui.colored_label(egui::Color32::RED, "ERROR: image data lock is poisoned");
-                    return;
-                };
-
-                let available_rect = ui.available_rect_before_wrap();
-                let rect = available_rect;
-                let response = ui.allocate_rect(rect, egui::Sense::click());
-                output.image_rect = Some(rect);
-                output.secondary_clicked = response.secondary_clicked();
+                }
 
                 let (uv_min, uv_max) = self.zoom.uv_region();
-                let callback = egui_wgpu::Callback::new_paint_callback(
-                    rect,
-                    WgpuImageCallback::new(image_data.clone(), [uv_min.x, uv_min.y], [uv_max.x, uv_max.y]),
-                );
-                ui.painter().add(callback);
+                let cell_rects = layout_cell_rects(available_rect, layout, 1.0);
+                let ctrl = ui.input(|i| i.modifiers.ctrl || i.modifiers.mac_cmd);
+                let mut hovered: Option<HoveredImage> = None;
 
-                // Pixel under cursor in texture UV space, needed for zoom center.
-                let mut mouse_uv_in_texture: Option<egui::Vec2> = None;
-                let mut status: Option<StatusBarInfo> = None;
+                for (index, cell_rect) in cell_rects.iter().copied().enumerate() {
+                    let response = ui.allocate_rect(cell_rect, egui::Sense::click());
+                    if response.secondary_clicked() {
+                        output.secondary_clicked = true;
+                    }
 
-                if let Some(pointer_pos) = response.hover_pos() {
-                    // This 0.5 offset is important since the mouse coordinate is an integer.
-                    // So when we are in the center of a pixel we'll return 0,0 instead of
-                    // 0.5,0.5.
-                    let widget_pos = (pointer_pos + egui::vec2(0.5, 0.5)) - rect.min;
-                    let uv_window = widget_pos / rect.size();
-                    // Map from widget UV space into texture UV space using the current zoom region.
-                    let tex_uv = uv_min + uv_window * (uv_max - uv_min);
-                    mouse_uv_in_texture = Some(tex_uv);
+                    let Some(Some(image)) = images.get(index) else {
+                        continue;
+                    };
 
-                    let x = ((tex_uv.x * data.width() as f32).floor() as u32).min(data.width().saturating_sub(1));
-                    let y = ((tex_uv.y * data.height() as f32).floor() as u32).min(data.height().saturating_sub(1));
-                    if let Some(rgba) = data.pixel_rgba(x, y) {
-                        status = Some(StatusBarInfo {
-                            image_name: image_name.clone(),
-                            x,
-                            y,
-                            rgba,
-                            pointer_pos,
-                        });
-                        if let Ok(mut info) = cursor_info.lock() {
-                            *info = Some(CursorPixelInfo {
-                                image_name: image_name.clone(),
-                                x,
-                                y,
-                                image_width: data.width(),
-                                image_height: data.height(),
-                                uv: tex_uv,
-                                rgba,
-                                image_data: image_data.clone(),
-                            });
+                    if let Some(error) = image.error.as_ref() {
+                        paint_error(ui, cell_rect, &image.name, error);
+                        continue;
+                    }
+
+                    let Some(image_data) = image.data.as_ref() else {
+                        paint_loading(ui, cell_rect);
+                        continue;
+                    };
+
+                    let callback = egui_wgpu::Callback::new_paint_callback(
+                        cell_rect,
+                        WgpuImageCallback::new(image_data.clone(), [uv_min.x, uv_min.y], [uv_max.x, uv_max.y]),
+                    );
+                    ui.painter().add(callback);
+
+                    let Some(pointer_pos) = response.hover_pos() else {
+                        continue;
+                    };
+
+                    let Some(sample) = sample_image_at_pointer(image_data, cell_rect, pointer_pos, uv_min, uv_max)
+                    else {
+                        continue;
+                    };
+
+                    if ctrl && response.clicked() {
+                        let min_visible = 16.0 / self.zoom.zoom_factor as f32;
+                        if sample.image_width as f32 > min_visible && sample.image_height as f32 > min_visible {
+                            self.zoom.zoom_factor *= 2;
+                            self.zoom.uv_center = sample.uv;
                         }
                     }
+
+                    if ctrl && response.secondary_clicked() {
+                        if self.zoom.zoom_factor >= 2 {
+                            self.zoom.zoom_factor /= 2;
+                        }
+                        output.secondary_clicked = false;
+                    }
+
+                    hovered = Some(HoveredImage {
+                        slot_index: index,
+                        image_name: image.name.clone(),
+                        rect: cell_rect,
+                        pointer_pos,
+                        sample,
+                        image_data: image_data.clone(),
+                    });
+                }
+
+                if let Some(hovered) = hovered {
+                    if let Ok(mut info) = cursor_info.lock() {
+                        *info = Some(CursorPixelInfo {
+                            image_name: hovered.image_name.clone(),
+                            x: hovered.sample.x,
+                            y: hovered.sample.y,
+                            image_width: hovered.sample.image_width,
+                            image_height: hovered.sample.image_height,
+                            uv: hovered.sample.uv,
+                            rgba: hovered.sample.rgba,
+                            image_data: hovered.image_data.clone(),
+                        });
+                    }
+                    paint_synced_cursor(
+                        ui,
+                        &images,
+                        &cell_rects,
+                        hovered.slot_index,
+                        hovered.sample.uv,
+                        uv_min,
+                        uv_max,
+                    );
+                    paint_synced_status_bars(ui, &images, &cell_rects, &hovered);
                 } else if let Ok(mut info) = cursor_info.lock() {
                     *info = None;
-                }
-
-                // Ctrl+Left click: zoom in, centered on cursor.
-                let ctrl = ui.input(|i| i.modifiers.ctrl || i.modifiers.mac_cmd);
-                if response.clicked() && ctrl {
-                    if let Some(tex_uv) = mouse_uv_in_texture {
-                        let min_visible = 16.0 / self.zoom.zoom_factor as f32;
-                        if data.width() as f32 > min_visible && data.height() as f32 > min_visible {
-                            self.zoom.zoom_factor *= 2;
-                            self.zoom.uv_center = tex_uv;
-                        }
-                    }
-                }
-
-                // Ctrl+Right click: zoom out.
-                if response.secondary_clicked() && ctrl {
-                    if self.zoom.zoom_factor >= 2 {
-                        self.zoom.zoom_factor /= 2;
-                    }
-                    // Don't propagate as a controls-window toggle.
-                    output.secondary_clicked = false;
-                }
-
-                if let Some(status) = status {
-                    paint_status_bar(ui, rect, &status);
                 }
             });
 
@@ -193,21 +197,200 @@ impl ImageWindow {
     }
 }
 
-struct StatusBarInfo {
+#[derive(Clone)]
+struct ImageSample {
+    x: u32,
+    y: u32,
+    image_width: u32,
+    image_height: u32,
+    uv: egui::Vec2,
+    rgba: [u8; 4],
+}
+
+struct HoveredImage {
+    slot_index: usize,
     image_name: String,
+    rect: egui::Rect,
+    pointer_pos: egui::Pos2,
+    sample: ImageSample,
+    image_data: Arc<Mutex<ImageItemData>>,
+}
+
+struct StatusBarInfo<'a> {
+    image_name: &'a str,
     x: u32,
     y: u32,
     rgba: [u8; 4],
     pointer_pos: egui::Pos2,
 }
 
-fn paint_status_bar(ui: &egui::Ui, image_rect: egui::Rect, status: &StatusBarInfo) {
+fn layout_cell_rects(rect: egui::Rect, layout: LayoutConfig, padding: f32) -> Vec<egui::Rect> {
+    let rows = layout.rows.max(1);
+    let cols = layout.cols.max(1);
+    let content_width = (rect.width() - (cols.saturating_sub(1) as f32 * padding)).max(1.0);
+    let content_height = (rect.height() - (rows.saturating_sub(1) as f32 * padding)).max(1.0);
+    let cell_width = content_width / cols as f32;
+    let cell_height = content_height / rows as f32;
+
+    let mut rects = Vec::with_capacity(rows * cols);
+    for row in 0..rows {
+        for col in 0..cols {
+            let min = egui::pos2(
+                rect.left() + col as f32 * (cell_width + padding),
+                rect.top() + row as f32 * (cell_height + padding),
+            );
+            rects.push(egui::Rect::from_min_size(min, egui::vec2(cell_width, cell_height)));
+        }
+    }
+    rects
+}
+
+fn sample_image_at_pointer(
+    image_data: &Arc<Mutex<ImageItemData>>,
+    rect: egui::Rect,
+    pointer_pos: egui::Pos2,
+    uv_min: egui::Vec2,
+    uv_max: egui::Vec2,
+) -> Option<ImageSample> {
+    let Ok(data) = image_data.lock() else {
+        return None;
+    };
+    if data.width() == 0 || data.height() == 0 {
+        return None;
+    }
+
+    let widget_pos = (pointer_pos + egui::vec2(0.5, 0.5)) - rect.min;
+    let uv_window = widget_pos / rect.size();
+    let tex_uv = uv_min + uv_window * (uv_max - uv_min);
+    if !(0.0..=1.0).contains(&tex_uv.x) || !(0.0..=1.0).contains(&tex_uv.y) {
+        return None;
+    }
+
+    sample_image_at_uv(&data, tex_uv)
+}
+
+fn sample_image_at_uv(data: &ImageItemData, uv: egui::Vec2) -> Option<ImageSample> {
+    if data.width() == 0 || data.height() == 0 {
+        return None;
+    }
+    let x = ((uv.x * data.width() as f32).floor() as u32).min(data.width().saturating_sub(1));
+    let y = ((uv.y * data.height() as f32).floor() as u32).min(data.height().saturating_sub(1));
+    let rgba = data.pixel_rgba(x, y)?;
+    Some(ImageSample {
+        x,
+        y,
+        image_width: data.width(),
+        image_height: data.height(),
+        uv,
+        rgba,
+    })
+}
+
+fn paint_loading(ui: &egui::Ui, rect: egui::Rect) {
+    ui.painter().text(
+        rect.center(),
+        egui::Align2::CENTER_CENTER,
+        "Loading...",
+        egui::TextStyle::Body.resolve(ui.style()),
+        egui::Color32::WHITE,
+    );
+}
+
+fn paint_error(ui: &egui::Ui, rect: egui::Rect, image_name: &str, error: &str) {
+    let text = format!("ERROR: could not load {image_name}\n{error}");
+    ui.painter().text(
+        rect.left_top() + egui::vec2(8.0, 8.0),
+        egui::Align2::LEFT_TOP,
+        text,
+        egui::TextStyle::Body.resolve(ui.style()),
+        egui::Color32::from_rgb(255, 96, 96),
+    );
+}
+
+fn paint_synced_cursor(
+    ui: &egui::Ui,
+    images: &[Option<SelectedImageView>],
+    rects: &[egui::Rect],
+    hovered_index: usize,
+    uv: egui::Vec2,
+    uv_min: egui::Vec2,
+    uv_max: egui::Vec2,
+) {
+    let uv_window = (uv - uv_min) / (uv_max - uv_min);
+    for (index, image) in images.iter().enumerate() {
+        if index == hovered_index || image.as_ref().and_then(|image| image.data.as_ref()).is_none() {
+            continue;
+        }
+        let Some(rect) = rects.get(index).copied() else {
+            continue;
+        };
+        let center = rect.min + uv_window * rect.size();
+        ui.painter().circle_stroke(
+            center,
+            5.0,
+            egui::Stroke::new(1.0, egui::Color32::from_black_alpha(180)),
+        );
+        ui.painter().circle_stroke(
+            center,
+            4.0,
+            egui::Stroke::new(2.0, egui::Color32::from_white_alpha(180)),
+        );
+        ui.painter().circle_stroke(
+            center,
+            3.0,
+            egui::Stroke::new(1.0, egui::Color32::from_black_alpha(180)),
+        );
+    }
+}
+
+fn paint_synced_status_bars(
+    ui: &egui::Ui,
+    images: &[Option<SelectedImageView>],
+    rects: &[egui::Rect],
+    hovered: &HoveredImage,
+) {
+    for (index, image) in images.iter().enumerate() {
+        let Some(image) = image else {
+            continue;
+        };
+        let Some(image_data) = image.data.as_ref() else {
+            continue;
+        };
+        let Some(rect) = rects.get(index).copied() else {
+            continue;
+        };
+        let Ok(data) = image_data.lock() else {
+            continue;
+        };
+        let Some(sample) = sample_image_at_uv(&data, hovered.sample.uv) else {
+            continue;
+        };
+        let pointer_pos = if index == hovered.slot_index {
+            hovered.pointer_pos
+        } else {
+            rect.min + (hovered.pointer_pos - hovered.rect.min)
+        };
+        paint_status_bar(
+            ui,
+            rect,
+            &StatusBarInfo {
+                image_name: &image.name,
+                x: sample.x,
+                y: sample.y,
+                rgba: sample.rgba,
+                pointer_pos,
+            },
+        );
+    }
+}
+
+fn paint_status_bar(ui: &egui::Ui, image_rect: egui::Rect, status: &StatusBarInfo<'_>) {
     let painter = ui.painter();
     let font_id = egui::TextStyle::Monospace.resolve(ui.style());
     let font_size = font_id.size;
 
     let hsv = PixelSRGBA::from_array(status.rgba).to_hsv().display_hsv();
-    let line1 = status.image_name.clone();
+    let line1 = status.image_name.to_owned();
     let line2 = format!(
         "{:4}, {:4} (sRGBA {:3} {:3} {:3} {:3}) (HSV {:3} {:3} {:3})",
         status.x, status.y, status.rgba[0], status.rgba[1], status.rgba[2], status.rgba[3], hsv.0, hsv.1, hsv.2,

@@ -98,7 +98,6 @@ impl ImageWindowGeometryState {
         viewport: ViewportGeometry,
     ) -> Option<ViewportResizeCommand> {
         self.normal_size = Some(image_size);
-        self.aspect_ratio_source_size = None;
         let action = match self.last_geometry_mode {
             WindowGeometryMode::Normal => WindowResizeAction::Normal,
             WindowGeometryMode::AspectRatio => WindowResizeAction::RestoreAspectRatio,
@@ -509,6 +508,37 @@ mod tests {
             .expect("normal should apply");
 
         assert_size_near(normal.inner_size.unwrap(), egui::vec2(1000.0, 750.0));
+    }
+
+    #[test]
+    fn aspect_mode_image_switching_reuses_original_aspect_source_size() {
+        let monitor_size = egui::vec2(2000.0, 2000.0);
+        let mut state = ImageWindowGeometryState::default();
+        state.normal_size = Some(egui::vec2(400.0, 300.0));
+
+        let viewport = decorated_viewport(monitor_size, egui::pos2(100.0, 100.0), egui::vec2(600.0, 500.0), 0.0);
+        let aspect = state
+            .apply_resize_action(viewport, WindowResizeAction::RestoreAspectRatio)
+            .expect("aspect should apply");
+        assert_size_near(aspect.inner_size.unwrap(), egui::vec2(600.0, 450.0));
+
+        let mut current_size = aspect.inner_size.unwrap();
+        for image_size in [
+            egui::vec2(300.0, 300.0),
+            egui::vec2(400.0, 300.0),
+            egui::vec2(300.0, 300.0),
+            egui::vec2(400.0, 300.0),
+        ] {
+            let command = state
+                .on_image_changed(
+                    image_size,
+                    decorated_viewport(monitor_size, egui::pos2(100.0, 100.0), current_size, 0.0),
+                )
+                .expect("aspect image change should resize");
+            current_size = command.inner_size.unwrap();
+        }
+
+        assert_size_near(current_size, egui::vec2(600.0, 450.0));
     }
 
     #[test]

@@ -1,6 +1,7 @@
 use eframe::egui;
 
 use crate::image_window_geometry::WindowResizeAction;
+use crate::layout::shortcut_layout_for_image_count;
 use crate::viewer::AppAction;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -64,8 +65,44 @@ pub fn collect_shortcuts(ctx: &egui::Context, viewport: ShortcutViewport) -> Vec
             push_if_pressed(input, key, scope, viewport, typing_text, action.clone(), &mut actions);
         }
         push_resize_text_shortcuts(input, viewport, typing_text, &mut actions);
+        push_layout_shortcuts(input, viewport, typing_text, &mut actions);
     });
     actions
+}
+
+fn push_layout_shortcuts(
+    input: &egui::InputState,
+    viewport: ShortcutViewport,
+    typing_text: bool,
+    out_actions: &mut Vec<AppAction>,
+) {
+    if !scope_allows(ShortcutScope::GlobalWhenNotTyping, viewport, typing_text) {
+        return;
+    }
+    if input.modifiers.alt || input.modifiers.ctrl || input.modifiers.command || input.modifiers.mac_cmd {
+        return;
+    }
+
+    if input.key_pressed(egui::Key::Num0) {
+        out_actions.push(AppAction::AutoLayout);
+    }
+
+    let keys = [
+        egui::Key::Num1,
+        egui::Key::Num2,
+        egui::Key::Num3,
+        egui::Key::Num4,
+        egui::Key::Num5,
+        egui::Key::Num6,
+        egui::Key::Num7,
+        egui::Key::Num8,
+        egui::Key::Num9,
+    ];
+    for (index, key) in keys.into_iter().enumerate() {
+        if input.key_pressed(key) {
+            out_actions.push(AppAction::SetLayout(shortcut_layout_for_image_count(index + 1)));
+        }
+    }
 }
 
 fn push_resize_text_shortcuts(

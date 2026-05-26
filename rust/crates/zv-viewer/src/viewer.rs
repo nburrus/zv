@@ -9,6 +9,7 @@ use crate::image_item_data::ImageItemData;
 use crate::image_list::{ImageId, ImageList};
 use crate::image_window::{CursorPixelInfo, ImageWindow};
 use crate::image_window_geometry::{ImageWindowGeometryState, WindowResizeAction};
+use crate::layout::{LayoutConfig, best_layout_for_image_count};
 use crate::shortcuts::{ShortcutViewport, collect_shortcuts};
 use crate::viewport_geometry::{ViewportGeometry, ViewportResizeCommand};
 
@@ -18,6 +19,8 @@ pub enum AppAction {
     PreviousImage,
     Quit,
     ResizeWindow(WindowResizeAction),
+    SetLayout(LayoutConfig),
+    AutoLayout,
 }
 
 pub struct Viewer {
@@ -29,7 +32,8 @@ pub struct Viewer {
     cursor_info: Arc<Mutex<Option<CursorPixelInfo>>>,
     image_widget_size: Arc<Mutex<Option<(u32, u32)>>>,
     image_window_geometry: ImageWindowGeometryState,
-    last_displayed_id: Option<ImageId>,
+    layout: LayoutConfig,
+    last_displayed_signature: Option<(ImageId, LayoutConfig)>,
     logged_first_image_load: bool,
 }
 
@@ -53,7 +57,8 @@ impl Viewer {
             cursor_info,
             image_widget_size,
             image_window_geometry: ImageWindowGeometryState::default(),
-            last_displayed_id: None,
+            layout: LayoutConfig::default(),
+            last_displayed_signature: None,
             logged_first_image_load: false,
         }
     }
@@ -66,7 +71,7 @@ impl Viewer {
 
         let mut image_rect = None;
         let mut selected_image_debug = None;
-        let (image_load_timing, selected) = if let Ok(mut image_list) = self.image_list.lock() {
+        let (image_load_timing, selected_range) = if let Ok(mut image_list) = self.image_list.lock() {
             image_list.poll_preloads();
             let image_load_timing = image_list.ensure_selected_loaded();
             // Wake the UI when the preload finishes; without this, navigating to an
@@ -76,11 +81,11 @@ impl Viewer {
             image_list.preload_next_from_selection(move || {
                 ctx.request_repaint_of(egui::ViewportId::ROOT);
             });
-            let selected = image_list.selected_view();
-            (image_load_timing, selected)
+            let selected_range = image_list.selected_range_views();
+            (image_load_timing, selected_range)
         } else {
             tracing::warn!("image list lock is poisoned");
-            (None, None)
+            (None, Vec::new())
         };
         if !self.logged_first_image_load {
             if let Some(timing) = image_load_timing {
@@ -94,9 +99,10 @@ impl Viewer {
             }
         }
 
-        if let Some(selected) = selected {
-            if let Some(data) = selected.data.as_ref() {
-                self.apply_image_window_geometry(ctx, selected.id, data);
+        if !selected_range.is_empty() {
+            if let Some(selected) = selected_range.iter().flatten().find(|selected| selected.data.is_some()) {
+                let data = selected.data.as_ref().expect("checked above");
+                self.apply_image_window_geometry(ctx, selected.id, data, self.layout);
                 if let Ok(data) = data.lock() {
                     selected_image_debug = Some(SelectedImageDebug {
                         name: selected.name.clone(),
@@ -108,13 +114,9 @@ impl Viewer {
             }
 
             let cursor_before = self.current_cursor_signature();
-            let image_output = self.image_window.show(
-                ctx,
-                selected.name,
-                selected.data,
-                selected.error.as_deref(),
-                self.cursor_info.clone(),
-            );
+            let image_output = self
+                .image_window
+                .show(ctx, self.layout, selected_range, self.cursor_info.clone());
             let cursor_after = self.current_cursor_signature();
             if cursor_before != cursor_after && self.controls_window.is_enabled() {
                 ctx.request_repaint_of(self.controls_window.viewport_id());
@@ -189,12 +191,14 @@ impl Viewer {
             match action {
                 AppAction::NextImage => {
                     if let Ok(mut image_list) = self.image_list.lock() {
-                        image_list.select_relative(1);
+                        let step = image_list.selection_count() as isize;
+                        image_list.select_relative(step);
                     }
                 }
                 AppAction::PreviousImage => {
                     if let Ok(mut image_list) = self.image_list.lock() {
-                        image_list.select_relative(-1);
+                        let step = image_list.selection_count() as isize;
+                        image_list.select_relative(-step);
                     }
                 }
                 AppAction::Quit => {
@@ -202,6 +206,16 @@ impl Viewer {
                     ctx.send_viewport_cmd_to(egui::ViewportId::ROOT, egui::ViewportCommand::Close)
                 }
                 AppAction::ResizeWindow(action) => self.apply_window_resize_action(ctx, action),
+                AppAction::SetLayout(layout) => self.set_layout(layout),
+                AppAction::AutoLayout => {
+                    let count = self
+                        .image_list
+                        .lock()
+                        .ok()
+                        .map(|image_list| image_list.num_enabled_images())
+                        .unwrap_or(1);
+                    self.set_layout(best_layout_for_image_count(count, 128, 4.0 / 3.0));
+                }
             }
         }
         if applied_any {
@@ -216,11 +230,12 @@ impl Viewer {
         ctx: &egui::Context,
         image_id: ImageId,
         data: &Arc<Mutex<ImageItemData>>,
+        layout: LayoutConfig,
     ) {
         let Ok(data) = data.lock() else {
             return;
         };
-        let image_size = egui::vec2(data.width() as f32, data.height() as f32);
+        let image_size = layout_widget_size(egui::vec2(data.width() as f32, data.height() as f32), layout, 1.0);
         drop(data);
 
         let (monitor_size, outer_rect, inner_rect) = ctx.input(|input| {
@@ -245,12 +260,12 @@ impl Viewer {
             .prepare_initial_geometry(image_size, viewport, 0)
         {
             send_resize_command(ctx, command);
-            self.last_displayed_id = Some(image_id);
+            self.last_displayed_signature = Some((image_id, layout));
             return;
         }
 
-        if self.last_displayed_id != Some(image_id) {
-            self.last_displayed_id = Some(image_id);
+        if self.last_displayed_signature != Some((image_id, layout)) {
+            self.last_displayed_signature = Some((image_id, layout));
             if let Some(command) = self.image_window_geometry.on_image_changed(image_size, viewport) {
                 send_resize_command(ctx, command);
             }
@@ -299,6 +314,20 @@ impl Viewer {
                 .map(|cursor| (cursor.image_name.clone(), cursor.x, cursor.y, cursor.rgba))
         })
     }
+
+    fn set_layout(&mut self, layout: LayoutConfig) {
+        self.layout = layout;
+        if let Ok(mut image_list) = self.image_list.lock() {
+            image_list.set_selection_count(layout.image_count());
+        }
+    }
+}
+
+fn layout_widget_size(first_image_size: egui::Vec2, layout: LayoutConfig, padding: f32) -> egui::Vec2 {
+    egui::vec2(
+        first_image_size.x * layout.cols as f32 + layout.cols.saturating_sub(1) as f32 * padding,
+        first_image_size.y * layout.rows as f32 + layout.rows.saturating_sub(1) as f32 * padding,
+    )
 }
 
 fn send_resize_command(ctx: &egui::Context, command: ViewportResizeCommand) {
@@ -307,5 +336,18 @@ fn send_resize_command(ctx: &egui::Context, command: ViewportResizeCommand) {
     }
     if let Some(size) = command.inner_size {
         ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(size));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn layout_widget_size_uses_first_image_and_grid_padding() {
+        assert_eq!(
+            layout_widget_size(egui::vec2(320.0, 240.0), LayoutConfig { rows: 2, cols: 3 }, 1.0),
+            egui::vec2(962.0, 481.0)
+        );
     }
 }
