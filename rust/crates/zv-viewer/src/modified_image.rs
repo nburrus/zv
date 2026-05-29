@@ -186,18 +186,33 @@ impl ModifiedImage {
 mod tests {
     use super::*;
     use crate::color_image::{ImageSRGBA, PixelSRGBA};
+    use crate::image_io::load_rgba_image;
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     fn image() -> ImageItemData {
+        image_with_color(PixelSRGBA {
+            r: 1,
+            g: 2,
+            b: 3,
+            a: 255,
+        })
+    }
+
+    fn image_with_color(color: PixelSRGBA) -> ImageItemData {
         let mut image = ImageSRGBA::new(2, 2);
         for row in 0..2 {
-            image.row_mut(row).unwrap().fill(PixelSRGBA {
-                r: 1,
-                g: 2,
-                b: 3,
-                a: 255,
-            });
+            image.row_mut(row).unwrap().fill(color);
         }
         ImageItemData::new(image)
+    }
+
+    fn first_pixel(data: &ImageItemData) -> [u8; 4] {
+        data.pixel_rgba(0, 0).unwrap()
+    }
+
+    fn temp_png_path(name: &str) -> PathBuf {
+        let stamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        std::env::temp_dir().join(format!("zv-viewer-{name}-{}-{stamp}.png", std::process::id()))
     }
 
     #[test]
@@ -228,5 +243,96 @@ mod tests {
         assert_eq!(modified.display_revision(), revision);
         assert!(modified.annotations().is_empty());
         assert!(!modified.can_undo());
+    }
+
+    #[test]
+    fn discard_restores_original_display_data_and_bumps_revision() {
+        let original = PixelSRGBA {
+            r: 1,
+            g: 2,
+            b: 3,
+            a: 255,
+        };
+        let annotated = PixelSRGBA {
+            r: 20,
+            g: 30,
+            b: 40,
+            a: 255,
+        };
+        let mut modified = ModifiedImage::new(image_with_color(original), None);
+        modified.add_line(AnnotationId::next(), LineAnnotationData::default());
+        modified.annotated_data = Some(image_with_color(annotated));
+
+        let revision = modified.display_revision();
+        assert_eq!(first_pixel(modified.final_data()), annotated.as_array());
+
+        modified.discard_changes();
+
+        assert_eq!(first_pixel(modified.final_data()), original.as_array());
+        assert!(modified.annotated_data.is_none());
+        assert!(modified.annotations().is_empty());
+        assert!(!modified.can_undo());
+        assert_eq!(modified.display_revision(), revision + 1);
+    }
+
+    #[test]
+    fn save_rebases_original_to_annotated_data_and_clears_edit_state() {
+        let original = PixelSRGBA {
+            r: 1,
+            g: 2,
+            b: 3,
+            a: 255,
+        };
+        let annotated = PixelSRGBA {
+            r: 200,
+            g: 180,
+            b: 40,
+            a: 255,
+        };
+        let output_path = temp_png_path("save-rebases");
+        let mut modified = ModifiedImage::new(image_with_color(original), None);
+        modified.add_line(AnnotationId::next(), LineAnnotationData::default());
+        modified.annotated_data = Some(image_with_color(annotated));
+
+        let revision = modified.display_revision();
+        modified.save_changes(Some(&output_path)).unwrap();
+
+        assert_eq!(first_pixel(modified.pre_annotation_data()), annotated.as_array());
+        assert_eq!(first_pixel(modified.final_data()), annotated.as_array());
+        assert!(modified.annotated_data.is_none());
+        assert!(modified.annotations().is_empty());
+        assert!(!modified.can_undo());
+        assert_eq!(modified.display_revision(), revision + 1);
+        assert_eq!(
+            load_rgba_image(&output_path).unwrap().pixel(0, 0).unwrap().as_array(),
+            annotated.as_array()
+        );
+
+        let _ = std::fs::remove_file(output_path);
+    }
+
+    #[test]
+    fn repeated_save_after_successful_save_is_noop() {
+        let annotated = PixelSRGBA {
+            r: 90,
+            g: 100,
+            b: 110,
+            a: 255,
+        };
+        let output_path = temp_png_path("repeated-save");
+        let mut modified = ModifiedImage::new(image(), None);
+        modified.add_line(AnnotationId::next(), LineAnnotationData::default());
+        modified.annotated_data = Some(image_with_color(annotated));
+        modified.save_changes(Some(&output_path)).unwrap();
+
+        let revision = modified.display_revision();
+        let before = std::fs::read(&output_path).unwrap();
+        modified.save_changes(None).unwrap();
+        let after = std::fs::read(&output_path).unwrap();
+
+        assert_eq!(modified.display_revision(), revision);
+        assert_eq!(before, after);
+
+        let _ = std::fs::remove_file(output_path);
     }
 }
