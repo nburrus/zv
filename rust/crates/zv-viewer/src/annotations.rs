@@ -256,6 +256,15 @@ pub fn paint_line_handles(painter: &egui::Painter, element: &AnnotationElement, 
 pub struct AnnotationRenderer {
     renderer: egui_wgpu::Renderer,
     white_texture_uploaded: bool,
+    composite_resources: Option<AnnotationCompositeResources>,
+}
+
+struct AnnotationCompositeResources {
+    size: wgpu::Extent3d,
+    texture: wgpu::Texture,
+    view: wgpu::TextureView,
+    readback_buffer: wgpu::Buffer,
+    padded_bytes_per_row: usize,
 }
 
 impl AnnotationRenderer {
@@ -267,6 +276,7 @@ impl AnnotationRenderer {
                 egui_wgpu::RendererOptions::default(),
             ),
             white_texture_uploaded: false,
+            composite_resources: None,
         }
     }
 
@@ -284,38 +294,18 @@ impl AnnotationRenderer {
 
         let width = base.width();
         let height = base.height();
-        let size = wgpu::Extent3d {
-            width,
-            height,
-            depth_or_array_layers: 1,
+        self.ensure_composite_resources(device, width, height);
+        let (texture, view, readback_buffer, size, padded_bytes_per_row) = {
+            let resources = self.composite_resources.as_ref()?;
+            resources.upload_base_image(queue, base);
+            (
+                resources.texture.clone(),
+                resources.view.clone(),
+                resources.readback_buffer.clone(),
+                resources.size,
+                resources.padded_bytes_per_row,
+            )
         };
-        let texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("zv annotation composite texture"),
-            size,
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8Unorm,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT
-                | wgpu::TextureUsages::COPY_SRC
-                | wgpu::TextureUsages::COPY_DST,
-            view_formats: &[wgpu::TextureFormat::Rgba8Unorm],
-        });
-        queue.write_texture(
-            wgpu::TexelCopyTextureInfo {
-                texture: &texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            base.bytes(),
-            wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(base.bytes_per_row() as u32),
-                rows_per_image: Some(height),
-            },
-            size,
-        );
 
         let shapes = line_shapes_for_image(document, width, height)
             .into_iter()
@@ -339,7 +329,6 @@ impl AnnotationRenderer {
         self.renderer
             .update_buffers(device, queue, &mut encoder, &paint_jobs, &screen_descriptor);
         {
-            let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
             let mut render_pass = encoder
                 .begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("zv annotation composite pass"),
@@ -360,14 +349,6 @@ impl AnnotationRenderer {
             self.renderer.render(&mut render_pass, &paint_jobs, &screen_descriptor);
         }
 
-        let padded_bytes_per_row = (width as usize * 4).next_multiple_of(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT as usize);
-        let output_buffer_size = padded_bytes_per_row * height as usize;
-        let output_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("zv annotation composite readback"),
-            size: output_buffer_size as u64,
-            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-            mapped_at_creation: false,
-        });
         encoder.copy_texture_to_buffer(
             wgpu::TexelCopyTextureInfo {
                 texture: &texture,
@@ -376,7 +357,7 @@ impl AnnotationRenderer {
                 aspect: wgpu::TextureAspect::All,
             },
             wgpu::TexelCopyBufferInfo {
-                buffer: &output_buffer,
+                buffer: &readback_buffer,
                 layout: wgpu::TexelCopyBufferLayout {
                     offset: 0,
                     bytes_per_row: Some(padded_bytes_per_row as u32),
@@ -387,7 +368,7 @@ impl AnnotationRenderer {
         );
         let submission = queue.submit(Some(encoder.finish()));
 
-        let slice = output_buffer.slice(..);
+        let slice = readback_buffer.slice(..);
         let (sender, receiver) = mpsc::channel();
         slice.map_async(wgpu::MapMode::Read, move |result| {
             let _ = sender.send(result);
@@ -409,7 +390,7 @@ impl AnnotationRenderer {
             tight[dst..dst + tight_bytes_per_row].copy_from_slice(&mapped[src..src + tight_bytes_per_row]);
         }
         drop(mapped);
-        output_buffer.unmap();
+        readback_buffer.unmap();
 
         Some(ImageItemData::new(ImageSRGBA::from_tightly_packed_bytes(
             width, height, &tight,
@@ -425,6 +406,70 @@ impl AnnotationRenderer {
         self.renderer
             .update_texture(device, queue, egui::TextureId::default(), &delta);
         self.white_texture_uploaded = true;
+    }
+
+    fn ensure_composite_resources(&mut self, device: &wgpu::Device, width: u32, height: u32) {
+        let needs_reallocate = self
+            .composite_resources
+            .as_ref()
+            .is_none_or(|resources| resources.size.width != width || resources.size.height != height);
+        if !needs_reallocate {
+            return;
+        }
+
+        let size = wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        };
+        let texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("zv annotation composite texture"),
+            size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                | wgpu::TextureUsages::COPY_SRC
+                | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[wgpu::TextureFormat::Rgba8Unorm],
+        });
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let padded_bytes_per_row = (width as usize * 4).next_multiple_of(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT as usize);
+        let readback_buffer_size = padded_bytes_per_row * height as usize;
+        let readback_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("zv annotation composite readback"),
+            size: readback_buffer_size as u64,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        self.composite_resources = Some(AnnotationCompositeResources {
+            size,
+            texture,
+            view,
+            readback_buffer,
+            padded_bytes_per_row,
+        });
+    }
+}
+
+impl AnnotationCompositeResources {
+    fn upload_base_image(&self, queue: &wgpu::Queue, base: &ImageSRGBA) {
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &self.texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            base.bytes(),
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(base.bytes_per_row() as u32),
+                rows_per_image: Some(base.height()),
+            },
+            self.size,
+        );
     }
 }
 
