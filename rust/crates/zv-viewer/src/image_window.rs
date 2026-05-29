@@ -142,6 +142,11 @@ impl ImageWindow {
                     ui.painter().add(callback);
 
                     if let Ok(mut tool) = annotation_tool.lock() {
+                        let image_size = image_data
+                            .lock()
+                            .ok()
+                            .map(|image| [image.final_data().width(), image.final_data().height()])
+                            .unwrap_or([1, 1]);
                         tool.render_for_image(
                             ui,
                             &response,
@@ -150,6 +155,7 @@ impl ImageWindow {
                                 widget_rect: cell_rect,
                                 uv_min,
                                 uv_max,
+                                image_size,
                             },
                             first_valid_index == Some(index),
                             &visible_images,

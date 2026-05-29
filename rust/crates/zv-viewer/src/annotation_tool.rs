@@ -281,6 +281,7 @@ impl AnnotationTool {
             }
         }
         self.selected_id = id;
+        self.mode = AnnotationMode::Select;
     }
 
     fn update_edit_drag(&mut self, texture_pos: egui::Vec2, visible_images: &[Arc<Mutex<ModifiedImage>>]) {

@@ -175,7 +175,8 @@ impl AnnotationDocument {
                 AnnotationElement::Line { data, .. } => {
                     let p1 = transform.texture_to_widget(data.p1);
                     let p2 = transform.texture_to_widget(data.p2);
-                    distance_to_segment(widget_pos, p1, p2) <= body_tolerance_px + data.stroke_width * 0.5
+                    distance_to_segment(widget_pos, p1, p2)
+                        <= body_tolerance_px + transform.stroke_hit_tolerance_widget(data.stroke_width)
                 }
             };
             if body_hit {
@@ -196,6 +197,7 @@ pub struct WidgetToTextureTransform {
     pub widget_rect: egui::Rect,
     pub uv_min: egui::Vec2,
     pub uv_max: egui::Vec2,
+    pub image_size: [u32; 2],
 }
 
 impl WidgetToTextureTransform {
@@ -208,6 +210,21 @@ impl WidgetToTextureTransform {
     pub fn texture_to_widget(&self, uv: egui::Vec2) -> egui::Pos2 {
         let uv_window = (uv - self.uv_min) / (self.uv_max - self.uv_min);
         self.widget_rect.min + uv_window * self.widget_rect.size()
+    }
+
+    pub fn image_pixel_to_widget_scale(&self) -> egui::Vec2 {
+        let visible_texels = (self.uv_max - self.uv_min)
+            * egui::vec2(self.image_size[0].max(1) as f32, self.image_size[1].max(1) as f32);
+        self.widget_rect.size() / visible_texels
+    }
+
+    pub fn line_stroke_width_widget(&self, stroke_width: f32) -> f32 {
+        (stroke_width * self.image_pixel_to_widget_scale().x).max(1.0)
+    }
+
+    pub fn stroke_hit_tolerance_widget(&self, stroke_width: f32) -> f32 {
+        let scale = self.image_pixel_to_widget_scale();
+        stroke_width * 0.5 * scale.x.max(scale.y)
     }
 }
 
@@ -234,7 +251,7 @@ pub fn paint_line_overlay(painter: &egui::Painter, data: &LineAnnotationData, tr
             transform.texture_to_widget(data.p1),
             transform.texture_to_widget(data.p2),
         ],
-        egui::Stroke::new(data.stroke_width.max(1.0), data.color),
+        egui::Stroke::new(transform.line_stroke_width_widget(data.stroke_width), data.color),
     );
 }
 
@@ -506,6 +523,7 @@ mod tests {
             widget_rect: egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(100.0, 100.0)),
             uv_min: egui::Vec2::ZERO,
             uv_max: egui::vec2(1.0, 1.0),
+            image_size: [100, 100],
         }
     }
 
@@ -558,5 +576,32 @@ mod tests {
         let data = element.line().unwrap();
         assert_eq!(data.p1, egui::vec2(0.2, 0.1));
         assert_eq!(data.p2, egui::vec2(0.4, 0.3));
+    }
+
+    #[test]
+    fn line_hit_test_scales_stroke_width_to_widget_pixels() {
+        let mut document = AnnotationDocument::default();
+        let id = AnnotationId(9);
+        document.add_line(
+            id,
+            LineAnnotationData {
+                p1: egui::vec2(0.1, 0.5),
+                p2: egui::vec2(0.9, 0.5),
+                stroke_width: 10.0,
+                ..Default::default()
+            },
+        );
+        let transform = WidgetToTextureTransform {
+            widget_rect: egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(200.0, 200.0)),
+            uv_min: egui::Vec2::ZERO,
+            uv_max: egui::vec2(1.0, 1.0),
+            image_size: [100, 100],
+        };
+
+        let hit = document
+            .hit_test(egui::pos2(100.0, 113.0), &transform, AnnotationId::default(), 6.0, 4.0)
+            .expect("scaled stroke hit");
+        assert_eq!(hit.id, id);
+        assert_eq!(hit.part, AnnotationHitPart::Body);
     }
 }
