@@ -178,6 +178,7 @@ impl Viewer {
                 creating: false,
                 editing: false,
                 count: 0,
+                counts_by_image: Vec::new(),
                 selected_line: None,
             };
         };
@@ -186,8 +187,12 @@ impl Viewer {
             AnnotationMode::AddLine => "add_line",
         };
         let selected_id = tool.selected_id();
-        let (count, selected_line) = self
-            .visible_modified_images()
+        let visible = self.visible_modified_images();
+        let counts_by_image: Vec<usize> = visible
+            .iter()
+            .filter_map(|image| Some(image.lock().ok()?.annotations().elements().len()))
+            .collect();
+        let (count, selected_line) = visible
             .into_iter()
             .find_map(|image| {
                 let image = image.lock().ok()?;
@@ -210,6 +215,7 @@ impl Viewer {
             creating: tool.is_creating(),
             editing: tool.is_editing(),
             count,
+            counts_by_image,
             selected_line,
         }
     }

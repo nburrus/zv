@@ -37,6 +37,7 @@ pub struct AnnotationDebugState {
     pub creating: bool,
     pub editing: bool,
     pub count: usize,
+    pub counts_by_image: Vec<usize>,
     pub selected_line: Option<AnnotationLineDebug>,
 }
 
@@ -100,6 +101,14 @@ enum DebugAction {
         target: DebugTarget,
         at: [f32; 2],
     },
+    CtrlPointerDown {
+        target: DebugTarget,
+        at: [f32; 2],
+    },
+    CtrlPointerUp {
+        target: DebugTarget,
+        at: [f32; 2],
+    },
     Drag {
         target: DebugTarget,
         from: [f32; 2],
@@ -142,6 +151,8 @@ enum DebugKey {
     CtrlS,
     CtrlZ,
     Q,
+    Num1,
+    Num2,
 }
 
 #[derive(Debug, Serialize)]
@@ -328,6 +339,22 @@ impl RuntimeDebug {
                 self.advance_action();
                 false
             }
+            DebugAction::CtrlPointerDown { target, at } => {
+                let pos = resolve_target_pos(target, at, state);
+                let viewport_id = egui::ViewportId::ROOT;
+                self.queue_ctrl_pointer_button(viewport_id, pos, egui::PointerButton::Primary, true);
+                request_repaint_after_scripted_input(ctx, state, viewport_id);
+                self.advance_action();
+                false
+            }
+            DebugAction::CtrlPointerUp { target, at } => {
+                let pos = resolve_target_pos(target, at, state);
+                let viewport_id = egui::ViewportId::ROOT;
+                self.queue_ctrl_pointer_button(viewport_id, pos, egui::PointerButton::Primary, false);
+                request_repaint_after_scripted_input(ctx, state, viewport_id);
+                self.advance_action();
+                false
+            }
             DebugAction::Drag {
                 target,
                 from,
@@ -453,6 +480,33 @@ impl RuntimeDebug {
         );
     }
 
+    fn queue_ctrl_pointer_button(
+        &mut self,
+        viewport_id: egui::ViewportId,
+        pos: egui::Pos2,
+        button: egui::PointerButton,
+        pressed: bool,
+    ) {
+        let ctrl = egui::Modifiers {
+            ctrl: true,
+            command: true,
+            mac_cmd: cfg!(target_os = "macos"),
+            ..Default::default()
+        };
+        self.queue_events(
+            viewport_id,
+            [
+                egui::Event::PointerMoved(pos),
+                egui::Event::PointerButton {
+                    pos,
+                    button,
+                    pressed,
+                    modifiers: ctrl,
+                },
+            ],
+        );
+    }
+
     fn queue_key(&mut self, viewport_id: egui::ViewportId, key: DebugKey) {
         let (key, modifiers) = match key {
             DebugKey::Delete => (egui::Key::Delete, egui::Modifiers::NONE),
@@ -481,6 +535,8 @@ impl RuntimeDebug {
                 },
             ),
             DebugKey::Q => (egui::Key::Q, egui::Modifiers::NONE),
+            DebugKey::Num1 => (egui::Key::Num1, egui::Modifiers::NONE),
+            DebugKey::Num2 => (egui::Key::Num2, egui::Modifiers::NONE),
         };
         self.queue_events(
             viewport_id,
