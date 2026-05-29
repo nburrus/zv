@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 use eframe::egui;
 use eframe::egui_wgpu::{self, wgpu};
 
-use crate::image_item_data::ImageItemData;
+use crate::modified_image::ModifiedImage;
 
 const IMAGE_SHADER_PREFIX: &str = r#"
 struct VertexOut {
@@ -225,6 +225,7 @@ impl WgpuImageRenderer {
         WgpuImageCallbackResources {
             zoom_uniform_buffer,
             bind_group,
+            image_revision: 0,
         }
     }
 
@@ -249,18 +250,19 @@ impl WgpuImageRenderer {
 struct WgpuImageCallbackResources {
     zoom_uniform_buffer: wgpu::Buffer,
     bind_group: wgpu::BindGroup,
+    image_revision: u64,
 }
 
 #[derive(Clone)]
 pub struct WgpuImageCallback {
-    image_data: Arc<Mutex<ImageItemData>>,
+    image_data: Arc<Mutex<ModifiedImage>>,
     uv_min: [f32; 2],
     uv_max: [f32; 2],
     resources: Arc<Mutex<Option<WgpuImageCallbackResources>>>,
 }
 
 impl WgpuImageCallback {
-    pub fn new(image_data: Arc<Mutex<ImageItemData>>, uv_min: [f32; 2], uv_max: [f32; 2]) -> Self {
+    pub fn new(image_data: Arc<Mutex<ModifiedImage>>, uv_min: [f32; 2], uv_max: [f32; 2]) -> Self {
         Self {
             image_data,
             uv_min,
@@ -279,18 +281,20 @@ impl egui_wgpu::CallbackTrait for WgpuImageCallback {
         _egui_encoder: &mut wgpu::CommandEncoder,
         callback_resources: &mut egui_wgpu::CallbackResources,
     ) -> Vec<wgpu::CommandBuffer> {
-        let Some(renderer) = callback_resources.get_mut::<WgpuImageRenderer>() else {
-            tracing::warn!("missing WgpuImageRenderer callback resource");
-            return Vec::new();
-        };
-
         let Ok(mut image_data) = self.image_data.lock() else {
             tracing::warn!("image data lock is poisoned");
             return Vec::new();
         };
 
-        image_data.ensure_uploaded_to_gpu(device, queue);
-        let Some(texture_view) = image_data.gpu_texture_view() else {
+        let image_revision = image_data.display_revision();
+        let final_data = image_data.final_data_mut();
+        final_data.ensure_uploaded_to_gpu(device, queue);
+        let Some(texture_view) = final_data.gpu_texture_view() else {
+            return Vec::new();
+        };
+
+        let Some(renderer) = callback_resources.get::<WgpuImageRenderer>() else {
+            tracing::warn!("missing WgpuImageRenderer callback resource");
             return Vec::new();
         };
 
@@ -298,8 +302,13 @@ impl egui_wgpu::CallbackTrait for WgpuImageCallback {
             tracing::warn!("image callback resources lock is poisoned");
             return Vec::new();
         };
-        if resources.is_none() {
-            *resources = Some(renderer.create_callback_resources(device, texture_view));
+        if resources
+            .as_ref()
+            .is_none_or(|resources| resources.image_revision != image_revision)
+        {
+            let mut new_resources = renderer.create_callback_resources(device, texture_view);
+            new_resources.image_revision = image_revision;
+            *resources = Some(new_resources);
         }
         if let Some(resources) = resources.as_ref() {
             renderer.write_uv_uniform(queue, resources, self.uv_min, self.uv_max);

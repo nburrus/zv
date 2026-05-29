@@ -3,6 +3,7 @@ use std::time::Instant;
 
 use eframe::egui;
 
+use crate::annotations::AnnotationRenderer;
 use crate::debug::{DebugConfig, RuntimeDebug};
 use crate::render::WgpuImageRenderer;
 use crate::viewer::Viewer;
@@ -27,6 +28,9 @@ impl ZvApp {
             renderer
                 .callback_resources
                 .insert(WgpuImageRenderer::new(&render_state.device, render_state.target_format));
+            renderer
+                .callback_resources
+                .insert(AnnotationRenderer::new(&render_state.device));
         } else {
             tracing::warn!("eframe did not provide a wgpu render state; image callbacks will not render");
         }
@@ -57,8 +61,8 @@ impl eframe::App for ZvApp {
         }
     }
 
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        let state = self.viewer.update(ctx);
+    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+        let state = self.viewer.update(ctx, frame.wgpu_render_state());
         if let Some(runtime_debug) = &mut self.runtime_debug {
             runtime_debug.update_after_viewer(ctx, &state);
         }

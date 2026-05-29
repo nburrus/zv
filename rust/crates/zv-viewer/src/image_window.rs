@@ -3,10 +3,12 @@ use std::sync::{Arc, Mutex};
 use eframe::egui;
 use eframe::egui_wgpu;
 
+use crate::annotation_tool::AnnotationTool;
+use crate::annotations::WidgetToTextureTransform;
 use crate::color_image::PixelSRGBA;
-use crate::image_item_data::ImageItemData;
 use crate::image_list::SelectedImageView;
 use crate::layout::LayoutConfig;
+use crate::modified_image::ModifiedImage;
 use crate::render::WgpuImageCallback;
 
 #[derive(Clone)]
@@ -18,7 +20,7 @@ pub struct CursorPixelInfo {
     pub image_height: u32,
     pub uv: egui::Vec2,
     pub rgba: [u8; 4],
-    pub image_data: Arc<Mutex<ImageItemData>>,
+    pub image_data: Arc<Mutex<ModifiedImage>>,
 }
 
 impl std::fmt::Debug for CursorPixelInfo {
@@ -83,6 +85,7 @@ impl ImageWindow {
         layout: LayoutConfig,
         images: Vec<Option<SelectedImageView>>,
         cursor_info: Arc<Mutex<Option<CursorPixelInfo>>>,
+        annotation_tool: Arc<Mutex<AnnotationTool>>,
     ) -> ImageWindowOutput {
         let mut output = ImageWindowOutput {
             image_rect: None,
@@ -104,9 +107,16 @@ impl ImageWindow {
                 let cell_rects = layout_cell_rects(available_rect, layout, 1.0);
                 let ctrl = ui.input(|i| i.modifiers.ctrl || i.modifiers.mac_cmd);
                 let mut hovered: Option<HoveredImage> = None;
+                let visible_images = images
+                    .iter()
+                    .filter_map(|image| image.as_ref()?.data.clone())
+                    .collect::<Vec<_>>();
+                let first_valid_index = images
+                    .iter()
+                    .position(|image| image.as_ref().and_then(|image| image.data.as_ref()).is_some());
 
                 for (index, cell_rect) in cell_rects.iter().copied().enumerate() {
-                    let response = ui.allocate_rect(cell_rect, egui::Sense::click());
+                    let response = ui.allocate_rect(cell_rect, egui::Sense::click_and_drag());
                     if response.secondary_clicked() {
                         output.secondary_clicked = true;
                     }
@@ -130,6 +140,21 @@ impl ImageWindow {
                         WgpuImageCallback::new(image_data.clone(), [uv_min.x, uv_min.y], [uv_max.x, uv_max.y]),
                     );
                     ui.painter().add(callback);
+
+                    if let Ok(mut tool) = annotation_tool.lock() {
+                        tool.render_for_image(
+                            ui,
+                            &response,
+                            image_data,
+                            WidgetToTextureTransform {
+                                widget_rect: cell_rect,
+                                uv_min,
+                                uv_max,
+                            },
+                            first_valid_index == Some(index),
+                            &visible_images,
+                        );
+                    }
 
                     let Some(pointer_pos) = response.hover_pos() else {
                         continue;
@@ -213,7 +238,7 @@ struct HoveredImage {
     rect: egui::Rect,
     pointer_pos: egui::Pos2,
     sample: ImageSample,
-    image_data: Arc<Mutex<ImageItemData>>,
+    image_data: Arc<Mutex<ModifiedImage>>,
 }
 
 struct StatusBarInfo<'a> {
@@ -246,7 +271,7 @@ fn layout_cell_rects(rect: egui::Rect, layout: LayoutConfig, padding: f32) -> Ve
 }
 
 fn sample_image_at_pointer(
-    image_data: &Arc<Mutex<ImageItemData>>,
+    image_data: &Arc<Mutex<ModifiedImage>>,
     rect: egui::Rect,
     pointer_pos: egui::Pos2,
     uv_min: egui::Vec2,
@@ -255,6 +280,7 @@ fn sample_image_at_pointer(
     let Ok(data) = image_data.lock() else {
         return None;
     };
+    let data = data.final_data();
     if data.width() == 0 || data.height() == 0 {
         return None;
     }
@@ -266,10 +292,10 @@ fn sample_image_at_pointer(
         return None;
     }
 
-    sample_image_at_uv(&data, tex_uv)
+    sample_image_at_uv(data, tex_uv)
 }
 
-fn sample_image_at_uv(data: &ImageItemData, uv: egui::Vec2) -> Option<ImageSample> {
+fn sample_image_at_uv(data: &crate::image_item_data::ImageItemData, uv: egui::Vec2) -> Option<ImageSample> {
     if data.width() == 0 || data.height() == 0 {
         return None;
     }
@@ -362,7 +388,7 @@ fn paint_synced_status_bars(
         let Ok(data) = image_data.lock() else {
             continue;
         };
-        let Some(sample) = sample_image_at_uv(&data, hovered.sample.uv) else {
+        let Some(sample) = sample_image_at_uv(data.final_data(), hovered.sample.uv) else {
             continue;
         };
         let pointer_pos = if index == hovered.slot_index {

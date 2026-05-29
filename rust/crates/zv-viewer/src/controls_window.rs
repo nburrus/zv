@@ -5,6 +5,7 @@ use eframe::egui;
 use eframe::egui_wgpu;
 use egui_extras::{Column, TableBuilder};
 
+use crate::annotation_tool::{AnnotationMode, AnnotationTool};
 use crate::color_image::{
     PixelSRGBA, closest_color_entries, convert_srgba_to_lab, convert_srgba_to_linear_rgb, convert_srgba_to_xyz,
 };
@@ -62,6 +63,7 @@ pub struct ControlsWindow {
     cursor_info: Arc<Mutex<Option<CursorPixelInfo>>>,
     image_widget_size: Arc<Mutex<Option<(u32, u32)>>>,
     action_queue: Arc<Mutex<Vec<AppAction>>>,
+    annotation_tool: Arc<Mutex<AnnotationTool>>,
     ui_state: Arc<Mutex<ControlsUiState>>,
     enabled: bool,
     target_position: Option<egui::Pos2>,
@@ -77,6 +79,7 @@ impl ControlsWindow {
         cursor_info: Arc<Mutex<Option<CursorPixelInfo>>>,
         image_widget_size: Arc<Mutex<Option<(u32, u32)>>>,
         action_queue: Arc<Mutex<Vec<AppAction>>>,
+        annotation_tool: Arc<Mutex<AnnotationTool>>,
     ) -> Self {
         Self {
             viewport_id: egui::ViewportId::from_hash_of("zv-controls-window"),
@@ -84,6 +87,7 @@ impl ControlsWindow {
             cursor_info,
             image_widget_size,
             action_queue,
+            annotation_tool,
             ui_state: Arc::new(Mutex::new(ControlsUiState::default())),
             enabled: false,
             target_position: None,
@@ -144,6 +148,7 @@ impl ControlsWindow {
         let last_auto_scrolled_selected = self.last_auto_scrolled_selected.clone();
         let ui_state = self.ui_state.clone();
         let action_queue = self.action_queue.clone();
+        let annotation_tool = self.annotation_tool.clone();
         let mut builder = egui::ViewportBuilder::default()
             .with_title("zv controls")
             .with_inner_size(egui::vec2(CONTROLS_WIDTH, CONTROLS_HEIGHT))
@@ -173,9 +178,53 @@ impl ControlsWindow {
 
             egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
                 egui::MenuBar::new().ui(ui, |ui| {
-                    ui.menu_button("File", |_ui| {});
-                    ui.menu_button("Edit", |_ui| {});
-                    ui.menu_button("Tools", |_ui| {});
+                    ui.menu_button("File", |ui| {
+                        if ui.button("Save").clicked() {
+                            push_action(&action_queue, AppAction::SaveImageEdits);
+                            ctx.request_repaint_of(egui::ViewportId::ROOT);
+                            ui.close();
+                        }
+                    });
+                    ui.menu_button("Edit", |ui| {
+                        if ui.button("Undo").clicked() {
+                            push_action(&action_queue, AppAction::UndoImageEdit);
+                            ctx.request_repaint_of(egui::ViewportId::ROOT);
+                            ui.close();
+                        }
+                        if ui.button("Discard edits").clicked() {
+                            push_action(&action_queue, AppAction::DiscardImageEdits);
+                            ctx.request_repaint_of(egui::ViewportId::ROOT);
+                            ui.close();
+                        }
+                        if ui.button("Delete selected annotation").clicked() {
+                            push_action(&action_queue, AppAction::DeleteSelectedAnnotation);
+                            ctx.request_repaint_of(egui::ViewportId::ROOT);
+                            ui.close();
+                        }
+                    });
+                    ui.menu_button("Tools", |ui| {
+                        let mode = annotation_tool
+                            .lock()
+                            .ok()
+                            .map(|tool| tool.mode())
+                            .unwrap_or(AnnotationMode::Select);
+                        if ui
+                            .selectable_label(mode == AnnotationMode::Select, "Select annotations")
+                            .clicked()
+                        {
+                            push_action(&action_queue, AppAction::SetAnnotationMode(AnnotationMode::Select));
+                            ctx.request_repaint_of(egui::ViewportId::ROOT);
+                            ui.close();
+                        }
+                        if ui
+                            .selectable_label(mode == AnnotationMode::AddLine, "Add line")
+                            .clicked()
+                        {
+                            push_action(&action_queue, AppAction::SetAnnotationMode(AnnotationMode::AddLine));
+                            ctx.request_repaint_of(egui::ViewportId::ROOT);
+                            ui.close();
+                        }
+                    });
                     ui.menu_button("Window", |ui| {
                         ui.menu_button("Layout", |ui| {
                             if ui
@@ -216,7 +265,7 @@ impl ControlsWindow {
                     ControlsTab::ImageList => {
                         render_image_list_tab(ui, ctx, &image_list, &cursor_info, &last_auto_scrolled_selected);
                     }
-                    ControlsTab::Modifiers => render_empty_tab(ui, "Modifiers"),
+                    ControlsTab::Modifiers => render_annotation_tools_tab(ui, &annotation_tool, &action_queue, ctx),
                     ControlsTab::ColorEditor => render_empty_tab(ui, "Color Editor"),
                 }
             });
@@ -249,6 +298,53 @@ fn render_tabs(ui: &mut egui::Ui, ui_state: &Arc<Mutex<ControlsUiState>>) -> Con
 fn render_empty_tab(ui: &mut egui::Ui, label: &str) {
     ui.add_space(12.0);
     ui.label(egui::RichText::new(label).color(egui::Color32::from_gray(190)));
+}
+
+fn render_annotation_tools_tab(
+    ui: &mut egui::Ui,
+    annotation_tool: &Arc<Mutex<AnnotationTool>>,
+    action_queue: &Arc<Mutex<Vec<AppAction>>>,
+    ctx: &egui::Context,
+) {
+    let Ok(mut tool) = annotation_tool.lock() else {
+        ui.colored_label(egui::Color32::RED, "annotation tool lock is poisoned");
+        return;
+    };
+    ui.horizontal(|ui| {
+        let mode = tool.mode();
+        if ui.selectable_label(mode == AnnotationMode::Select, "Select").clicked() {
+            push_action(action_queue, AppAction::SetAnnotationMode(AnnotationMode::Select));
+            ctx.request_repaint_of(egui::ViewportId::ROOT);
+        }
+        if ui.selectable_label(mode == AnnotationMode::AddLine, "Line").clicked() {
+            push_action(action_queue, AppAction::SetAnnotationMode(AnnotationMode::AddLine));
+            ctx.request_repaint_of(egui::ViewportId::ROOT);
+        }
+    });
+    ui.separator();
+    let line = tool.default_line_mut();
+    let mut color = line.color;
+    if ui.color_edit_button_srgba(&mut color).changed() {
+        line.color = color;
+    }
+    ui.add(egui::Slider::new(&mut line.stroke_width, 1.0..=32.0).text("Line width"));
+    ui.separator();
+    if ui.button("Undo").clicked() {
+        push_action(action_queue, AppAction::UndoImageEdit);
+        ctx.request_repaint_of(egui::ViewportId::ROOT);
+    }
+    if ui.button("Delete selected").clicked() {
+        push_action(action_queue, AppAction::DeleteSelectedAnnotation);
+        ctx.request_repaint_of(egui::ViewportId::ROOT);
+    }
+    if ui.button("Discard edits").clicked() {
+        push_action(action_queue, AppAction::DiscardImageEdits);
+        ctx.request_repaint_of(egui::ViewportId::ROOT);
+    }
+    if ui.button("Save").clicked() {
+        push_action(action_queue, AppAction::SaveImageEdits);
+        ctx.request_repaint_of(egui::ViewportId::ROOT);
+    }
 }
 
 fn render_image_list_tab(

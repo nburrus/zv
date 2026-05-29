@@ -7,6 +7,7 @@ use std::time::{Duration, Instant};
 use crate::color_image::{ImageSRGBA, PixelSRGBA};
 use crate::image_io::load_rgba_image;
 use crate::image_item_data::ImageItemData;
+use crate::modified_image::ModifiedImage;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub struct ImageId(u64);
@@ -23,7 +24,7 @@ pub struct ImageListRow<'a> {
 pub struct SelectedImageView {
     pub id: ImageId,
     pub name: String,
-    pub data: Option<Arc<Mutex<ImageItemData>>>,
+    pub data: Option<Arc<Mutex<ModifiedImage>>>,
     pub error: Option<String>,
 }
 
@@ -51,7 +52,7 @@ struct ImageItem {
 }
 
 struct LoadDataResult {
-    data: Option<Arc<Mutex<ImageItemData>>>,
+    data: Option<Arc<Mutex<ModifiedImage>>>,
     timing: Option<ImageLoadTiming>,
 }
 
@@ -64,7 +65,7 @@ struct PreloadResult {
 
 struct ImageItemCache {
     max_size: usize,
-    entries: HashMap<ImageId, Arc<Mutex<ImageItemData>>>,
+    entries: HashMap<ImageId, Arc<Mutex<ModifiedImage>>>,
     lru: VecDeque<ImageId>,
 }
 
@@ -77,17 +78,17 @@ impl ImageItemCache {
         }
     }
 
-    fn get_cached(&self, id: ImageId) -> Option<Arc<Mutex<ImageItemData>>> {
+    fn get_cached(&self, id: ImageId) -> Option<Arc<Mutex<ModifiedImage>>> {
         self.entries.get(&id).cloned()
     }
 
-    fn get(&mut self, id: ImageId) -> Option<Arc<Mutex<ImageItemData>>> {
+    fn get(&mut self, id: ImageId) -> Option<Arc<Mutex<ModifiedImage>>> {
         let data = self.entries.get(&id).cloned()?;
         self.touch(id);
         Some(data)
     }
 
-    fn put(&mut self, id: ImageId, data: Arc<Mutex<ImageItemData>>) {
+    fn put(&mut self, id: ImageId, data: Arc<Mutex<ModifiedImage>>) {
         self.entries.insert(id, data);
         self.touch(id);
         while self.entries.len() > self.max_size {
@@ -355,7 +356,10 @@ impl ImageList {
             return false;
         }
         let Some(path) = item.source_image_path.clone() else {
-            let data = Arc::new(Mutex::new(ImageItemData::new(default_image())));
+            let data = Arc::new(Mutex::new(ModifiedImage::new(
+                ImageItemData::new(default_image()),
+                None,
+            )));
             self.cache.put(item.id, data);
             return true;
         };
@@ -384,8 +388,13 @@ impl ImageList {
         match result.result {
             Ok(image) => {
                 self.items[index].metadata = Some((image.width(), image.height()));
-                self.cache
-                    .put(result.id, Arc::new(Mutex::new(ImageItemData::new(image))));
+                self.cache.put(
+                    result.id,
+                    Arc::new(Mutex::new(ModifiedImage::new(
+                        ImageItemData::new(image),
+                        Some(result.path.clone()),
+                    ))),
+                );
                 tracing::debug!(
                     elapsed_ms = result.elapsed.as_millis(),
                     image = %result.path.display(),
@@ -429,7 +438,10 @@ impl ImageItem {
     fn load_data(&mut self) -> Option<LoadDataResult> {
         let Some(path) = self.source_image_path.as_ref() else {
             return Some(LoadDataResult {
-                data: Some(Arc::new(Mutex::new(ImageItemData::new(default_image())))),
+                data: Some(Arc::new(Mutex::new(ModifiedImage::new(
+                    ImageItemData::new(default_image()),
+                    None,
+                )))),
                 timing: None,
             });
         };
@@ -439,7 +451,10 @@ impl ImageItem {
             Ok(image) => {
                 self.metadata = Some((image.width(), image.height()));
                 return Some(LoadDataResult {
-                    data: Some(Arc::new(Mutex::new(ImageItemData::new(image)))),
+                    data: Some(Arc::new(Mutex::new(ModifiedImage::new(
+                        ImageItemData::new(image),
+                        Some(path.clone()),
+                    )))),
                     timing: Some(ImageLoadTiming {
                         path: path.clone(),
                         elapsed: start.elapsed(),

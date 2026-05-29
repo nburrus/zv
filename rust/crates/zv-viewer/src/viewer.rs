@@ -1,15 +1,17 @@
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use eframe::egui;
+use eframe::{egui, egui_wgpu};
 
+use crate::annotation_tool::{AnnotationMode, AnnotationTool};
+use crate::annotations::AnnotationRenderer;
 use crate::controls_window::ControlsWindow;
-use crate::debug::{SelectedImageDebug, ViewerDebugState};
-use crate::image_item_data::ImageItemData;
+use crate::debug::{AnnotationDebugState, SelectedImageDebug, ViewerDebugState};
 use crate::image_list::{ImageId, ImageList};
 use crate::image_window::{CursorPixelInfo, ImageWindow};
 use crate::image_window_geometry::{ImageWindowGeometryState, WindowResizeAction};
 use crate::layout::{LayoutConfig, best_layout_for_image_count};
+use crate::modified_image::ModifiedImage;
 use crate::shortcuts::{ShortcutViewport, collect_shortcuts};
 use crate::viewport_geometry::{ViewportGeometry, ViewportResizeCommand};
 
@@ -21,6 +23,11 @@ pub enum AppAction {
     ResizeWindow(WindowResizeAction),
     SetLayout(LayoutConfig),
     AutoLayout,
+    SetAnnotationMode(AnnotationMode),
+    DeleteSelectedAnnotation,
+    UndoImageEdit,
+    DiscardImageEdits,
+    SaveImageEdits,
 }
 
 pub struct Viewer {
@@ -31,6 +38,7 @@ pub struct Viewer {
     controls_action_queue: Arc<Mutex<Vec<AppAction>>>,
     cursor_info: Arc<Mutex<Option<CursorPixelInfo>>>,
     image_widget_size: Arc<Mutex<Option<(u32, u32)>>>,
+    annotation_tool: Arc<Mutex<AnnotationTool>>,
     image_window_geometry: ImageWindowGeometryState,
     layout: LayoutConfig,
     last_displayed_signature: Option<(ImageId, LayoutConfig)>,
@@ -43,6 +51,7 @@ impl Viewer {
         let cursor_info = Arc::new(Mutex::new(None));
         let image_widget_size = Arc::new(Mutex::new(None));
         let controls_action_queue = Arc::new(Mutex::new(Vec::new()));
+        let annotation_tool = Arc::new(Mutex::new(AnnotationTool::default()));
         Self {
             image_window: ImageWindow::default(),
             controls_window: ControlsWindow::new(
@@ -50,12 +59,14 @@ impl Viewer {
                 cursor_info.clone(),
                 image_widget_size.clone(),
                 controls_action_queue.clone(),
+                annotation_tool.clone(),
             ),
             image_list,
             pending_actions: Vec::new(),
             controls_action_queue,
             cursor_info,
             image_widget_size,
+            annotation_tool,
             image_window_geometry: ImageWindowGeometryState::default(),
             layout: LayoutConfig::default(),
             last_displayed_signature: None,
@@ -63,11 +74,11 @@ impl Viewer {
         }
     }
 
-    pub fn update(&mut self, ctx: &egui::Context) -> ViewerDebugState {
+    pub fn update(&mut self, ctx: &egui::Context, render_state: Option<&egui_wgpu::RenderState>) -> ViewerDebugState {
         self.observe_root_viewport_geometry(ctx);
         self.collect_keyboard_actions(ctx);
         self.collect_controls_actions();
-        self.apply_pending_actions(ctx);
+        self.apply_pending_actions(ctx, render_state);
 
         let mut image_rect = None;
         let mut selected_image_debug = None;
@@ -87,6 +98,7 @@ impl Viewer {
             tracing::warn!("image list lock is poisoned");
             (None, Vec::new())
         };
+        self.update_visible_annotations(render_state);
         if !self.logged_first_image_load {
             if let Some(timing) = image_load_timing {
                 self.logged_first_image_load = true;
@@ -104,19 +116,24 @@ impl Viewer {
                 let data = selected.data.as_ref().expect("checked above");
                 self.apply_image_window_geometry(ctx, selected.id, data, self.layout);
                 if let Ok(data) = data.lock() {
+                    let final_data = data.final_data();
                     selected_image_debug = Some(SelectedImageDebug {
                         name: selected.name.clone(),
-                        width: data.width(),
-                        height: data.height(),
-                        bytes_per_row: data.bytes_per_row(),
+                        width: final_data.width(),
+                        height: final_data.height(),
+                        bytes_per_row: final_data.bytes_per_row(),
                     });
                 }
             }
 
             let cursor_before = self.current_cursor_signature();
-            let image_output = self
-                .image_window
-                .show(ctx, self.layout, selected_range, self.cursor_info.clone());
+            let image_output = self.image_window.show(
+                ctx,
+                self.layout,
+                selected_range,
+                self.cursor_info.clone(),
+                self.annotation_tool.clone(),
+            );
             let cursor_after = self.current_cursor_signature();
             if cursor_before != cursor_after && self.controls_window.is_enabled() {
                 ctx.request_repaint_of(self.controls_window.viewport_id());
@@ -149,6 +166,28 @@ impl Viewer {
             controls_target_position: self.controls_window.target_position(),
             cursor_info: self.cursor_info.lock().ok().and_then(|info| info.clone()),
             selected_image: selected_image_debug,
+            annotation: self.annotation_debug_state(),
+        }
+    }
+
+    fn annotation_debug_state(&self) -> AnnotationDebugState {
+        let Ok(tool) = self.annotation_tool.lock() else {
+            return AnnotationDebugState {
+                mode: "poisoned",
+                selected: false,
+                creating: false,
+                editing: false,
+            };
+        };
+        let mode = match tool.mode() {
+            AnnotationMode::Select => "select",
+            AnnotationMode::AddLine => "add_line",
+        };
+        AnnotationDebugState {
+            mode,
+            selected: tool.selected_id_is_valid(),
+            creating: tool.is_creating(),
+            editing: tool.is_editing(),
         }
     }
 
@@ -184,7 +223,7 @@ impl Viewer {
         }
     }
 
-    fn apply_pending_actions(&mut self, ctx: &egui::Context) {
+    fn apply_pending_actions(&mut self, ctx: &egui::Context, render_state: Option<&egui_wgpu::RenderState>) {
         let actions = std::mem::take(&mut self.pending_actions);
         let applied_any = !actions.is_empty();
         for action in actions {
@@ -216,6 +255,22 @@ impl Viewer {
                         .unwrap_or(1);
                     self.set_layout(best_layout_for_image_count(count, 128, 4.0 / 3.0));
                 }
+                AppAction::SetAnnotationMode(mode) => {
+                    if let Ok(mut tool) = self.annotation_tool.lock() {
+                        tool.set_mode(mode);
+                    }
+                }
+                AppAction::DeleteSelectedAnnotation => self.delete_selected_annotation(),
+                AppAction::UndoImageEdit => self.apply_to_visible_images(|image| image.undo_last_change()),
+                AppAction::DiscardImageEdits => self.apply_to_visible_images(|image| image.discard_changes()),
+                AppAction::SaveImageEdits => {
+                    self.update_visible_annotations(render_state);
+                    self.apply_to_visible_images(|image| {
+                        if let Err(err) = image.save_changes(None) {
+                            tracing::warn!(error = %err, "failed to save image edits");
+                        }
+                    });
+                }
             }
         }
         if applied_any {
@@ -225,17 +280,67 @@ impl Viewer {
         }
     }
 
+    fn visible_modified_images(&self) -> Vec<Arc<Mutex<ModifiedImage>>> {
+        self.image_list
+            .lock()
+            .ok()
+            .map(|image_list| {
+                image_list
+                    .selected_range_views()
+                    .into_iter()
+                    .filter_map(|image| image?.data)
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    fn apply_to_visible_images(&self, f: impl Fn(&mut ModifiedImage)) {
+        for image in self.visible_modified_images() {
+            if let Ok(mut image) = image.lock() {
+                f(&mut image);
+            }
+        }
+    }
+
+    fn update_visible_annotations(&self, render_state: Option<&egui_wgpu::RenderState>) {
+        let Some(render_state) = render_state else {
+            return;
+        };
+        let mut renderer = render_state.renderer.write();
+        let Some(annotation_renderer) = renderer.callback_resources.get_mut::<AnnotationRenderer>() else {
+            tracing::warn!("missing AnnotationRenderer callback resource");
+            return;
+        };
+        for image in self.visible_modified_images() {
+            if let Ok(mut image) = image.lock() {
+                image.update_annotations(annotation_renderer, &render_state.device, &render_state.queue);
+            }
+        }
+    }
+
+    fn delete_selected_annotation(&self) {
+        let images = self.visible_modified_images();
+        if let Ok(mut tool) = self.annotation_tool.lock() {
+            tool.delete_selected(&images);
+        }
+    }
+
     fn apply_image_window_geometry(
         &mut self,
         ctx: &egui::Context,
         image_id: ImageId,
-        data: &Arc<Mutex<ImageItemData>>,
+        data: &Arc<Mutex<ModifiedImage>>,
         layout: LayoutConfig,
     ) {
         let Ok(data) = data.lock() else {
             return;
         };
-        let image_size = layout_widget_size(egui::vec2(data.width() as f32, data.height() as f32), layout, 1.0);
+        let final_data = data.final_data();
+        let image_size = layout_widget_size(
+            egui::vec2(final_data.width() as f32, final_data.height() as f32),
+            layout,
+            1.0,
+        );
         drop(data);
 
         let (monitor_size, outer_rect, inner_rect) = ctx.input(|input| {

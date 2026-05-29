@@ -19,6 +19,7 @@ pub struct ViewerDebugState {
     pub controls_target_position: Option<egui::Pos2>,
     pub cursor_info: Option<crate::image_window::CursorPixelInfo>,
     pub selected_image: Option<SelectedImageDebug>,
+    pub annotation: AnnotationDebugState,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -27,6 +28,14 @@ pub struct SelectedImageDebug {
     pub width: u32,
     pub height: u32,
     pub bytes_per_row: usize,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct AnnotationDebugState {
+    pub mode: &'static str,
+    pub selected: bool,
+    pub creating: bool,
+    pub editing: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -74,6 +83,21 @@ enum DebugAction {
         target: DebugTarget,
         at: [f32; 2],
     },
+    PointerDown {
+        target: DebugTarget,
+        at: [f32; 2],
+    },
+    PointerUp {
+        target: DebugTarget,
+        at: [f32; 2],
+    },
+    Drag {
+        target: DebugTarget,
+        from: [f32; 2],
+        to: [f32; 2],
+        #[serde(default = "default_drag_steps")]
+        steps: usize,
+    },
     Key {
         viewport: DebugViewport,
         key: DebugKey,
@@ -103,6 +127,10 @@ enum DebugViewport {
 #[derive(Clone, Copy, Debug, Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum DebugKey {
+    Delete,
+    Escape,
+    ShiftL,
+    CtrlS,
     Q,
 }
 
@@ -121,6 +149,7 @@ struct StateSnapshot<'a> {
     selected_image: Option<&'a SelectedImageDebug>,
     image_window: ImageWindowSnapshot,
     controls_window: ControlsWindowSnapshot,
+    annotation: &'a AnnotationDebugState,
     cursor: Option<CursorSnapshot<'a>>,
 }
 
@@ -200,6 +229,9 @@ impl RuntimeDebug {
         raw_input.events.retain(|event| !is_user_input_event(event));
 
         if let Some(events) = self.events_by_viewport.remove(&raw_input.viewport_id) {
+            if let Some(modifiers) = events.iter().find_map(event_modifiers) {
+                raw_input.modifiers = modifiers;
+            }
             raw_input.events.extend(events);
         }
     }
@@ -270,6 +302,40 @@ impl RuntimeDebug {
                 self.advance_action();
                 false
             }
+            DebugAction::PointerDown { target, at } => {
+                let pos = resolve_target_pos(target, at, state);
+                let viewport_id = egui::ViewportId::ROOT;
+                self.queue_pointer_button(viewport_id, pos, egui::PointerButton::Primary, true);
+                request_repaint_after_scripted_input(ctx, state, viewport_id);
+                self.advance_action();
+                false
+            }
+            DebugAction::PointerUp { target, at } => {
+                let pos = resolve_target_pos(target, at, state);
+                let viewport_id = egui::ViewportId::ROOT;
+                self.queue_pointer_button(viewport_id, pos, egui::PointerButton::Primary, false);
+                request_repaint_after_scripted_input(ctx, state, viewport_id);
+                self.advance_action();
+                false
+            }
+            DebugAction::Drag {
+                target,
+                from,
+                to,
+                steps,
+            } => {
+                let from = resolve_target_pos(target, from, state);
+                let to = resolve_target_pos(target, to, state);
+                let viewport_id = egui::ViewportId::ROOT;
+                self.queue_drag(
+                    viewport_id,
+                    egui::PointerButton::Primary,
+                    drag_positions(from, to, steps),
+                );
+                request_repaint_after_scripted_input(ctx, state, viewport_id);
+                self.advance_action();
+                false
+            }
             DebugAction::Key { viewport, key } => {
                 let viewport_id = resolve_viewport(viewport, state);
                 self.queue_key(viewport_id, key);
@@ -301,7 +367,6 @@ impl RuntimeDebug {
         self.queue_events(viewport_id, [egui::Event::PointerMoved(pos)]);
     }
 
-    #[allow(dead_code)]
     fn queue_drag(
         &mut self,
         viewport_id: egui::ViewportId,
@@ -357,9 +422,47 @@ impl RuntimeDebug {
         );
     }
 
+    fn queue_pointer_button(
+        &mut self,
+        viewport_id: egui::ViewportId,
+        pos: egui::Pos2,
+        button: egui::PointerButton,
+        pressed: bool,
+    ) {
+        self.queue_events(
+            viewport_id,
+            [
+                egui::Event::PointerMoved(pos),
+                egui::Event::PointerButton {
+                    pos,
+                    button,
+                    pressed,
+                    modifiers: egui::Modifiers::NONE,
+                },
+            ],
+        );
+    }
+
     fn queue_key(&mut self, viewport_id: egui::ViewportId, key: DebugKey) {
-        let key = match key {
-            DebugKey::Q => egui::Key::Q,
+        let (key, modifiers) = match key {
+            DebugKey::Delete => (egui::Key::Delete, egui::Modifiers::NONE),
+            DebugKey::Escape => (egui::Key::Escape, egui::Modifiers::NONE),
+            DebugKey::ShiftL => (
+                egui::Key::L,
+                egui::Modifiers {
+                    shift: true,
+                    ..Default::default()
+                },
+            ),
+            DebugKey::CtrlS => (
+                egui::Key::S,
+                egui::Modifiers {
+                    ctrl: true,
+                    command: true,
+                    ..Default::default()
+                },
+            ),
+            DebugKey::Q => (egui::Key::Q, egui::Modifiers::NONE),
         };
         self.queue_events(
             viewport_id,
@@ -369,14 +472,14 @@ impl RuntimeDebug {
                     physical_key: Some(key),
                     pressed: true,
                     repeat: false,
-                    modifiers: egui::Modifiers::NONE,
+                    modifiers,
                 },
                 egui::Event::Key {
                     key,
                     physical_key: Some(key),
                     pressed: false,
                     repeat: false,
-                    modifiers: egui::Modifiers::NONE,
+                    modifiers,
                 },
             ],
         );
@@ -455,6 +558,7 @@ impl RuntimeDebug {
                 viewport: "controls",
                 target_position: state.controls_target_position.map(PosSnapshot::from),
             },
+            annotation: &state.annotation,
             cursor: state.cursor_info.as_ref().map(|cursor| CursorSnapshot {
                 image: cursor.image_name.as_str(),
                 x: cursor.x,
@@ -553,6 +657,20 @@ fn default_wait_for_image_timeout() -> u64 {
     120
 }
 
+fn default_drag_steps() -> usize {
+    8
+}
+
+fn drag_positions(from: egui::Pos2, to: egui::Pos2, steps: usize) -> Vec<egui::Pos2> {
+    let steps = steps.max(1);
+    (0..=steps)
+        .map(|step| {
+            let t = step as f32 / steps as f32;
+            from.lerp(to, t)
+        })
+        .collect()
+}
+
 fn request_repaint_after_scripted_input(
     ctx: &egui::Context,
     state: &ViewerDebugState,
@@ -581,4 +699,11 @@ fn is_user_input_event(event: &egui::Event) -> bool {
             | egui::Event::Touch { .. }
             | egui::Event::MouseWheel { .. }
     )
+}
+
+fn event_modifiers(event: &egui::Event) -> Option<egui::Modifiers> {
+    match event {
+        egui::Event::Key { modifiers, .. } | egui::Event::PointerButton { modifiers, .. } => Some(*modifiers),
+        _ => None,
+    }
 }

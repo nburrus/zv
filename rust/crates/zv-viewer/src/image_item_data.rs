@@ -27,6 +27,15 @@ impl ImageItemData {
         self.cpu_data.bytes_per_row()
     }
 
+    pub fn cpu_data(&self) -> &ImageSRGBA {
+        &self.cpu_data
+    }
+
+    pub fn set_cpu_data(&mut self, cpu_data: ImageSRGBA) {
+        self.cpu_data = cpu_data;
+        self.texture_data = None;
+    }
+
     pub fn pixel_rgba(&self, x: u32, y: u32) -> Option<[u8; 4]> {
         self.cpu_data.pixel(x, y).map(|pixel| pixel.as_array())
     }

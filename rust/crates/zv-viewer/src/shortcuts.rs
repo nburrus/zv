@@ -1,5 +1,6 @@
 use eframe::egui;
 
+use crate::annotation_tool::AnnotationMode;
 use crate::image_window_geometry::WindowResizeAction;
 use crate::layout::shortcut_layout_for_image_count;
 use crate::viewer::AppAction;
@@ -66,8 +67,35 @@ pub fn collect_shortcuts(ctx: &egui::Context, viewport: ShortcutViewport) -> Vec
         }
         push_resize_text_shortcuts(input, viewport, typing_text, &mut actions);
         push_layout_shortcuts(input, viewport, typing_text, &mut actions);
+        push_annotation_shortcuts(input, viewport, typing_text, &mut actions);
     });
     actions
+}
+
+fn push_annotation_shortcuts(
+    input: &egui::InputState,
+    viewport: ShortcutViewport,
+    typing_text: bool,
+    out_actions: &mut Vec<AppAction>,
+) {
+    if !scope_allows(ShortcutScope::GlobalWhenNotTyping, viewport, typing_text) {
+        return;
+    }
+    if input.key_pressed(egui::Key::L) && input.modifiers.shift {
+        out_actions.push(AppAction::SetAnnotationMode(AnnotationMode::AddLine));
+    }
+    if input.key_pressed(egui::Key::Escape) {
+        out_actions.push(AppAction::SetAnnotationMode(AnnotationMode::Select));
+    }
+    if input.key_pressed(egui::Key::Delete) {
+        out_actions.push(AppAction::DeleteSelectedAnnotation);
+    }
+    if input.key_pressed(egui::Key::Z) && (input.modifiers.ctrl || input.modifiers.command || input.modifiers.mac_cmd) {
+        out_actions.push(AppAction::UndoImageEdit);
+    }
+    if input.key_pressed(egui::Key::S) && (input.modifiers.ctrl || input.modifiers.command || input.modifiers.mac_cmd) {
+        out_actions.push(AppAction::SaveImageEdits);
+    }
 }
 
 fn push_layout_shortcuts(

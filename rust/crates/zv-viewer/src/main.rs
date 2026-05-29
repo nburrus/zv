@@ -1,3 +1,5 @@
+mod annotation_tool;
+mod annotations;
 mod app;
 mod color_image;
 mod controls_window;
@@ -8,6 +10,7 @@ mod image_list;
 mod image_window;
 mod image_window_geometry;
 mod layout;
+mod modified_image;
 mod render;
 mod shortcuts;
 mod viewer;
