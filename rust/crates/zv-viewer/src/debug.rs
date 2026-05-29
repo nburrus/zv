@@ -36,6 +36,15 @@ pub struct AnnotationDebugState {
     pub selected: bool,
     pub creating: bool,
     pub editing: bool,
+    pub count: usize,
+    pub selected_line: Option<AnnotationLineDebug>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct AnnotationLineDebug {
+    pub p1: [f32; 2],
+    pub p2: [f32; 2],
+    pub stroke_width: f32,
 }
 
 #[derive(Clone, Debug)]
@@ -131,6 +140,7 @@ enum DebugKey {
     Escape,
     ShiftL,
     CtrlS,
+    CtrlZ,
     Q,
 }
 
@@ -456,6 +466,14 @@ impl RuntimeDebug {
             ),
             DebugKey::CtrlS => (
                 egui::Key::S,
+                egui::Modifiers {
+                    ctrl: true,
+                    command: true,
+                    ..Default::default()
+                },
+            ),
+            DebugKey::CtrlZ => (
+                egui::Key::Z,
                 egui::Modifiers {
                     ctrl: true,
                     command: true,

@@ -72,6 +72,10 @@ impl AnnotationTool {
         self.selected_id.is_valid()
     }
 
+    pub fn selected_id(&self) -> AnnotationId {
+        self.selected_id
+    }
+
     pub fn is_creating(&self) -> bool {
         self.create_drag.is_some()
     }
@@ -103,6 +107,22 @@ impl AnnotationTool {
             }
         }
         self.selected_id = AnnotationId::default();
+    }
+
+    pub fn clear_selection_if_missing(&mut self, visible_images: &[Arc<Mutex<ModifiedImage>>]) {
+        if !self.selected_id.is_valid() {
+            return;
+        }
+        let selected_id = self.selected_id;
+        let exists = visible_images.iter().any(|image| {
+            image
+                .lock()
+                .ok()
+                .is_some_and(|image| image.annotations().find_by_id(selected_id).is_some())
+        });
+        if !exists {
+            self.selected_id = AnnotationId::default();
+        }
     }
 
     pub fn cancel_current_action(&mut self) {

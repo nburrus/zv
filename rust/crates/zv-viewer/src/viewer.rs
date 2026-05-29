@@ -6,7 +6,7 @@ use eframe::{egui, egui_wgpu};
 use crate::annotation_tool::{AnnotationMode, AnnotationTool};
 use crate::annotations::AnnotationRenderer;
 use crate::controls_window::ControlsWindow;
-use crate::debug::{AnnotationDebugState, SelectedImageDebug, ViewerDebugState};
+use crate::debug::{AnnotationDebugState, AnnotationLineDebug, SelectedImageDebug, ViewerDebugState};
 use crate::image_list::{ImageId, ImageList};
 use crate::image_window::{CursorPixelInfo, ImageWindow};
 use crate::image_window_geometry::{ImageWindowGeometryState, WindowResizeAction};
@@ -177,17 +177,40 @@ impl Viewer {
                 selected: false,
                 creating: false,
                 editing: false,
+                count: 0,
+                selected_line: None,
             };
         };
         let mode = match tool.mode() {
             AnnotationMode::Select => "select",
             AnnotationMode::AddLine => "add_line",
         };
+        let selected_id = tool.selected_id();
+        let (count, selected_line) = self
+            .visible_modified_images()
+            .into_iter()
+            .find_map(|image| {
+                let image = image.lock().ok()?;
+                let count = image.annotations().elements().len();
+                let selected_line = image
+                    .annotations()
+                    .find_by_id(selected_id)
+                    .and_then(|element| element.line())
+                    .map(|line| AnnotationLineDebug {
+                        p1: [line.p1.x, line.p1.y],
+                        p2: [line.p2.x, line.p2.y],
+                        stroke_width: line.stroke_width,
+                    });
+                Some((count, selected_line))
+            })
+            .unwrap_or((0, None));
         AnnotationDebugState {
             mode,
             selected: tool.selected_id_is_valid(),
             creating: tool.is_creating(),
             editing: tool.is_editing(),
+            count,
+            selected_line,
         }
     }
 
@@ -261,8 +284,14 @@ impl Viewer {
                     }
                 }
                 AppAction::DeleteSelectedAnnotation => self.delete_selected_annotation(),
-                AppAction::UndoImageEdit => self.apply_to_visible_images(|image| image.undo_last_change()),
-                AppAction::DiscardImageEdits => self.apply_to_visible_images(|image| image.discard_changes()),
+                AppAction::UndoImageEdit => {
+                    self.apply_to_visible_images(|image| image.undo_last_change());
+                    self.clear_missing_annotation_selection();
+                }
+                AppAction::DiscardImageEdits => {
+                    self.apply_to_visible_images(|image| image.discard_changes());
+                    self.clear_missing_annotation_selection();
+                }
                 AppAction::SaveImageEdits => {
                     self.update_visible_annotations(render_state);
                     self.apply_to_visible_images(|image| {
@@ -270,6 +299,7 @@ impl Viewer {
                             tracing::warn!(error = %err, "failed to save image edits");
                         }
                     });
+                    self.clear_missing_annotation_selection();
                 }
             }
         }
@@ -322,6 +352,13 @@ impl Viewer {
         let images = self.visible_modified_images();
         if let Ok(mut tool) = self.annotation_tool.lock() {
             tool.delete_selected(&images);
+        }
+    }
+
+    fn clear_missing_annotation_selection(&self) {
+        let images = self.visible_modified_images();
+        if let Ok(mut tool) = self.annotation_tool.lock() {
+            tool.clear_selection_if_missing(&images);
         }
     }
 

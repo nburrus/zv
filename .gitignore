@@ -33,6 +33,7 @@
 build*/
 deps/prebuilt/
 dist/
+tmp/
 
 # imgui generated files
 imgui.ini

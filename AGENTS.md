@@ -118,6 +118,10 @@ zv.App.get().exec_()
 
 - Do not add `Co-Authored-By:` lines to commit messages.
 
+## Debug Artifacts
+
+- Put temporary GUI debug scripts, screenshots, and generated test images under repo-local `tmp/`. This directory is ignored and avoids needing permission for `/private/tmp` cleanup.
+
 ## Key Principles
 
 - Read existing code before modifying
