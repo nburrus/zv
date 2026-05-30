@@ -3,23 +3,43 @@ use std::path::{Path, PathBuf};
 use eframe::egui_wgpu::wgpu;
 
 use crate::annotations::{AnnotationDocument, AnnotationElement, AnnotationId, AnnotationRenderer, LineAnnotationData};
+use crate::color_image::ImageSRGBA;
 use crate::image_io::write_rgba_image;
 use crate::image_item_data::ImageItemData;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum RotationDirection {
+    Clockwise,
+    CounterClockwise,
+}
+
 #[derive(Clone, Debug)]
 pub enum ImageUndoAction {
-    RemoveAnnotation { id: AnnotationId },
-    RestoreAnnotation { element: AnnotationElement },
-    RestoreLine { id: AnnotationId, data: LineAnnotationData },
+    RemoveAnnotation {
+        id: AnnotationId,
+    },
+    RestoreAnnotation {
+        element: AnnotationElement,
+    },
+    RestoreLine {
+        id: AnnotationId,
+        data: LineAnnotationData,
+    },
+    ReplaceBaseImage {
+        cpu_data: ImageSRGBA,
+        annotations: AnnotationDocument,
+    },
 }
 
 pub struct ModifiedImage {
     original_data: ImageItemData,
+    saved_data: Option<ImageSRGBA>,
     annotated_data: Option<ImageItemData>,
     annotations: AnnotationDocument,
     actions: Vec<ImageUndoAction>,
     annotations_dirty: bool,
     source_path: Option<PathBuf>,
+    base_dirty: bool,
     display_revision: u64,
 }
 
@@ -27,11 +47,13 @@ impl ModifiedImage {
     pub fn new(original_data: ImageItemData, source_path: Option<PathBuf>) -> Self {
         Self {
             original_data,
+            saved_data: None,
             annotated_data: None,
             annotations: AnnotationDocument::default(),
             actions: Vec::new(),
             annotations_dirty: false,
             source_path,
+            base_dirty: false,
             display_revision: 0,
         }
     }
@@ -61,14 +83,17 @@ impl ModifiedImage {
         &mut self.annotations
     }
 
-    #[allow(dead_code)]
     pub fn has_pending_changes(&self) -> bool {
-        !self.annotations.is_empty()
+        self.base_dirty || !self.annotations.is_empty()
     }
 
     #[allow(dead_code)]
     pub fn can_undo(&self) -> bool {
         !self.actions.is_empty()
+    }
+
+    pub fn source_path(&self) -> Option<&Path> {
+        self.source_path.as_deref()
     }
 
     pub fn mark_annotations_dirty(&mut self) {
@@ -115,22 +140,71 @@ impl ModifiedImage {
                     }
                 }
             }
+            ImageUndoAction::ReplaceBaseImage { cpu_data, annotations } => {
+                self.base_dirty = self
+                    .saved_data
+                    .as_ref()
+                    .is_some_and(|saved_data| !image_pixels_equal(&cpu_data, saved_data));
+                if !self.base_dirty {
+                    self.saved_data = None;
+                }
+                self.original_data = ImageItemData::new(cpu_data);
+                self.annotations = annotations;
+                self.annotated_data = None;
+                self.annotations_dirty = !self.annotations.is_empty();
+                self.bump_display_revision();
+            }
+        }
+    }
+
+    pub fn rotate_cw(&mut self) {
+        self.rotate(RotationDirection::Clockwise);
+    }
+
+    pub fn rotate_ccw(&mut self) {
+        self.rotate(RotationDirection::CounterClockwise);
+    }
+
+    fn rotate(&mut self, direction: RotationDirection) {
+        self.ensure_saved_data_snapshot();
+        let snapshot_cpu = self.original_data.cpu_data().clone();
+        let snapshot_annotations = self.annotations.clone();
+        let rotated = rotate_image(self.original_data.cpu_data(), direction);
+        self.original_data = rotated;
+        rotate_annotations(&mut self.annotations, direction);
+        self.annotated_data = None;
+        self.annotations_dirty = !self.annotations.is_empty();
+        self.base_dirty = true;
+        self.actions.push(ImageUndoAction::ReplaceBaseImage {
+            cpu_data: snapshot_cpu,
+            annotations: snapshot_annotations,
+        });
+        self.bump_display_revision();
+    }
+
+    fn ensure_saved_data_snapshot(&mut self) {
+        if !self.base_dirty && self.saved_data.is_none() {
+            self.saved_data = Some(self.original_data.cpu_data().clone());
         }
     }
 
     pub fn discard_changes(&mut self) {
-        if self.annotations.is_empty() {
+        if !self.has_pending_changes() {
             return;
+        }
+        if let Some(saved_data) = self.saved_data.take() {
+            self.original_data = ImageItemData::new(saved_data);
         }
         self.annotations.clear();
         self.actions.clear();
         self.annotated_data = None;
         self.annotations_dirty = false;
+        self.base_dirty = false;
         self.bump_display_revision();
     }
 
     pub fn save_changes(&mut self, path: Option<&Path>) -> anyhow::Result<()> {
-        if self.annotations.is_empty() {
+        if !self.has_pending_changes() {
             return Ok(());
         }
         let output_path = path
@@ -140,11 +214,13 @@ impl ModifiedImage {
         write_rgba_image(&output_path, self.final_data().cpu_data())?;
         let saved = self.final_data().cpu_data().clone();
         self.original_data.set_cpu_data(saved);
+        self.saved_data = None;
         self.source_path = Some(output_path);
         self.annotations.clear();
         self.actions.clear();
         self.annotated_data = None;
         self.annotations_dirty = false;
+        self.base_dirty = false;
         self.bump_display_revision();
         Ok(())
     }
@@ -180,6 +256,66 @@ impl ModifiedImage {
     fn bump_display_revision(&mut self) {
         self.display_revision = self.display_revision.wrapping_add(1);
     }
+}
+
+fn image_pixels_equal(a: &ImageSRGBA, b: &ImageSRGBA) -> bool {
+    a.width() == b.width()
+        && a.height() == b.height()
+        && (0..a.height()).all(|row| {
+            let Some(a_row) = a.row_bytes(row) else {
+                return false;
+            };
+            let Some(b_row) = b.row_bytes(row) else {
+                return false;
+            };
+            let tight_len = a.width() as usize * 4;
+            a_row[..tight_len] == b_row[..tight_len]
+        })
+}
+
+fn rotate_annotations(document: &mut AnnotationDocument, direction: RotationDirection) {
+    for element in document.elements_mut() {
+        match element {
+            AnnotationElement::Line { data, .. } => {
+                data.p1 = rotate_uv(data.p1, direction);
+                data.p2 = rotate_uv(data.p2, direction);
+            }
+        }
+    }
+}
+
+fn rotate_uv(uv: eframe::egui::Vec2, direction: RotationDirection) -> eframe::egui::Vec2 {
+    match direction {
+        RotationDirection::Clockwise => eframe::egui::vec2(1.0 - uv.y, uv.x),
+        RotationDirection::CounterClockwise => eframe::egui::vec2(uv.y, 1.0 - uv.x),
+    }
+}
+
+fn rotate_image(src: &ImageSRGBA, direction: RotationDirection) -> ImageItemData {
+    let in_w = src.width() as usize;
+    let in_h = src.height() as usize;
+    let out_w = in_h;
+    let out_h = in_w;
+    let mut out = ImageSRGBA::new(out_w as u32, out_h as u32);
+    let src_bpr = src.bytes_per_row();
+    let src_bytes = src.bytes();
+    for out_r in 0..out_h {
+        let row = out.row_mut(out_r as u32).expect("valid row");
+        for out_c in 0..out_w {
+            let (in_r, in_c) = match direction {
+                RotationDirection::Clockwise => (in_h - out_c - 1, out_r),
+                RotationDirection::CounterClockwise => (out_c, in_w - out_r - 1),
+            };
+            let src_off = in_r * src_bpr + in_c * 4;
+            row[out_c] = crate::color_image::PixelSRGBA {
+                r: src_bytes[src_off],
+                g: src_bytes[src_off + 1],
+                b: src_bytes[src_off + 2],
+                a: src_bytes[src_off + 3],
+            };
+        }
+    }
+    ImageItemData::new(out)
 }
 
 #[cfg(test)]
@@ -243,6 +379,56 @@ mod tests {
         assert_eq!(modified.display_revision(), revision);
         assert!(modified.annotations().is_empty());
         assert!(!modified.can_undo());
+    }
+
+    #[test]
+    fn rotation_counts_as_pending_change_and_discard_restores_saved_pixels() {
+        let mut modified = ModifiedImage::new(image(), None);
+        let original_pixel = first_pixel(modified.final_data());
+        assert!(modified.saved_data.is_none());
+
+        modified.rotate_cw();
+        assert!(modified.has_pending_changes());
+        assert!(modified.saved_data.is_some());
+
+        modified.discard_changes();
+        assert!(!modified.has_pending_changes());
+        assert!(modified.saved_data.is_none());
+        assert_eq!(modified.final_data().width(), 2);
+        assert_eq!(modified.final_data().height(), 2);
+        assert_eq!(first_pixel(modified.final_data()), original_pixel);
+    }
+
+    #[test]
+    fn rotation_transforms_annotations_instead_of_clearing_them() {
+        let mut modified = ModifiedImage::new(image(), None);
+        let id = AnnotationId::next();
+        modified.add_line(
+            id,
+            LineAnnotationData {
+                p1: eframe::egui::vec2(0.25, 0.5),
+                p2: eframe::egui::vec2(0.75, 0.25),
+                ..LineAnnotationData::default()
+            },
+        );
+
+        modified.rotate_cw();
+
+        let line = modified.annotations().find_by_id(id).unwrap().line().unwrap();
+        assert_eq!(line.p1, eframe::egui::vec2(0.5, 0.25));
+        assert_eq!(line.p2, eframe::egui::vec2(0.75, 0.75));
+    }
+
+    #[test]
+    fn undo_rotation_drops_lazy_saved_snapshot_after_returning_to_clean_base() {
+        let mut modified = ModifiedImage::new(image(), None);
+        modified.rotate_cw();
+        assert!(modified.saved_data.is_some());
+
+        modified.undo_last_change();
+
+        assert!(!modified.has_pending_changes());
+        assert!(modified.saved_data.is_none());
     }
 
     #[test]

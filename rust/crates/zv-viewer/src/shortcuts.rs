@@ -93,8 +93,15 @@ fn push_annotation_shortcuts(
     if input.key_pressed(egui::Key::Z) && (input.modifiers.ctrl || input.modifiers.command || input.modifiers.mac_cmd) {
         out_actions.push(AppAction::UndoImageEdit);
     }
-    if input.key_pressed(egui::Key::S) && (input.modifiers.ctrl || input.modifiers.command || input.modifiers.mac_cmd) {
+    let cmd = input.modifiers.ctrl || input.modifiers.command || input.modifiers.mac_cmd;
+    if input.key_pressed(egui::Key::O) && cmd {
+        out_actions.push(AppAction::OpenImage);
+    }
+    if input.key_pressed(egui::Key::S) && cmd && !input.modifiers.shift {
         out_actions.push(AppAction::SaveImageEdits);
+    }
+    if input.key_pressed(egui::Key::S) && cmd && input.modifiers.shift {
+        out_actions.push(AppAction::SaveImageAs);
     }
 }
 

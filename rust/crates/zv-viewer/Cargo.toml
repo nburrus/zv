@@ -13,6 +13,7 @@ egui = "0.33"
 egui_extras = "0.33"
 image = { version = "0.25", default-features = false, features = ["bmp", "gif", "jpeg", "png", "pnm", "tga", "tiff"] }
 serde = { version = "1", features = ["derive"] }
+rfd = "0.15"
 serde_json = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }

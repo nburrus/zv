@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -18,6 +19,7 @@ pub struct ImageListRow<'a> {
     pub name: &'a str,
     pub source_path: Option<&'a Path>,
     pub size: Option<(u32, u32)>,
+    pub has_changes: bool,
 }
 
 #[derive(Clone)]
@@ -91,14 +93,36 @@ impl ImageItemCache {
     fn put(&mut self, id: ImageId, data: Arc<Mutex<ModifiedImage>>) {
         self.entries.insert(id, data);
         self.touch(id);
+        let mut scanned = 0;
         while self.entries.len() > self.max_size {
             let Some(oldest) = self.lru.pop_front() else {
                 break;
             };
-            if oldest != id {
-                self.entries.remove(&oldest);
+            scanned += 1;
+            if oldest == id {
+                self.lru.push_back(oldest);
+            } else {
+                let has_changes = self
+                    .entries
+                    .get(&oldest)
+                    .and_then(|entry| entry.lock().ok().map(|entry| entry.has_pending_changes()))
+                    .unwrap_or(false);
+                if has_changes {
+                    self.lru.push_back(oldest);
+                } else {
+                    self.entries.remove(&oldest);
+                    scanned = 0;
+                }
+            }
+            if scanned >= self.lru.len().saturating_add(1) {
+                break;
             }
         }
+    }
+
+    fn remove(&mut self, id: ImageId) {
+        self.entries.remove(&id);
+        self.lru.retain(|&existing| existing != id);
     }
 
     fn touch(&mut self, id: ImageId) {
@@ -112,15 +136,19 @@ impl ImageItemCache {
     }
 }
 
+fn next_image_id() -> ImageId {
+    static NEXT: AtomicU64 = AtomicU64::new(1);
+    ImageId(NEXT.fetch_add(1, Ordering::Relaxed))
+}
+
 impl ImageList {
     pub fn new(paths: Vec<PathBuf>) -> Self {
         let mut items = if paths.is_empty() {
-            vec![ImageItem::default_image(ImageId(1))]
+            vec![ImageItem::default_image(next_image_id())]
         } else {
             paths
                 .into_iter()
-                .enumerate()
-                .map(|(index, path)| ImageItem::from_path(ImageId(index as u64 + 1), path))
+                .map(|path| ImageItem::from_path(next_image_id(), path))
                 .collect::<Vec<_>>()
         };
 
@@ -146,14 +174,50 @@ impl ImageList {
     pub fn visible_rows(&self) -> impl Iterator<Item = ImageListRow<'_>> {
         let selected_indices = self.selected_indices();
         self.items.iter().enumerate().filter_map(move |(index, item)| {
+            let has_changes = self
+                .cache
+                .get_cached(item.id)
+                .and_then(|data| data.lock().ok().map(|d| d.has_pending_changes()))
+                .unwrap_or(false);
             self.item_enabled(index).then_some(ImageListRow {
                 index,
                 selected: selected_indices.contains(&Some(index)),
                 name: &item.pretty_name,
                 source_path: item.source_image_path.as_deref(),
                 size: item.metadata,
+                has_changes,
             })
         })
+    }
+
+    pub fn remove_at(&mut self, index: usize) {
+        if index >= self.items.len() {
+            return;
+        }
+        let id = self.items[index].id;
+        self.items.remove(index);
+        self.pending_preloads.remove(&id);
+        self.cache.remove(id);
+        let enabled = self.enabled_indices();
+        if enabled.is_empty() {
+            self.selection_start = 0;
+        } else {
+            self.selection_start = self.selection_start.min(enabled.len() - 1);
+        }
+    }
+
+    pub fn add_image_paths(&mut self, paths: Vec<PathBuf>) {
+        for path in paths {
+            let id = next_image_id();
+            let item = ImageItem::from_path(id, path);
+            self.items.push(item);
+        }
+        refresh_pretty_names(&mut self.items);
+        // Navigate to the last added image.
+        let enabled = self.enabled_indices();
+        if !enabled.is_empty() {
+            self.selection_start = enabled.len() - 1;
+        }
     }
 
     pub fn set_filter(&mut self, filter_text: String) {
@@ -281,6 +345,37 @@ impl ImageList {
                 })
             })
             .collect()
+    }
+
+    pub fn first_selected_index(&self) -> Option<usize> {
+        self.selected_index()
+    }
+
+    pub fn modified_image_at(&self, index: usize) -> Option<Arc<Mutex<ModifiedImage>>> {
+        let id = self.items.get(index)?.id;
+        self.cache.get_cached(id)
+    }
+
+    pub fn cached_modified_images(&self) -> Vec<Arc<Mutex<ModifiedImage>>> {
+        self.items
+            .iter()
+            .filter_map(|item| self.cache.get_cached(item.id))
+            .collect()
+    }
+
+    pub fn has_pending_changes_at(&self, index: usize) -> bool {
+        self.modified_image_at(index)
+            .and_then(|data| data.lock().ok().map(|data| data.has_pending_changes()))
+            .unwrap_or(false)
+    }
+
+    pub fn has_pending_changes(&self) -> bool {
+        self.items.iter().any(|item| {
+            self.cache
+                .get_cached(item.id)
+                .and_then(|data| data.lock().ok().map(|data| data.has_pending_changes()))
+                .unwrap_or(false)
+        })
     }
 
     fn selected_item(&self) -> Option<&ImageItem> {
@@ -659,6 +754,13 @@ mod tests {
             .collect()
     }
 
+    fn cached_test_image() -> Arc<Mutex<ModifiedImage>> {
+        Arc::new(Mutex::new(ModifiedImage::new(
+            ImageItemData::new(default_image()),
+            None,
+        )))
+    }
+
     #[test]
     fn default_image_when_empty() {
         let images = ImageList::new(Vec::new());
@@ -806,13 +908,14 @@ mod tests {
         let path = write_test_png("selected", [1, 2, 3, 255]);
         let mut images = ImageList::new(vec![path.clone()]);
 
+        let id0 = images.items[0].id;
         assert!(images.selected_range_views()[0].as_ref().unwrap().data.is_none());
         let timing = images.ensure_selected_loaded().expect("load selected");
         assert!(timing.succeeded);
 
         let selected = images.selected_range_views()[0].as_ref().unwrap().clone();
         assert!(selected.data.is_some());
-        assert!(images.cache.contains(ImageId(1)));
+        assert!(images.cache.contains(id0));
 
         let _ = fs::remove_file(path);
     }
@@ -824,21 +927,39 @@ mod tests {
         let third = write_test_png("third", [3, 0, 0, 255]);
         let mut images = ImageList::new(vec![first.clone(), second.clone(), third.clone()]);
 
+        let id0 = images.items[0].id;
+        let id1 = images.items[1].id;
+        let id2 = images.items[2].id;
         images.ensure_selected_loaded();
         assert!(images.preload_next_from_selection(|| {}));
         for _ in 0..100 {
             images.poll_preloads();
-            if images.cache.contains(ImageId(2)) {
+            if images.cache.contains(id1) {
                 break;
             }
             std::thread::sleep(Duration::from_millis(10));
         }
-        assert!(images.cache.contains(ImageId(1)));
-        assert!(images.cache.contains(ImageId(2)));
-        assert!(!images.cache.contains(ImageId(3)));
+        assert!(images.cache.contains(id0));
+        assert!(images.cache.contains(id1));
+        assert!(!images.cache.contains(id2));
 
         let _ = fs::remove_file(first);
         let _ = fs::remove_file(second);
         let _ = fs::remove_file(third);
+    }
+
+    #[test]
+    fn cache_does_not_evict_dirty_images() {
+        let mut cache = ImageItemCache::new(1);
+        let dirty_id = ImageId(10);
+        let clean_id = ImageId(11);
+        let dirty = cached_test_image();
+        dirty.lock().unwrap().rotate_cw();
+
+        cache.put(dirty_id, dirty);
+        cache.put(clean_id, cached_test_image());
+
+        assert!(cache.contains(dirty_id));
+        assert!(cache.contains(clean_id));
     }
 }

@@ -134,6 +134,10 @@ impl AnnotationDocument {
         &self.elements
     }
 
+    pub fn elements_mut(&mut self) -> &mut [AnnotationElement] {
+        &mut self.elements
+    }
+
     pub fn is_empty(&self) -> bool {
         self.elements.is_empty()
     }

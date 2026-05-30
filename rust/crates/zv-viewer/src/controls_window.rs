@@ -15,7 +15,7 @@ use crate::image_window_geometry::WindowResizeAction;
 use crate::layout::LAYOUT_MENU_ENTRIES;
 use crate::render::WgpuImageCallback;
 use crate::shortcuts::{ShortcutViewport, collect_shortcuts};
-use crate::viewer::AppAction;
+use crate::viewer::{AppAction, ImageEditorState};
 
 const CONTROLS_WIDTH: f32 = 640.0;
 const CONTROLS_HEIGHT: f32 = 640.0;
@@ -64,6 +64,7 @@ pub struct ControlsWindow {
     image_widget_size: Arc<Mutex<Option<(u32, u32)>>>,
     action_queue: Arc<Mutex<Vec<AppAction>>>,
     annotation_tool: Arc<Mutex<AnnotationTool>>,
+    editor_state: Arc<Mutex<ImageEditorState>>,
     ui_state: Arc<Mutex<ControlsUiState>>,
     enabled: bool,
     target_position: Option<egui::Pos2>,
@@ -80,6 +81,7 @@ impl ControlsWindow {
         image_widget_size: Arc<Mutex<Option<(u32, u32)>>>,
         action_queue: Arc<Mutex<Vec<AppAction>>>,
         annotation_tool: Arc<Mutex<AnnotationTool>>,
+        editor_state: Arc<Mutex<ImageEditorState>>,
     ) -> Self {
         Self {
             viewport_id: egui::ViewportId::from_hash_of("zv-controls-window"),
@@ -88,6 +90,7 @@ impl ControlsWindow {
             image_widget_size,
             action_queue,
             annotation_tool,
+            editor_state,
             ui_state: Arc::new(Mutex::new(ControlsUiState::default())),
             enabled: false,
             target_position: None,
@@ -149,6 +152,7 @@ impl ControlsWindow {
         let ui_state = self.ui_state.clone();
         let action_queue = self.action_queue.clone();
         let annotation_tool = self.annotation_tool.clone();
+        let editor_state = self.editor_state.clone();
         let mut builder = egui::ViewportBuilder::default()
             .with_title("zv controls")
             .with_inner_size(egui::vec2(CONTROLS_WIDTH, CONTROLS_HEIGHT))
@@ -177,26 +181,69 @@ impl ControlsWindow {
             }
 
             egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
+                let ed = editor_state.lock().map(|g| g.clone()).unwrap_or_default();
                 egui::MenuBar::new().ui(ui, |ui| {
                     ui.menu_button("File", |ui| {
-                        if ui.button("Save").clicked() {
+                        if ui.add(egui::Button::new("Open Image…").shortcut_text("⌘O")).clicked() {
+                            push_action(&action_queue, AppAction::OpenImage);
+                            ctx.request_repaint_of(egui::ViewportId::ROOT);
+                            ui.close();
+                        }
+                        ui.separator();
+                        if ui
+                            .add_enabled(ed.has_changes, egui::Button::new("Save Image").shortcut_text("⌘S"))
+                            .clicked()
+                        {
                             push_action(&action_queue, AppAction::SaveImageEdits);
+                            ctx.request_repaint_of(egui::ViewportId::ROOT);
+                            ui.close();
+                        }
+                        if ui
+                            .add(egui::Button::new("Save Image As…").shortcut_text("⌘⇧S"))
+                            .clicked()
+                        {
+                            push_action(&action_queue, AppAction::SaveImageAs);
+                            ctx.request_repaint_of(egui::ViewportId::ROOT);
+                            ui.close();
+                        }
+                        ui.separator();
+                        if ui.add(egui::Button::new("Close Image").shortcut_text("⌦")).clicked() {
+                            push_action(&action_queue, AppAction::CloseImage);
+                            ctx.request_repaint_of(egui::ViewportId::ROOT);
+                            ui.close();
+                        }
+                        ui.separator();
+                        if ui.add(egui::Button::new("Close").shortcut_text("q")).clicked() {
+                            push_action(&action_queue, AppAction::Quit);
                             ctx.request_repaint_of(egui::ViewportId::ROOT);
                             ui.close();
                         }
                     });
                     ui.menu_button("Edit", |ui| {
-                        if ui.button("Undo").clicked() {
+                        if ui
+                            .add_enabled(ed.can_undo, egui::Button::new("Undo").shortcut_text("⌘Z"))
+                            .clicked()
+                        {
                             push_action(&action_queue, AppAction::UndoImageEdit);
                             ctx.request_repaint_of(egui::ViewportId::ROOT);
                             ui.close();
                         }
-                        if ui.button("Discard edits").clicked() {
+                        if ui
+                            .add_enabled(ed.has_changes, egui::Button::new("Revert to Original"))
+                            .clicked()
+                        {
                             push_action(&action_queue, AppAction::DiscardImageEdits);
                             ctx.request_repaint_of(egui::ViewportId::ROOT);
                             ui.close();
                         }
-                        if ui.button("Delete selected annotation").clicked() {
+                        ui.separator();
+                        if ui
+                            .add_enabled(
+                                ed.has_selection,
+                                egui::Button::new("Delete Selected Annotation").shortcut_text("⌫"),
+                            )
+                            .clicked()
+                        {
                             push_action(&action_queue, AppAction::DeleteSelectedAnnotation);
                             ctx.request_repaint_of(egui::ViewportId::ROOT);
                             ui.close();
@@ -208,22 +255,20 @@ impl ControlsWindow {
                             .ok()
                             .map(|tool| tool.mode())
                             .unwrap_or(AnnotationMode::Select);
-                        if ui
-                            .selectable_label(mode == AnnotationMode::Select, "Select annotations")
-                            .clicked()
-                        {
-                            push_action(&action_queue, AppAction::SetAnnotationMode(AnnotationMode::Select));
-                            ctx.request_repaint_of(egui::ViewportId::ROOT);
-                            ui.close();
-                        }
-                        if ui
-                            .selectable_label(mode == AnnotationMode::AddLine, "Add line")
-                            .clicked()
-                        {
-                            push_action(&action_queue, AppAction::SetAnnotationMode(AnnotationMode::AddLine));
-                            ctx.request_repaint_of(egui::ViewportId::ROOT);
-                            ui.close();
-                        }
+                        ui.menu_button("Annotate", |ui| {
+                            if ui
+                                .add(
+                                    egui::Button::new("Add Line")
+                                        .shortcut_text("⇧L")
+                                        .selected(mode == AnnotationMode::AddLine),
+                                )
+                                .clicked()
+                            {
+                                push_action(&action_queue, AppAction::SetAnnotationMode(AnnotationMode::AddLine));
+                                ctx.request_repaint_of(egui::ViewportId::ROOT);
+                                ui.close();
+                            }
+                        });
                     });
                     ui.menu_button("Window", |ui| {
                         ui.menu_button("Layout", |ui| {
@@ -310,41 +355,55 @@ fn render_annotation_tools_tab(
         ui.colored_label(egui::Color32::RED, "annotation tool lock is poisoned");
         return;
     };
+    let mode = tool.mode();
+
+    // Transform toolbar.
     ui.horizontal(|ui| {
-        let mode = tool.mode();
-        if ui.selectable_label(mode == AnnotationMode::Select, "Select").clicked() {
-            push_action(action_queue, AppAction::SetAnnotationMode(AnnotationMode::Select));
+        let btn_size = egui::vec2(36.0, 28.0);
+        if ui
+            .add(egui::Button::new("↺").min_size(btn_size))
+            .on_hover_text("Rotate Left (−90°)")
+            .clicked()
+        {
+            push_action(action_queue, AppAction::RotateLeft);
             ctx.request_repaint_of(egui::ViewportId::ROOT);
         }
-        if ui.selectable_label(mode == AnnotationMode::AddLine, "Line").clicked() {
-            push_action(action_queue, AppAction::SetAnnotationMode(AnnotationMode::AddLine));
+        if ui
+            .add(egui::Button::new("↻").min_size(btn_size))
+            .on_hover_text("Rotate Right (+90°)")
+            .clicked()
+        {
+            push_action(action_queue, AppAction::RotateRight);
+            ctx.request_repaint_of(egui::ViewportId::ROOT);
+        }
+        ui.separator();
+        // Annotation toolbar — one button per implemented type.
+        let is_line = mode == AnnotationMode::AddLine;
+        let line_btn = egui::Button::new("Line").selected(is_line).min_size(btn_size);
+        if ui.add(line_btn).on_hover_text("Add Line (Shift+L)").clicked() {
+            let next_mode = if is_line {
+                AnnotationMode::Select
+            } else {
+                AnnotationMode::AddLine
+            };
+            push_action(action_queue, AppAction::SetAnnotationMode(next_mode));
             ctx.request_repaint_of(egui::ViewportId::ROOT);
         }
     });
+
     ui.separator();
+
+    // Style controls for the line tool.
+    ui.horizontal(|ui| {
+        let line = tool.default_line_mut();
+        let mut color = line.color;
+        ui.label("Color");
+        if ui.color_edit_button_srgba(&mut color).changed() {
+            line.color = color;
+        }
+    });
     let line = tool.default_line_mut();
-    let mut color = line.color;
-    if ui.color_edit_button_srgba(&mut color).changed() {
-        line.color = color;
-    }
-    ui.add(egui::Slider::new(&mut line.stroke_width, 1.0..=32.0).text("Line width"));
-    ui.separator();
-    if ui.button("Undo").clicked() {
-        push_action(action_queue, AppAction::UndoImageEdit);
-        ctx.request_repaint_of(egui::ViewportId::ROOT);
-    }
-    if ui.button("Delete selected").clicked() {
-        push_action(action_queue, AppAction::DeleteSelectedAnnotation);
-        ctx.request_repaint_of(egui::ViewportId::ROOT);
-    }
-    if ui.button("Discard edits").clicked() {
-        push_action(action_queue, AppAction::DiscardImageEdits);
-        ctx.request_repaint_of(egui::ViewportId::ROOT);
-    }
-    if ui.button("Save").clicked() {
-        push_action(action_queue, AppAction::SaveImageEdits);
-        ctx.request_repaint_of(egui::ViewportId::ROOT);
-    }
+    ui.add(egui::Slider::new(&mut line.stroke_width, 1.0..=32.0).text("Width"));
 }
 
 fn render_image_list_tab(
@@ -395,6 +454,7 @@ struct CollectedRow {
     name: String,
     hover_text: Option<String>,
     size_text: String,
+    has_changes: bool,
 }
 
 fn render_image_list(
@@ -427,6 +487,7 @@ fn render_image_list(
                 .size
                 .map(|(w, h)| format!("{w}x{h}"))
                 .unwrap_or_else(|| "(?x?)".to_owned()),
+            has_changes: row.has_changes,
         })
         .collect();
 
@@ -485,25 +546,22 @@ fn render_image_list(
                 row.set_selected(row_data.selected);
 
                 row.col(|ui| {
-                    // Paint the name through the painter (no widget) so this cell
-                    // contributes 0 to max_used_widths. Using egui::Label would
-                    // report the natural text width as the column's "used width",
-                    // which egui_extras then turns into a sticky `at_least(...)`
-                    // floor — preventing the column from shrinking past the
-                    // longest filename.
                     let avail = ui.available_width();
-                    // One small String allocation per visible row per frame, from
-                    // painter.text's `impl ToString` clone. Elision returns Cow so
-                    // the "already fits" branch doesn't add a second alloc.
-                    // Virtualization caps this at ~visible-rows.
-                    let elided = elide_by_char_count(&row_data.name, avail, approx_char_width);
+                    let (display_name, text_color) = if row_data.has_changes {
+                        let name = format!("* {}", row_data.name);
+                        let color = egui::Color32::from_rgb(255, 200, 80);
+                        (name, color)
+                    } else {
+                        (row_data.name.clone(), ui.visuals().text_color())
+                    };
+                    let elided = elide_by_char_count(&display_name, avail, approx_char_width);
                     let cursor = ui.cursor();
                     ui.painter().text(
                         egui::pos2(cursor.left(), cursor.top() + row_height * 0.5),
                         egui::Align2::LEFT_CENTER,
                         elided,
                         name_font.clone(),
-                        ui.visuals().text_color(),
+                        text_color,
                     );
                 });
                 row.col(|ui| {
