@@ -5,7 +5,7 @@ This document captures measured `zv-viewer` binary sizes on macOS arm64 while tu
 ## Build Profiles
 
 - `release`: performance-oriented (`opt-level=3`, `panic=unwind`)
-- `release-small`: size-oriented (`opt-level="z"`, `panic=abort`, `strip="symbols"`, `lto="thin"`, `codegen-units=1`)
+- `release-small`: size-oriented (`opt-level=3`, `panic=abort`, `strip="symbols"`, `lto="thin"`, `codegen-units=1`)
 
 Build commands:
 
@@ -24,7 +24,7 @@ All sizes below are from `rust/target/.../zv-viewer` using `ls -lh` and section 
 | + conservative release tuning (`strip`, `lto`, `codegen-units`) | 13M | -4.0M |
 | + `image` limited to `jpeg,png` | 9.3M | -3.7M |
 | + `eframe` default feature pruning (`wgpu` only path) | 8.2M | -1.1M |
-| + aggressive small profile (`panic=abort`, `opt-level="z"`) | 5.5M | -2.7M |
+| + aggressive small profile (`panic=abort`, `opt-level=3`) | 5.5M | -2.7M |
 
 ## Requested Format Comparison
 
@@ -59,7 +59,17 @@ Notes:
 - `tiff` shows `+0` because it is already enabled transitively by `arboard` (`image-data` path used through `egui-winit` clipboard support).
 - `png` is also pulled transitively, so `jpeg` is effectively the main optional toggle between `jpeg,png` and `png`-only builds.
 
+## Icon Font Comparison
+
+Measured with the current `release-small` profile and image formats `bmp,gif,jpeg,png,pnm,tga,tiff`:
+
+| Configuration | Binary bytes | `ls -lh` size | Delta |
+|---|---:|---:|---:|
+| before `egui-phosphor` | 9,290,464 | 8.9M | - |
+| + `egui-phosphor` regular font registered | 9,785,920 | 9.3M | +495,456 |
+
+The size increase is mostly in `__TEXT.__const`, consistent with embedding the regular icon font.
+
 ## Current Result
 
-With `release-small` and image formats `bmp,gif,jpeg,png,pnm,tga,tiff`, the binary is currently **5.7M** (`5,966,992` bytes).
-
+With `release-small`, image formats `bmp,gif,jpeg,png,pnm,tga,tiff`, and the regular `egui-phosphor` font registered, the binary is currently **9.3M** (`9,785,920` bytes).

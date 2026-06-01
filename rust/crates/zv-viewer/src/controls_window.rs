@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex};
 use eframe::egui;
 use eframe::egui_wgpu;
 use egui_extras::{Column, TableBuilder};
+use egui_phosphor::regular as ph;
 
 use crate::annotation_tool::{AnnotationMode, AnnotationTool};
 use crate::annotations::{AnnotationId, LineAnnotationData};
@@ -27,6 +28,11 @@ const CONTROLS_WIDTH_WITH_PADDING: f32 = CONTROLS_WIDTH + 12.0;
 const CONTROLS_GAP: f32 = 8.0;
 const CURSOR_ROI_PIXELS: f32 = 15.0;
 const CURSOR_OVERLAY_EM_SCALE: f32 = 1.12;
+const MODIFIER_TOOL_BUTTON_SIZE: egui::Vec2 = egui::vec2(36.0, 28.0);
+const MODIFIER_TOOL_ICON_SIZE: f32 = 18.0;
+const ICON_ROTATE_LEFT: &str = ph::ARROW_COUNTER_CLOCKWISE;
+const ICON_ROTATE_RIGHT: &str = ph::ARROW_CLOCKWISE;
+const ICON_LINE: &str = ph::LINE_SEGMENT;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ControlsTab {
@@ -373,9 +379,8 @@ fn render_annotation_tools_tab(
 
     // Transform toolbar.
     ui.horizontal(|ui| {
-        let btn_size = egui::vec2(36.0, 28.0);
         if ui
-            .add(egui::Button::new("↺").min_size(btn_size))
+            .add(modifier_tool_button(ICON_ROTATE_LEFT))
             .on_hover_text("Rotate Left (−90°)")
             .clicked()
         {
@@ -383,7 +388,7 @@ fn render_annotation_tools_tab(
             ctx.request_repaint_of(egui::ViewportId::ROOT);
         }
         if ui
-            .add(egui::Button::new("↻").min_size(btn_size))
+            .add(modifier_tool_button(ICON_ROTATE_RIGHT))
             .on_hover_text("Rotate Right (+90°)")
             .clicked()
         {
@@ -393,7 +398,7 @@ fn render_annotation_tools_tab(
         ui.separator();
         // Annotation toolbar — one button per implemented type.
         let is_line = mode == AnnotationMode::AddLine;
-        let line_btn = egui::Button::new("Line").selected(is_line).min_size(btn_size);
+        let line_btn = modifier_tool_button(ICON_LINE).selected(is_line);
         if ui.add(line_btn).on_hover_text("Add Line (Shift+L)").clicked() {
             let next_mode = if is_line {
                 AnnotationMode::Select
@@ -416,10 +421,7 @@ fn render_annotation_tools_tab(
         if response.changed {
             if selected_id.is_valid() {
                 if let Some(state) = ui_state.as_deref_mut() {
-                    if state
-                        .line_style_edit
-                        .is_none_or(|edit| edit.selected_id != selected_id)
-                    {
+                    if state.line_style_edit.is_none_or(|edit| edit.selected_id != selected_id) {
                         flush_line_style_edit(image_list, state);
                         state.line_style_edit = selected_line.map(|before| LineStyleEditState {
                             selected_id,
@@ -447,6 +449,10 @@ fn render_annotation_tools_tab(
     } else if let Some(state) = ui_state.as_deref_mut() {
         flush_line_style_edit(image_list, state);
     }
+}
+
+fn modifier_tool_button(icon: &'static str) -> egui::Button<'static> {
+    egui::Button::new(egui::RichText::new(icon).size(MODIFIER_TOOL_ICON_SIZE)).min_size(MODIFIER_TOOL_BUTTON_SIZE)
 }
 
 fn render_line_controls(ui: &mut egui::Ui, line: &mut LineAnnotationData) -> LineStyleControlResponse {
@@ -501,7 +507,11 @@ fn selected_line_data(image_list: &Arc<Mutex<ImageList>>, selected_id: Annotatio
     })
 }
 
-fn apply_selected_line_style_live(image_list: &Arc<Mutex<ImageList>>, selected_id: AnnotationId, line: LineAnnotationData) {
+fn apply_selected_line_style_live(
+    image_list: &Arc<Mutex<ImageList>>,
+    selected_id: AnnotationId,
+    line: LineAnnotationData,
+) {
     for image in visible_modified_images(image_list) {
         if let Ok(mut image) = image.lock() {
             image.update_line_style(selected_id, line.color, line.stroke_width);

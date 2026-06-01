@@ -11,6 +11,7 @@ clap = { version = "4", features = ["derive"] }
 eframe = { version = "0.33", features = ["default_fonts", "wgpu", "x11", "wayland"] }
 egui = "0.33"
 egui_extras = "0.33"
+egui-phosphor = { version = "0.11", default-features = false, features = ["regular"] }
 image = { version = "0.25", default-features = false, features = ["bmp", "gif", "jpeg", "png", "pnm", "tga", "tiff"] }
 serde = { version = "1", features = ["derive"] }
 rfd = "0.15"
