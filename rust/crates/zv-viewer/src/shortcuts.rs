@@ -97,11 +97,11 @@ fn push_annotation_shortcuts(
     if input.key_pressed(egui::Key::O) && cmd {
         out_actions.push(AppAction::OpenImage);
     }
+    if input.key_pressed(egui::Key::W) && cmd {
+        out_actions.push(AppAction::CloseImage);
+    }
     if input.key_pressed(egui::Key::S) && cmd && !input.modifiers.shift {
         out_actions.push(AppAction::SaveImageEdits);
-    }
-    if input.key_pressed(egui::Key::S) && cmd && input.modifiers.shift {
-        out_actions.push(AppAction::SaveImageAs);
     }
 }
 

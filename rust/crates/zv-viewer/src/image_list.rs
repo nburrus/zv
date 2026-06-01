@@ -30,6 +30,13 @@ pub struct SelectedImageView {
     pub error: Option<String>,
 }
 
+#[derive(Clone)]
+pub struct PendingImageChange {
+    pub index: usize,
+    pub name: String,
+    pub data: Arc<Mutex<ModifiedImage>>,
+}
+
 pub struct ImageLoadTiming {
     pub path: PathBuf,
     pub elapsed: Duration,
@@ -356,26 +363,37 @@ impl ImageList {
         self.cache.get_cached(id)
     }
 
-    pub fn cached_modified_images(&self) -> Vec<Arc<Mutex<ModifiedImage>>> {
+    pub fn pending_change_images(&self) -> Vec<PendingImageChange> {
         self.items
             .iter()
-            .filter_map(|item| self.cache.get_cached(item.id))
+            .enumerate()
+            .filter_map(|(index, item)| {
+                let data = self.cache.get_cached(item.id)?;
+                let has_changes = data.lock().ok().is_some_and(|data| data.has_pending_changes());
+                has_changes.then(|| PendingImageChange {
+                    index,
+                    name: item.pretty_name.clone(),
+                    data,
+                })
+            })
             .collect()
+    }
+
+    pub fn pending_change_image_at(&self, index: usize) -> Option<PendingImageChange> {
+        let item = self.items.get(index)?;
+        let data = self.cache.get_cached(item.id)?;
+        let has_changes = data.lock().ok().is_some_and(|data| data.has_pending_changes());
+        has_changes.then(|| PendingImageChange {
+            index,
+            name: item.pretty_name.clone(),
+            data,
+        })
     }
 
     pub fn has_pending_changes_at(&self, index: usize) -> bool {
         self.modified_image_at(index)
             .and_then(|data| data.lock().ok().map(|data| data.has_pending_changes()))
             .unwrap_or(false)
-    }
-
-    pub fn has_pending_changes(&self) -> bool {
-        self.items.iter().any(|item| {
-            self.cache
-                .get_cached(item.id)
-                .and_then(|data| data.lock().ok().map(|data| data.has_pending_changes()))
-                .unwrap_or(false)
-        })
     }
 
     fn selected_item(&self) -> Option<&ImageItem> {

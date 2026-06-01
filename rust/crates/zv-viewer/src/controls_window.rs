@@ -171,8 +171,8 @@ impl ControlsWindow {
             apply_controls_visuals(ctx);
             let new_actions = collect_shortcuts(ctx, ShortcutViewport::Controls);
             if !new_actions.is_empty() {
-                if let Ok(mut actions) = action_queue.lock() {
-                    actions.extend(new_actions);
+                for action in new_actions {
+                    push_action(&action_queue, action);
                 }
                 // Viewer::update runs on the root viewport; wake it so queued
                 // controls actions are applied even when only controls is focused.
@@ -191,23 +191,15 @@ impl ControlsWindow {
                         }
                         ui.separator();
                         if ui
-                            .add_enabled(ed.has_changes, egui::Button::new("Save Image").shortcut_text("⌘S"))
+                            .add_enabled(ed.has_changes, egui::Button::new("Save Image…").shortcut_text("⌘S"))
                             .clicked()
                         {
                             push_action(&action_queue, AppAction::SaveImageEdits);
                             ctx.request_repaint_of(egui::ViewportId::ROOT);
                             ui.close();
                         }
-                        if ui
-                            .add(egui::Button::new("Save Image As…").shortcut_text("⌘⇧S"))
-                            .clicked()
-                        {
-                            push_action(&action_queue, AppAction::SaveImageAs);
-                            ctx.request_repaint_of(egui::ViewportId::ROOT);
-                            ui.close();
-                        }
                         ui.separator();
-                        if ui.add(egui::Button::new("Close Image").shortcut_text("⌦")).clicked() {
+                        if ui.add(egui::Button::new("Close Image").shortcut_text("⌘W")).clicked() {
                             push_action(&action_queue, AppAction::CloseImage);
                             ctx.request_repaint_of(egui::ViewportId::ROOT);
                             ui.close();

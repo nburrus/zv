@@ -9,13 +9,15 @@ use crate::annotation_tool::{AnnotationMode, AnnotationTool};
 use crate::annotations::AnnotationRenderer;
 use crate::controls_window::ControlsWindow;
 use crate::debug::{AnnotationDebugState, AnnotationLineDebug, SelectedImageDebug, ViewerDebugState};
-use crate::image_list::{ImageId, ImageList};
+use crate::image_list::{ImageId, ImageList, PendingImageChange};
 use crate::image_window::{CursorPixelInfo, ImageWindow};
 use crate::image_window_geometry::{ImageWindowGeometryState, WindowResizeAction};
 use crate::layout::{LayoutConfig, best_layout_for_image_count};
 use crate::modified_image::ModifiedImage;
 use crate::shortcuts::{ShortcutViewport, collect_shortcuts};
 use crate::viewport_geometry::{ViewportGeometry, ViewportResizeCommand};
+
+const CONFIRMATION_MIN_INNER_SIZE: egui::Vec2 = egui::vec2(420.0, 180.0);
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AppAction {
@@ -30,7 +32,6 @@ pub enum AppAction {
     UndoImageEdit,
     DiscardImageEdits,
     SaveImageEdits,
-    SaveImageAs,
     OpenImage,
     CloseImage,
     RotateLeft,
@@ -39,8 +40,15 @@ pub enum AppAction {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum PendingConfirmation {
-    Quit,
-    CloseImageAt { index: usize },
+    Quit {
+        current_index: usize,
+        original_layout: LayoutConfig,
+        original_selection_index: Option<usize>,
+        original_selection_count: usize,
+    },
+    CloseImageAt {
+        index: usize,
+    },
 }
 
 #[derive(Clone, Debug, Default)]
@@ -252,6 +260,9 @@ impl Viewer {
     }
 
     fn collect_keyboard_actions(&mut self, ctx: &egui::Context) {
+        if self.pending_confirmation.is_some() {
+            return;
+        }
         self.pending_actions
             .extend(collect_shortcuts(ctx, ShortcutViewport::MainImage));
     }
@@ -279,6 +290,10 @@ impl Viewer {
 
     fn collect_controls_actions(&mut self) {
         if let Ok(mut queued) = self.controls_action_queue.lock() {
+            if self.pending_confirmation.is_some() {
+                queued.clear();
+                return;
+            }
             self.pending_actions.append(&mut queued);
         }
     }
@@ -287,6 +302,9 @@ impl Viewer {
         let actions = std::mem::take(&mut self.pending_actions);
         let applied_any = !actions.is_empty();
         for action in actions {
+            if self.pending_confirmation.is_some() {
+                continue;
+            }
             match action {
                 AppAction::NextImage => {
                     if let Ok(mut image_list) = self.image_list.lock() {
@@ -329,13 +347,9 @@ impl Viewer {
                     self.clear_missing_annotation_selection();
                 }
                 AppAction::SaveImageEdits => {
-                    self.update_visible_annotations(render_state);
-                    self.save_visible_images_with_dialog();
-                    self.clear_missing_annotation_selection();
-                }
-                AppAction::SaveImageAs => {
-                    self.update_visible_annotations(render_state);
-                    self.save_image_as();
+                    let images = self.visible_pending_change_images();
+                    self.update_pending_image_annotations(&images, render_state);
+                    self.save_pending_images_with_dialog(images);
                     self.clear_missing_annotation_selection();
                 }
                 AppAction::OpenImage => self.open_image(),
@@ -377,12 +391,29 @@ impl Viewer {
     }
 
     fn request_quit(&mut self, ctx: &egui::Context) {
-        if self.any_pending_changes() {
-            self.pending_confirmation = Some(PendingConfirmation::Quit);
+        if self.pending_confirmation.is_some() {
             ctx.request_repaint_of(egui::ViewportId::ROOT);
             return;
         }
-        self.close_root_viewport(ctx);
+        let Some(current_index) = self.pending_change_images().first().map(|image| image.index) else {
+            self.close_root_viewport(ctx);
+            return;
+        };
+        let (original_selection_index, original_selection_count) = self
+            .image_list
+            .lock()
+            .ok()
+            .map(|image_list| (image_list.first_selected_index(), image_list.selection_count()))
+            .unwrap_or((None, 1));
+        let original_layout = self.layout;
+        self.select_single_image(current_index);
+        self.pending_confirmation = Some(PendingConfirmation::Quit {
+            current_index,
+            original_layout,
+            original_selection_index,
+            original_selection_count,
+        });
+        ctx.request_repaint_of(egui::ViewportId::ROOT);
     }
 
     fn request_close_image_at(&mut self, ctx: &egui::Context, index: usize) {
@@ -414,22 +445,24 @@ impl Viewer {
             .is_some_and(|image_list| image_list.has_pending_changes_at(index))
     }
 
-    fn any_pending_changes(&self) -> bool {
-        self.image_list
-            .lock()
-            .ok()
-            .is_some_and(|image_list| image_list.has_pending_changes())
-    }
-
     fn render_pending_confirmation(&mut self, ctx: &egui::Context, render_state: Option<&egui_wgpu::RenderState>) {
         let Some(pending) = self.pending_confirmation else {
             return;
         };
+        if let PendingConfirmation::Quit { current_index, .. } = pending {
+            self.select_single_image(current_index);
+        }
+        ensure_viewport_can_fit_confirmation(ctx);
         let (title, message) = match pending {
-            PendingConfirmation::Quit => ("Quit zv", "There are unsaved image changes. What would you like to do?"),
+            PendingConfirmation::Quit { current_index, .. } => (
+                "Quit zv",
+                self.pending_change_image_at(current_index)
+                    .map(|image| format!("{} has unsaved changes. What would you like to do?", image.name))
+                    .unwrap_or_else(|| "This image has unsaved changes. What would you like to do?".to_owned()),
+            ),
             PendingConfirmation::CloseImageAt { .. } => (
                 "Close Image",
-                "This image has unsaved changes. What would you like to do?",
+                "This image has unsaved changes. What would you like to do?".to_owned(),
             ),
         };
         let response = egui::Modal::new(egui::Id::new("pending_changes_confirm_modal")).show(ctx, |ui| {
@@ -452,12 +485,12 @@ impl Viewer {
                     self.finish_pending_confirmation(ctx, pending);
                 }
                 if ui.button("Cancel").clicked() {
-                    self.pending_confirmation = None;
+                    self.cancel_pending_confirmation(pending);
                 }
             });
         });
         if response.should_close() {
-            self.pending_confirmation = None;
+            self.cancel_pending_confirmation(pending);
         }
     }
 
@@ -467,16 +500,19 @@ impl Viewer {
         render_state: Option<&egui_wgpu::RenderState>,
     ) -> bool {
         match pending {
-            PendingConfirmation::Quit => {
-                let images = self.cached_modified_images();
-                self.update_modified_images_annotations(&images, render_state);
-                self.save_images_to_existing_paths_else_dialog(images)
+            PendingConfirmation::Quit { current_index, .. } => {
+                let Some(image) = self.pending_change_image_at(current_index) else {
+                    return true;
+                };
+                let images = vec![image];
+                self.update_pending_image_annotations(&images, render_state);
+                self.save_pending_images_with_dialog(images)
             }
             PendingConfirmation::CloseImageAt { index } => {
-                if let Some(image) = self.modified_image_at(index) {
+                if let Some(image) = self.pending_change_image_at(index) {
                     let images = vec![image];
-                    self.update_modified_images_annotations(&images, render_state);
-                    self.save_images_to_existing_paths_else_dialog(images)
+                    self.update_pending_image_annotations(&images, render_state);
+                    self.save_pending_images_with_dialog(images)
                 } else {
                     true
                 }
@@ -486,9 +522,9 @@ impl Viewer {
 
     fn discard_for_pending_confirmation(&self, pending: PendingConfirmation) {
         match pending {
-            PendingConfirmation::Quit => {
-                for image in self.cached_modified_images() {
-                    if let Ok(mut image) = image.lock() {
+            PendingConfirmation::Quit { current_index, .. } => {
+                if let Some(image) = self.pending_change_image_at(current_index) {
+                    if let Ok(mut image) = image.data.lock() {
                         image.discard_changes();
                     }
                 }
@@ -505,13 +541,52 @@ impl Viewer {
     }
 
     fn finish_pending_confirmation(&mut self, ctx: &egui::Context, pending: PendingConfirmation) {
-        self.pending_confirmation = None;
         match pending {
-            PendingConfirmation::Quit => self.close_root_viewport(ctx),
-            PendingConfirmation::CloseImageAt { index } => self.close_image_at(index),
+            PendingConfirmation::Quit {
+                original_layout,
+                original_selection_index,
+                original_selection_count,
+                ..
+            } => {
+                if let Some(next_index) = self.pending_change_images().first().map(|image| image.index) {
+                    self.select_single_image(next_index);
+                    self.pending_confirmation = Some(PendingConfirmation::Quit {
+                        current_index: next_index,
+                        original_layout,
+                        original_selection_index,
+                        original_selection_count,
+                    });
+                } else {
+                    self.pending_confirmation = None;
+                    self.close_root_viewport(ctx);
+                }
+            }
+            PendingConfirmation::CloseImageAt { index } => {
+                self.pending_confirmation = None;
+                self.close_image_at(index);
+            }
         }
         ctx.request_repaint_of(egui::ViewportId::ROOT);
         ctx.request_repaint_of(self.controls_window.viewport_id());
+    }
+
+    fn cancel_pending_confirmation(&mut self, pending: PendingConfirmation) {
+        if let PendingConfirmation::Quit {
+            original_layout,
+            original_selection_index,
+            original_selection_count,
+            ..
+        } = pending
+        {
+            self.layout = original_layout;
+            if let Ok(mut image_list) = self.image_list.lock() {
+                image_list.set_selection_count(original_selection_count);
+                if let Some(index) = original_selection_index {
+                    image_list.select_index(index);
+                }
+            }
+        }
+        self.pending_confirmation = None;
     }
 
     fn visible_modified_images(&self) -> Vec<Arc<Mutex<ModifiedImage>>> {
@@ -528,11 +603,37 @@ impl Viewer {
             .unwrap_or_default()
     }
 
-    fn cached_modified_images(&self) -> Vec<Arc<Mutex<ModifiedImage>>> {
+    fn pending_change_images(&self) -> Vec<PendingImageChange> {
         self.image_list
             .lock()
             .ok()
-            .map(|image_list| image_list.cached_modified_images())
+            .map(|image_list| image_list.pending_change_images())
+            .unwrap_or_default()
+    }
+
+    fn pending_change_image_at(&self, index: usize) -> Option<PendingImageChange> {
+        self.image_list
+            .lock()
+            .ok()
+            .and_then(|image_list| image_list.pending_change_image_at(index))
+    }
+
+    fn visible_pending_change_images(&self) -> Vec<PendingImageChange> {
+        self.image_list
+            .lock()
+            .ok()
+            .map(|image_list| {
+                image_list
+                    .selected_range_views()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|image| {
+                        let data = image.data?;
+                        let has_changes = data.lock().ok().is_some_and(|data| data.has_pending_changes());
+                        has_changes.then(|| pending_image_change(0, image.name, data))
+                    })
+                    .collect()
+            })
             .unwrap_or_default()
     }
 
@@ -541,6 +642,15 @@ impl Viewer {
             .lock()
             .ok()
             .and_then(|image_list| image_list.modified_image_at(index))
+    }
+
+    fn select_single_image(&mut self, index: usize) {
+        self.layout = LayoutConfig::default();
+        if let Ok(mut image_list) = self.image_list.lock() {
+            image_list.set_selection_count(1);
+            image_list.select_index(index);
+        }
+        self.clear_missing_annotation_selection();
     }
 
     fn apply_to_visible_images(&self, f: impl Fn(&mut ModifiedImage)) {
@@ -553,6 +663,15 @@ impl Viewer {
 
     fn update_visible_annotations(&self, render_state: Option<&egui_wgpu::RenderState>) {
         let images = self.visible_modified_images();
+        self.update_modified_images_annotations(&images, render_state);
+    }
+
+    fn update_pending_image_annotations(
+        &self,
+        images: &[PendingImageChange],
+        render_state: Option<&egui_wgpu::RenderState>,
+    ) {
+        let images = images.iter().map(|image| image.data.clone()).collect::<Vec<_>>();
         self.update_modified_images_annotations(&images, render_state);
     }
 
@@ -605,48 +724,10 @@ impl Viewer {
         }
     }
 
-    fn save_image_as(&self) {
-        let images = self.visible_modified_images();
-        self.save_images_with_dialog(images.into_iter().take(1).collect());
-    }
-
-    fn save_visible_images_with_dialog(&self) -> bool {
-        self.save_images_with_dialog(self.visible_modified_images())
-    }
-
-    fn save_images_to_existing_paths_else_dialog(&self, images: Vec<Arc<Mutex<ModifiedImage>>>) -> bool {
-        for image in images {
-            let (has_changes, source_path) = image
-                .lock()
-                .ok()
-                .map(|image| (image.has_pending_changes(), image.source_path().map(PathBuf::from)))
-                .unwrap_or((false, None));
-            if !has_changes {
-                continue;
-            }
-            let output_path = match source_path {
-                Some(path) => path,
-                None => {
-                    let Some(path) = choose_save_path(None) else {
-                        return false;
-                    };
-                    path
-                }
-            };
-            if let Ok(mut image) = image.lock() {
-                if let Err(err) = image.save_changes(Some(&output_path)) {
-                    tracing::warn!(error = %err, "failed to save image edits");
-                    return false;
-                }
-            }
-        }
-        self.clear_missing_annotation_selection();
-        true
-    }
-
-    fn save_images_with_dialog(&self, images: Vec<Arc<Mutex<ModifiedImage>>>) -> bool {
+    fn save_pending_images_with_dialog(&self, images: Vec<PendingImageChange>) -> bool {
         for image in images {
             let (has_changes, suggested_path) = image
+                .data
                 .lock()
                 .ok()
                 .map(|image| (image.has_pending_changes(), image.source_path().map(PathBuf::from)))
@@ -654,10 +735,10 @@ impl Viewer {
             if !has_changes {
                 continue;
             }
-            let Some(path) = choose_save_path(suggested_path.as_deref()) else {
+            let Some(path) = choose_save_path(&image.name, suggested_path.as_deref()) else {
                 return false;
             };
-            if let Ok(mut image) = image.lock() {
+            if let Ok(mut image) = image.data.lock() {
                 if let Err(err) = image.save_changes(Some(&path)) {
                     tracing::warn!(error = %err, "failed to save image edits");
                     return false;
@@ -806,9 +887,27 @@ fn send_resize_command(ctx: &egui::Context, command: ViewportResizeCommand) {
     }
 }
 
-fn choose_save_path(suggested_path: Option<&Path>) -> Option<PathBuf> {
+fn ensure_viewport_can_fit_confirmation(ctx: &egui::Context) {
+    let current_size = ctx.input(|input| input.viewport().inner_rect.map(|rect| rect.size()));
+    let Some(current_size) = current_size else {
+        return;
+    };
+    if current_size.x >= CONFIRMATION_MIN_INNER_SIZE.x && current_size.y >= CONFIRMATION_MIN_INNER_SIZE.y {
+        return;
+    }
+    ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(egui::vec2(
+        current_size.x.max(CONFIRMATION_MIN_INNER_SIZE.x),
+        current_size.y.max(CONFIRMATION_MIN_INNER_SIZE.y),
+    )));
+}
+
+fn pending_image_change(index: usize, name: String, data: Arc<Mutex<ModifiedImage>>) -> PendingImageChange {
+    PendingImageChange { index, name, data }
+}
+
+fn choose_save_path(image_name: &str, suggested_path: Option<&Path>) -> Option<PathBuf> {
     let mut dialog = rfd::FileDialog::new()
-        .set_title("Save Image")
+        .set_title(format!("Save Image - {image_name}"))
         .add_filter("PNG", &["png"])
         .add_filter("JPEG", &["jpg", "jpeg"])
         .add_filter("BMP", &["bmp"])
