@@ -117,6 +117,35 @@ impl ModifiedImage {
         }
     }
 
+    pub fn update_line_style(&mut self, id: AnnotationId, color: eframe::egui::Color32, stroke_width: f32) -> Option<LineAnnotationData> {
+        let Some(element) = self.annotations.find_by_id_mut(id) else {
+            return None;
+        };
+        let Some(line) = element.line_mut() else {
+            return None;
+        };
+        if line.color == color && (line.stroke_width - stroke_width).abs() <= f32::EPSILON {
+            return None;
+        }
+        let previous = *line;
+        line.color = color;
+        line.stroke_width = stroke_width;
+        self.mark_annotations_dirty();
+        Some(previous)
+    }
+
+    pub fn push_line_style_undo(&mut self, id: AnnotationId, previous: LineAnnotationData) {
+        let Some(element) = self.annotations.find_by_id(id) else {
+            return;
+        };
+        let Some(line) = element.line() else {
+            return;
+        };
+        if *line != previous {
+            self.push_undo_action(ImageUndoAction::RestoreLine { id, data: previous });
+        }
+    }
+
     pub fn undo_last_change(&mut self) {
         let Some(action) = self.actions.pop() else {
             return;
@@ -360,6 +389,28 @@ mod tests {
 
         modified.undo_last_change();
         assert!(modified.annotations().is_empty());
+    }
+
+    #[test]
+    fn live_line_style_updates_can_be_committed_as_one_undo_step() {
+        let mut modified = ModifiedImage::new(image(), None);
+        let id = AnnotationId::next();
+        let before = LineAnnotationData::default();
+        modified.add_line(id, before);
+        modified.actions.clear();
+
+        modified.update_line_style(id, eframe::egui::Color32::RED, 7.0);
+        modified.update_line_style(id, eframe::egui::Color32::GREEN, 12.0);
+
+        assert!(!modified.can_undo());
+        modified.push_line_style_undo(id, before);
+        assert!(modified.can_undo());
+
+        modified.undo_last_change();
+
+        let line = modified.annotations().find_by_id(id).unwrap().line().unwrap();
+        assert_eq!(*line, before);
+        assert!(!modified.can_undo());
     }
 
     #[test]

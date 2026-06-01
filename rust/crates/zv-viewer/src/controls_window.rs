@@ -6,6 +6,7 @@ use eframe::egui_wgpu;
 use egui_extras::{Column, TableBuilder};
 
 use crate::annotation_tool::{AnnotationMode, AnnotationTool};
+use crate::annotations::{AnnotationId, LineAnnotationData};
 use crate::color_image::{
     PixelSRGBA, closest_color_entries, convert_srgba_to_lab, convert_srgba_to_linear_rgb, convert_srgba_to_xyz,
 };
@@ -13,6 +14,7 @@ use crate::image_list::ImageList;
 use crate::image_window::CursorPixelInfo;
 use crate::image_window_geometry::WindowResizeAction;
 use crate::layout::LAYOUT_MENU_ENTRIES;
+use crate::modified_image::ModifiedImage;
 use crate::render::WgpuImageCallback;
 use crate::shortcuts::{ShortcutViewport, collect_shortcuts};
 use crate::viewer::{AppAction, ImageEditorState};
@@ -38,12 +40,27 @@ struct ImageDragPayload {
     index: usize,
 }
 
+#[derive(Clone, Copy, Debug)]
+struct LineStyleEditState {
+    selected_id: AnnotationId,
+    before: LineAnnotationData,
+    color_popup_was_open: bool,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct LineStyleControlResponse {
+    changed: bool,
+    committed: bool,
+    color_popup_open: bool,
+}
+
 #[derive(Debug)]
 struct ControlsUiState {
     active_tab: ControlsTab,
     size_texts: [String; 2],
     size_being_edited: [bool; 2],
     lock_ratio: bool,
+    line_style_edit: Option<LineStyleEditState>,
 }
 
 impl Default for ControlsUiState {
@@ -53,6 +70,7 @@ impl Default for ControlsUiState {
             size_texts: [String::new(), String::new()],
             size_being_edited: [false, false],
             lock_ratio: true,
+            line_style_edit: None,
         }
     }
 }
@@ -302,7 +320,9 @@ impl ControlsWindow {
                     ControlsTab::ImageList => {
                         render_image_list_tab(ui, ctx, &image_list, &cursor_info, &last_auto_scrolled_selected);
                     }
-                    ControlsTab::Modifiers => render_annotation_tools_tab(ui, &annotation_tool, &action_queue, ctx),
+                    ControlsTab::Modifiers => {
+                        render_annotation_tools_tab(ui, &image_list, &annotation_tool, &ui_state, &action_queue, ctx)
+                    }
                     ControlsTab::ColorEditor => render_empty_tab(ui, "Color Editor"),
                 }
             });
@@ -339,7 +359,9 @@ fn render_empty_tab(ui: &mut egui::Ui, label: &str) {
 
 fn render_annotation_tools_tab(
     ui: &mut egui::Ui,
+    image_list: &Arc<Mutex<ImageList>>,
     annotation_tool: &Arc<Mutex<AnnotationTool>>,
+    ui_state: &Arc<Mutex<ControlsUiState>>,
     action_queue: &Arc<Mutex<Vec<AppAction>>>,
     ctx: &egui::Context,
 ) {
@@ -385,17 +407,132 @@ fn render_annotation_tools_tab(
 
     ui.separator();
 
-    // Style controls for the line tool.
+    let mut ui_state = ui_state.lock().ok();
+    let selected_line = selected_line_data(image_list, tool.selected_id());
+    if mode == AnnotationMode::AddLine || selected_line.is_some() {
+        let selected_id = tool.selected_id();
+        let mut line = selected_line.unwrap_or_else(|| *tool.default_line_mut());
+        let response = render_line_controls(ui, &mut line);
+        if response.changed {
+            if selected_id.is_valid() {
+                if let Some(state) = ui_state.as_deref_mut() {
+                    if state
+                        .line_style_edit
+                        .is_none_or(|edit| edit.selected_id != selected_id)
+                    {
+                        flush_line_style_edit(image_list, state);
+                        state.line_style_edit = selected_line.map(|before| LineStyleEditState {
+                            selected_id,
+                            before,
+                            color_popup_was_open: response.color_popup_open,
+                        });
+                    }
+                }
+                apply_selected_line_style_live(image_list, selected_id, line);
+                ctx.request_repaint_of(egui::ViewportId::ROOT);
+            } else {
+                *tool.default_line_mut() = line;
+            }
+        }
+        if selected_id.is_valid()
+            && let Some(state) = ui_state.as_deref_mut()
+            && let Some(edit) = state.line_style_edit.as_mut()
+        {
+            let color_popup_closed = edit.color_popup_was_open && !response.color_popup_open;
+            edit.color_popup_was_open = response.color_popup_open;
+            if response.committed || color_popup_closed {
+                flush_line_style_edit(image_list, state);
+            }
+        }
+    } else if let Some(state) = ui_state.as_deref_mut() {
+        flush_line_style_edit(image_list, state);
+    }
+}
+
+fn render_line_controls(ui: &mut egui::Ui, line: &mut LineAnnotationData) -> LineStyleControlResponse {
+    let mut output = LineStyleControlResponse::default();
     ui.horizontal(|ui| {
-        let line = tool.default_line_mut();
         let mut color = line.color;
         ui.label("Color");
-        if ui.color_edit_button_srgba(&mut color).changed() {
+        // NOTE: this relies on egui deriving the color picker's popup id as
+        // `button_id.with("popup")` (an internal detail of `color_edit_button_*`).
+        // If a future egui changes that scheme, `color_popup_open` silently stays
+        // `false` and the open→closed commit never fires — the `response.changed()
+        // && pointer_released` branch below is the safety net that still commits.
+        let color_popup_id = ui.auto_id_with("popup");
+        let response = ui.color_edit_button_srgba(&mut color);
+        output.color_popup_open = egui::Popup::is_id_open(ui.ctx(), color_popup_id);
+        if response.changed() {
             line.color = color;
+            output.changed = true;
+        }
+        let pointer_released = ui.input(|input| input.pointer.any_released());
+        if response.drag_stopped() || response.lost_focus() || (response.changed() && pointer_released) {
+            output.committed = true;
         }
     });
-    let line = tool.default_line_mut();
-    ui.add(egui::Slider::new(&mut line.stroke_width, 1.0..=32.0).text("Width"));
+    let response = ui.add(egui::Slider::new(&mut line.stroke_width, 1.0..=32.0).text("Width"));
+    if response.changed() {
+        output.changed = true;
+    }
+    if response.drag_stopped() || response.lost_focus() {
+        output.committed = true;
+    }
+    output
+}
+
+fn flush_line_style_edit(image_list: &Arc<Mutex<ImageList>>, state: &mut ControlsUiState) {
+    if let Some(edit) = state.line_style_edit.take() {
+        commit_selected_line_style_undo(image_list, edit.selected_id, edit.before);
+    }
+}
+
+fn selected_line_data(image_list: &Arc<Mutex<ImageList>>, selected_id: AnnotationId) -> Option<LineAnnotationData> {
+    if !selected_id.is_valid() {
+        return None;
+    }
+    visible_modified_images(image_list).into_iter().find_map(|image| {
+        let image = image.lock().ok()?;
+        image
+            .annotations()
+            .find_by_id(selected_id)
+            .and_then(|element| element.line())
+            .copied()
+    })
+}
+
+fn apply_selected_line_style_live(image_list: &Arc<Mutex<ImageList>>, selected_id: AnnotationId, line: LineAnnotationData) {
+    for image in visible_modified_images(image_list) {
+        if let Ok(mut image) = image.lock() {
+            image.update_line_style(selected_id, line.color, line.stroke_width);
+        }
+    }
+}
+
+fn commit_selected_line_style_undo(
+    image_list: &Arc<Mutex<ImageList>>,
+    selected_id: AnnotationId,
+    before: LineAnnotationData,
+) {
+    for image in visible_modified_images(image_list) {
+        if let Ok(mut image) = image.lock() {
+            image.push_line_style_undo(selected_id, before);
+        }
+    }
+}
+
+fn visible_modified_images(image_list: &Arc<Mutex<ImageList>>) -> Vec<Arc<Mutex<ModifiedImage>>> {
+    image_list
+        .lock()
+        .ok()
+        .map(|image_list| {
+            image_list
+                .selected_range_views()
+                .into_iter()
+                .filter_map(|image| image?.data)
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 fn render_image_list_tab(
