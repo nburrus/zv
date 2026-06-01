@@ -100,31 +100,30 @@ impl ImageItemCache {
     fn put(&mut self, id: ImageId, data: Arc<Mutex<ModifiedImage>>) {
         self.entries.insert(id, data);
         self.touch(id);
-        let mut scanned = 0;
         while self.entries.len() > self.max_size {
-            let Some(oldest) = self.lru.pop_front() else {
+            // Evict the oldest entry that is clean and not the one we just
+            // inserted. A dirty entry holds unsaved edits that live only in
+            // memory, so it must never be evicted — if everything else is
+            // dirty we stop and let the cache exceed max_size.
+            let Some(victim) = self
+                .lru
+                .iter()
+                .copied()
+                .find(|&candidate| candidate != id && self.is_evictable(candidate))
+            else {
                 break;
             };
-            scanned += 1;
-            if oldest == id {
-                self.lru.push_back(oldest);
-            } else {
-                let has_changes = self
-                    .entries
-                    .get(&oldest)
-                    .and_then(|entry| entry.lock().ok().map(|entry| entry.has_pending_changes()))
-                    .unwrap_or(false);
-                if has_changes {
-                    self.lru.push_back(oldest);
-                } else {
-                    self.entries.remove(&oldest);
-                    scanned = 0;
-                }
-            }
-            if scanned >= self.lru.len().saturating_add(1) {
-                break;
-            }
+            self.remove(victim);
         }
+    }
+
+    fn is_evictable(&self, id: ImageId) -> bool {
+        // Treat an unreadable entry as dirty so a poisoned/locked mutex never
+        // causes us to drop unsaved work.
+        self.entries
+            .get(&id)
+            .and_then(|entry| entry.lock().ok().map(|entry| !entry.has_pending_changes()))
+            .unwrap_or(false)
     }
 
     fn remove(&mut self, id: ImageId) {
