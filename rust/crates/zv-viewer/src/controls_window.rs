@@ -30,6 +30,8 @@ const CURSOR_ROI_PIXELS: f32 = 15.0;
 const CURSOR_OVERLAY_EM_SCALE: f32 = 1.12;
 const MODIFIER_TOOL_BUTTON_SIZE: egui::Vec2 = egui::vec2(36.0, 28.0);
 const MODIFIER_TOOL_ICON_SIZE: f32 = 18.0;
+const LINE_STYLE_COLOR_SWATCH_WIDTH: f32 = 40.0;
+const LINE_STYLE_WIDTH_VALUE_WIDTH: f32 = 40.0;
 const ICON_ROTATE_LEFT: &str = ph::ARROW_COUNTER_CLOCKWISE;
 const ICON_ROTATE_RIGHT: &str = ph::ARROW_CLOCKWISE;
 const ICON_LINE: &str = ph::LINE_SEGMENT;
@@ -417,7 +419,7 @@ fn render_annotation_tools_tab(
     if mode == AnnotationMode::AddLine || selected_line.is_some() {
         let selected_id = tool.selected_id();
         let mut line = selected_line.unwrap_or_else(|| *tool.default_line_mut());
-        let response = render_line_controls(ui, &mut line);
+        let response = render_line_controls(ui, &mut line, selected_line.is_some());
         if response.changed {
             if selected_id.is_valid() {
                 if let Some(state) = ui_state.as_deref_mut() {
@@ -455,36 +457,100 @@ fn modifier_tool_button(icon: &'static str) -> egui::Button<'static> {
     egui::Button::new(egui::RichText::new(icon).size(MODIFIER_TOOL_ICON_SIZE)).min_size(MODIFIER_TOOL_BUTTON_SIZE)
 }
 
-fn render_line_controls(ui: &mut egui::Ui, line: &mut LineAnnotationData) -> LineStyleControlResponse {
+fn render_line_controls(ui: &mut egui::Ui, line: &mut LineAnnotationData, selected: bool) -> LineStyleControlResponse {
     let mut output = LineStyleControlResponse::default();
-    ui.horizontal(|ui| {
+
+    let header = if selected {
+        "Selected line  |  Delete / Backspace to remove"
+    } else {
+        "New line style"
+    };
+    ui.label(egui::RichText::new(header).color(ui.visuals().weak_text_color()));
+
+    egui::Grid::new("line_style_grid")
+        .num_columns(2)
+        .show(ui, |ui| {
+            render_line_style_row(ui, "Color", |ui, width| {
         let mut color = line.color;
-        ui.label("Color");
+        let mut red = color.r() as i32;
+        let mut green = color.g() as i32;
+        let mut blue = color.b() as i32;
         // NOTE: this relies on egui deriving the color picker's popup id as
         // `button_id.with("popup")` (an internal detail of `color_edit_button_*`).
         // If a future egui changes that scheme, `color_popup_open` silently stays
         // `false` and the open→closed commit never fires — the `response.changed()
         // && pointer_released` branch below is the safety net that still commits.
-        let color_popup_id = ui.auto_id_with("popup");
         let response = ui.color_edit_button_srgba(&mut color);
+        let color_popup_id = response.id.with("popup");
         output.color_popup_open = egui::Popup::is_id_open(ui.ctx(), color_popup_id);
         if response.changed() {
             line.color = color;
+            red = color.r() as i32;
+            green = color.g() as i32;
+            blue = color.b() as i32;
             output.changed = true;
         }
         let pointer_released = ui.input(|input| input.pointer.any_released());
         if response.drag_stopped() || response.lost_focus() || (response.changed() && pointer_released) {
             output.committed = true;
         }
+
+        let mut rgb_changed = false;
+        let field_width = ((width - LINE_STYLE_COLOR_SWATCH_WIDTH - ui.spacing().item_spacing.x * 3.0) / 3.0).max(64.0);
+        for (prefix, value) in [("R ", &mut red), ("G ", &mut green), ("B ", &mut blue)] {
+            rgb_changed |= ui
+                .add_sized(
+                    [field_width, ui.spacing().interact_size.y],
+                    egui::DragValue::new(value).range(0..=255).speed(1).prefix(prefix),
+                )
+                .changed();
+        }
+        if rgb_changed {
+            line.color = egui::Color32::from_rgb(red as u8, green as u8, blue as u8);
+            output.changed = true;
+            output.committed = true;
+        }
     });
-    let response = ui.add(egui::Slider::new(&mut line.stroke_width, 1.0..=32.0).text("Width"));
-    if response.changed() {
-        output.changed = true;
-    }
-    if response.drag_stopped() || response.lost_focus() {
-        output.committed = true;
-    }
+
+    render_line_style_row(ui, "Width", |ui, width| {
+        ui.spacing_mut().slider_width = width - LINE_STYLE_WIDTH_VALUE_WIDTH - ui.spacing().item_spacing.x;
+        let response = ui.add(egui::Slider::new(&mut line.stroke_width, 1.0..=10.0).show_value(false));
+        ui.add_sized(
+            [LINE_STYLE_WIDTH_VALUE_WIDTH, ui.spacing().interact_size.y],
+            egui::Label::new(format!("{:.1}", line.stroke_width)),
+        );
+        if response.changed() {
+            output.changed = true;
+        }
+        if response.drag_stopped() || response.lost_focus() {
+            output.committed = true;
+        }
+    });
+
+            render_disabled_line_style_combo(ui, "Start", "None");
+            render_disabled_line_style_combo(ui, "End", "None");
+            render_disabled_line_style_combo(ui, "Stroke", "Solid");
+        });
+
     output
+}
+
+fn render_line_style_row(ui: &mut egui::Ui, label: &'static str, add_control: impl FnOnce(&mut egui::Ui, f32)) {
+    ui.label(label);
+    let control_width = ui.available_width();
+    ui.horizontal(|ui| add_control(ui, control_width));
+    ui.end_row();
+}
+
+fn render_disabled_line_style_combo(ui: &mut egui::Ui, label: &'static str, value: &'static str) {
+    render_line_style_row(ui, label, |ui, width| {
+        ui.add_enabled_ui(false, |ui| {
+            egui::ComboBox::from_id_salt(label)
+                .selected_text(value)
+                .width(width)
+                .show_ui(ui, |_ui| {});
+        });
+    });
 }
 
 fn flush_line_style_edit(image_list: &Arc<Mutex<ImageList>>, state: &mut ControlsUiState) {
