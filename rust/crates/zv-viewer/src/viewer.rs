@@ -209,6 +209,10 @@ impl Viewer {
         }
     }
 
+    pub(crate) fn queue_action(&mut self, action: AppAction) {
+        self.pending_actions.push(action);
+    }
+
     fn annotation_debug_state(&self) -> AnnotationDebugState {
         let Ok(tool) = self.annotation_tool.lock() else {
             return AnnotationDebugState {

@@ -269,10 +269,13 @@ Supported actions currently include:
 - `wait_for_image`
 - `wait_frames`
 - `hover`
+- `click`
 - `right_click`
 - `key`
 - `state`
 - `screenshot`
+- `assert_cursor`
+- `discard_changes`
 
 `wait_frames` with `frames: 0` uses `wait_frames_default`.
 The CLI option `--debug-wait-frames N` overrides the JSON default so scripts can be slowed down without editing the file.

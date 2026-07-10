@@ -68,7 +68,7 @@ impl eframe::App for ZvApp {
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         let state = self.viewer.update(ctx, frame.wgpu_render_state());
         if let Some(runtime_debug) = &mut self.runtime_debug {
-            runtime_debug.update_after_viewer(ctx, &state);
+            runtime_debug.update(ctx, &state, &mut self.viewer);
         }
         if !self.logged_first_frame {
             self.logged_first_frame = true;

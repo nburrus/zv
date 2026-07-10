@@ -140,11 +140,20 @@ impl AnnotationTool {
         visible_images: &[Arc<Mutex<ModifiedImage>>],
     ) {
         let painter = ui.painter();
+        let mut hover_hit = None;
         if let Ok(image) = image.lock() {
             if self.selected_id.is_valid() {
                 if let Some(element) = image.annotations().find_by_id(self.selected_id) {
                     paint_line_handles(painter, element, &transform);
                 }
+            }
+            if first_valid_image {
+                hover_hit = response.hover_pos().and_then(|pointer_pos| {
+                    image
+                        .annotations()
+                        .hit_test(pointer_pos, &transform, self.selected_id, 6.0, 4.0)
+                        .map(|hit| hit.part)
+                });
             }
         }
 
@@ -157,6 +166,19 @@ impl AnnotationTool {
 
         if first_valid_image {
             self.handle_input(response, transform, visible_images);
+            if let Some(cursor) = cursor_icon_for_state(
+                self.mode,
+                hover_hit,
+                self.create_drag.is_some(),
+                self.edit_drag.as_ref().map(|drag| drag.kind),
+                shortcut_modifier(response),
+            ) {
+                if self.create_drag.is_some() || self.edit_drag.is_some() {
+                    response.clone().on_hover_and_drag_cursor(cursor);
+                } else {
+                    response.clone().on_hover_cursor(cursor);
+                }
+            }
         }
     }
 
@@ -166,10 +188,7 @@ impl AnnotationTool {
         transform: WidgetToTextureTransform,
         visible_images: &[Arc<Mutex<ModifiedImage>>],
     ) {
-        let shortcut_modifier = response
-            .ctx
-            .input(|input| input.modifiers.ctrl || input.modifiers.command || input.modifiers.mac_cmd);
-        if shortcut_modifier && self.create_drag.is_none() && self.edit_drag.is_none() {
+        if shortcut_modifier(response) && self.create_drag.is_none() && self.edit_drag.is_none() {
             return;
         }
 
@@ -338,6 +357,35 @@ impl AnnotationTool {
                 });
             }
         }
+    }
+}
+
+fn shortcut_modifier(response: &egui::Response) -> bool {
+    response
+        .ctx
+        .input(|input| input.modifiers.ctrl || input.modifiers.command || input.modifiers.mac_cmd)
+}
+
+fn cursor_icon_for_state(
+    mode: AnnotationMode,
+    hover_hit: Option<AnnotationHitPart>,
+    is_creating: bool,
+    edit_drag_kind: Option<EditDragKind>,
+    shortcut_modifier: bool,
+) -> Option<egui::CursorIcon> {
+    if edit_drag_kind.is_some() {
+        return Some(egui::CursorIcon::Grabbing);
+    }
+    if is_creating {
+        return Some(egui::CursorIcon::Crosshair);
+    }
+    if shortcut_modifier {
+        return None;
+    }
+    match mode {
+        AnnotationMode::AddLine => Some(egui::CursorIcon::Crosshair),
+        AnnotationMode::Select if hover_hit.is_some() => Some(egui::CursorIcon::Grab),
+        AnnotationMode::Select => None,
     }
 }
 

@@ -4,6 +4,8 @@ use std::path::PathBuf;
 use eframe::egui;
 use serde::{Deserialize, Serialize};
 
+use crate::viewer::{AppAction, Viewer};
+
 #[derive(Clone, Debug)]
 pub struct DebugConfig {
     script_json: Option<PathBuf>,
@@ -127,6 +129,10 @@ enum DebugAction {
     State {
         name: String,
     },
+    AssertCursor {
+        icon: DebugCursorIcon,
+    },
+    DiscardChanges,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize)]
@@ -153,6 +159,15 @@ enum DebugKey {
     Q,
     Num1,
     Num2,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum DebugCursorIcon {
+    Default,
+    Crosshair,
+    Grab,
+    Grabbing,
 }
 
 #[derive(Debug, Serialize)]
@@ -257,7 +272,7 @@ impl RuntimeDebug {
         }
     }
 
-    pub fn update_after_viewer(&mut self, ctx: &egui::Context, state: &ViewerDebugState) {
+    pub fn update(&mut self, ctx: &egui::Context, state: &ViewerDebugState, viewer: &mut Viewer) {
         self.frame_index += 1;
         self.assert_quit_did_not_stall();
 
@@ -268,7 +283,7 @@ impl RuntimeDebug {
 
         while self.action_index < self.actions.len() {
             let action = self.actions[self.action_index].clone();
-            let should_continue = self.apply_action(ctx, state, action);
+            let should_continue = self.apply_action(ctx, state, viewer, action);
             if !should_continue {
                 break;
             }
@@ -279,7 +294,13 @@ impl RuntimeDebug {
         }
     }
 
-    fn apply_action(&mut self, ctx: &egui::Context, state: &ViewerDebugState, action: DebugAction) -> bool {
+    fn apply_action(
+        &mut self,
+        ctx: &egui::Context,
+        state: &ViewerDebugState,
+        viewer: &mut Viewer,
+        action: DebugAction,
+    ) -> bool {
         match action {
             DebugAction::WaitForImage { timeout_frames } => {
                 if state.image_rect.is_some() {
@@ -392,6 +413,23 @@ impl RuntimeDebug {
                 self.write_state_snapshot(name, state);
                 self.advance_action();
                 true
+            }
+            DebugAction::AssertCursor { icon } => {
+                let actual = ctx.output(|output| output.cursor_icon);
+                let expected = icon.into();
+                assert_eq!(
+                    actual, expected,
+                    "debug cursor assertion failed at action {}",
+                    self.action_index
+                );
+                self.advance_action();
+                true
+            }
+            DebugAction::DiscardChanges => {
+                viewer.queue_action(AppAction::DiscardImageEdits);
+                ctx.request_repaint_of(egui::ViewportId::ROOT);
+                self.advance_action();
+                false
             }
         }
     }
@@ -668,6 +706,17 @@ impl RuntimeDebug {
                 self.frame_index.saturating_sub(quit_frame) <= 30,
                 "debug script sent q, but the app did not exit within 30 frames"
             );
+        }
+    }
+}
+
+impl From<DebugCursorIcon> for egui::CursorIcon {
+    fn from(icon: DebugCursorIcon) -> Self {
+        match icon {
+            DebugCursorIcon::Default => Self::Default,
+            DebugCursorIcon::Crosshair => Self::Crosshair,
+            DebugCursorIcon::Grab => Self::Grab,
+            DebugCursorIcon::Grabbing => Self::Grabbing,
         }
     }
 }
