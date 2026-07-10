@@ -48,6 +48,8 @@ pub struct AnnotationLineDebug {
     pub p1: [f32; 2],
     pub p2: [f32; 2],
     pub stroke_width: f32,
+    pub start_style: &'static str,
+    pub end_style: &'static str,
 }
 
 #[derive(Clone, Debug)]
@@ -154,6 +156,7 @@ enum DebugKey {
     Delete,
     Escape,
     ShiftL,
+    ShiftA,
     CtrlS,
     CtrlZ,
     Q,
@@ -551,6 +554,13 @@ impl RuntimeDebug {
             DebugKey::Escape => (egui::Key::Escape, egui::Modifiers::NONE),
             DebugKey::ShiftL => (
                 egui::Key::L,
+                egui::Modifiers {
+                    shift: true,
+                    ..Default::default()
+                },
+            ),
+            DebugKey::ShiftA => (
+                egui::Key::A,
                 egui::Modifiers {
                     shift: true,
                     ..Default::default()

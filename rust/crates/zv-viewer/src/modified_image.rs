@@ -2,7 +2,9 @@ use std::path::{Path, PathBuf};
 
 use eframe::egui_wgpu::wgpu;
 
-use crate::annotations::{AnnotationDocument, AnnotationElement, AnnotationId, AnnotationRenderer, LineAnnotationData};
+use crate::annotations::{
+    AnnotationDocument, AnnotationElement, AnnotationId, AnnotationRenderer, LineAnnotationData, LineEndpointStyle,
+};
 use crate::color_image::ImageSRGBA;
 use crate::image_io::write_rgba_image;
 use crate::image_item_data::ImageItemData;
@@ -117,19 +119,32 @@ impl ModifiedImage {
         }
     }
 
-    pub fn update_line_style(&mut self, id: AnnotationId, color: eframe::egui::Color32, stroke_width: f32) -> Option<LineAnnotationData> {
+    pub fn update_line_style(
+        &mut self,
+        id: AnnotationId,
+        color: eframe::egui::Color32,
+        stroke_width: f32,
+        start_style: LineEndpointStyle,
+        end_style: LineEndpointStyle,
+    ) -> Option<LineAnnotationData> {
         let Some(element) = self.annotations.find_by_id_mut(id) else {
             return None;
         };
         let Some(line) = element.line_mut() else {
             return None;
         };
-        if line.color == color && (line.stroke_width - stroke_width).abs() <= f32::EPSILON {
+        if line.color == color
+            && (line.stroke_width - stroke_width).abs() <= f32::EPSILON
+            && line.start_style == start_style
+            && line.end_style == end_style
+        {
             return None;
         }
         let previous = *line;
         line.color = color;
         line.stroke_width = stroke_width;
+        line.start_style = start_style;
+        line.end_style = end_style;
         self.mark_annotations_dirty();
         Some(previous)
     }
@@ -399,8 +414,20 @@ mod tests {
         modified.add_line(id, before);
         modified.actions.clear();
 
-        modified.update_line_style(id, eframe::egui::Color32::RED, 7.0);
-        modified.update_line_style(id, eframe::egui::Color32::GREEN, 12.0);
+        modified.update_line_style(
+            id,
+            eframe::egui::Color32::RED,
+            7.0,
+            LineEndpointStyle::None,
+            LineEndpointStyle::Arrow,
+        );
+        modified.update_line_style(
+            id,
+            eframe::egui::Color32::GREEN,
+            12.0,
+            LineEndpointStyle::Arrow,
+            LineEndpointStyle::None,
+        );
 
         assert!(!modified.can_undo());
         modified.push_line_style_undo(id, before);

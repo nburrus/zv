@@ -132,8 +132,8 @@ GUI debug was exercised with repo-local temporary artifacts under `tmp/`. These 
 - ~~Non-1x zoom behavior needs explicit GUI verification.~~ **Verified** (see below).
 - Debug scripts are ad hoc.
   - If CI-style regression coverage becomes desirable, add tracked scripts under a dedicated path such as `rust/debug_scripts/` and keep generated artifacts under `tmp/`.
-- Only line annotations exist in Rust so far.
-  - Arrow/rectangle/ellipse/text should be added only after line behavior is considered solid.
+- Line and arrow annotations exist in Rust so far.
+  - Rectangle/ellipse/text should be added only after line behavior is considered solid.
 - Color editor is intentionally deferred.
 
 ## Recommended Next Steps

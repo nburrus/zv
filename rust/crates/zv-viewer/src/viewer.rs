@@ -228,6 +228,7 @@ impl Viewer {
         let mode = match tool.mode() {
             AnnotationMode::Select => "select",
             AnnotationMode::AddLine => "add_line",
+            AnnotationMode::AddArrow => "add_arrow",
         };
         let selected_id = tool.selected_id();
         let visible = self.visible_modified_images();
@@ -248,6 +249,8 @@ impl Viewer {
                         p1: [line.p1.x, line.p1.y],
                         p2: [line.p2.x, line.p2.y],
                         stroke_width: line.stroke_width,
+                        start_style: line.start_style.label(),
+                        end_style: line.end_style.label(),
                     });
                 Some((count, selected_line))
             })

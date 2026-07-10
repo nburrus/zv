@@ -27,6 +27,24 @@ pub struct LineAnnotationData {
     pub p2: egui::Vec2,
     pub color: egui::Color32,
     pub stroke_width: f32,
+    pub start_style: LineEndpointStyle,
+    pub end_style: LineEndpointStyle,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum LineEndpointStyle {
+    #[default]
+    None,
+    Arrow,
+}
+
+impl LineEndpointStyle {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::None => "None",
+            Self::Arrow => "Arrow",
+        }
+    }
 }
 
 impl Default for LineAnnotationData {
@@ -36,6 +54,8 @@ impl Default for LineAnnotationData {
             p2: egui::vec2(0.5, 0.5),
             color: egui::Color32::YELLOW,
             stroke_width: 2.0,
+            start_style: LineEndpointStyle::None,
+            end_style: LineEndpointStyle::None,
         }
     }
 }
@@ -239,10 +259,7 @@ pub fn line_shapes_for_image(document: &AnnotationDocument, width: u32, height: 
             AnnotationElement::Line { data, .. } => {
                 let p1 = egui::pos2(data.p1.x * width as f32, data.p1.y * height as f32);
                 let p2 = egui::pos2(data.p2.x * width as f32, data.p2.y * height as f32);
-                shapes.push(egui::Shape::line_segment(
-                    [p1, p2],
-                    egui::Stroke::new(data.stroke_width.max(1.0), data.color),
-                ));
+                shapes.extend(line_shapes(data, p1, p2, data.stroke_width.max(1.0)));
             }
         }
     }
@@ -250,13 +267,64 @@ pub fn line_shapes_for_image(document: &AnnotationDocument, width: u32, height: 
 }
 
 pub fn paint_line_overlay(painter: &egui::Painter, data: &LineAnnotationData, transform: &WidgetToTextureTransform) {
-    painter.line_segment(
-        [
-            transform.texture_to_widget(data.p1),
-            transform.texture_to_widget(data.p2),
+    painter.extend(line_shapes(
+        data,
+        transform.texture_to_widget(data.p1),
+        transform.texture_to_widget(data.p2),
+        transform.line_stroke_width_widget(data.stroke_width),
+    ));
+}
+
+fn line_shapes(data: &LineAnnotationData, p1: egui::Pos2, p2: egui::Pos2, thickness: f32) -> Vec<egui::Shape> {
+    let delta = p2 - p1;
+    let length = delta.length();
+    if length <= 0.5 {
+        return Vec::new();
+    }
+
+    let direction = delta / length;
+    let head_length = 10.0_f32.max(thickness * 4.0);
+    let mut shaft_start = p1;
+    let mut shaft_end = p2;
+    if data.start_style == LineEndpointStyle::Arrow {
+        shaft_start += direction * head_length.min(length * 0.45);
+    }
+    if data.end_style == LineEndpointStyle::Arrow {
+        shaft_end -= direction * head_length.min(length * 0.45);
+    }
+
+    let mut shapes = vec![egui::Shape::line_segment(
+        [shaft_start, shaft_end],
+        egui::Stroke::new(thickness, data.color),
+    )];
+    if data.start_style == LineEndpointStyle::Arrow {
+        shapes.push(arrowhead_shape(p1, -direction, data.color, thickness));
+    }
+    if data.end_style == LineEndpointStyle::Arrow {
+        shapes.push(arrowhead_shape(p2, direction, data.color, thickness));
+    }
+    shapes
+}
+
+fn arrowhead_shape(
+    tip: egui::Pos2,
+    direction_toward_tip: egui::Vec2,
+    color: egui::Color32,
+    thickness: f32,
+) -> egui::Shape {
+    let head_length = 10.0_f32.max(thickness * 4.0);
+    let head_width = 7.0_f32.max(thickness * 2.5);
+    let perpendicular = egui::vec2(-direction_toward_tip.y, direction_toward_tip.x);
+    let base = tip - direction_toward_tip * head_length;
+    egui::Shape::convex_polygon(
+        vec![
+            tip,
+            base + perpendicular * (head_width * 0.5),
+            base - perpendicular * (head_width * 0.5),
         ],
-        egui::Stroke::new(transform.line_stroke_width_widget(data.stroke_width), data.color),
-    );
+        color,
+        egui::Stroke::NONE,
+    )
 }
 
 pub fn paint_line_handles(painter: &egui::Painter, element: &AnnotationElement, transform: &WidgetToTextureTransform) {

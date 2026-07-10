@@ -3,8 +3,8 @@ use std::sync::{Arc, Mutex};
 use eframe::egui;
 
 use crate::annotations::{
-    AnnotationHitPart, AnnotationId, LineAnnotationData, WidgetToTextureTransform, paint_line_handles,
-    paint_line_overlay,
+    AnnotationHitPart, AnnotationId, LineAnnotationData, LineEndpointStyle, WidgetToTextureTransform,
+    paint_line_handles, paint_line_overlay,
 };
 use crate::modified_image::{ImageUndoAction, ModifiedImage};
 
@@ -12,6 +12,7 @@ use crate::modified_image::{ImageUndoAction, ModifiedImage};
 pub enum AnnotationMode {
     Select,
     AddLine,
+    AddArrow,
 }
 
 #[derive(Clone)]
@@ -47,16 +48,22 @@ pub struct AnnotationTool {
     mode: AnnotationMode,
     selected_id: AnnotationId,
     default_line: LineAnnotationData,
+    default_arrow: LineAnnotationData,
     create_drag: Option<CreateDrag>,
     edit_drag: Option<EditDrag>,
 }
 
 impl Default for AnnotationTool {
     fn default() -> Self {
+        let default_arrow = LineAnnotationData {
+            end_style: LineEndpointStyle::Arrow,
+            ..Default::default()
+        };
         Self {
             mode: AnnotationMode::Select,
             selected_id: AnnotationId::default(),
             default_line: LineAnnotationData::default(),
+            default_arrow,
             create_drag: None,
             edit_drag: None,
         }
@@ -93,7 +100,10 @@ impl AnnotationTool {
     }
 
     pub fn default_line_mut(&mut self) -> &mut LineAnnotationData {
-        &mut self.default_line
+        match self.mode {
+            AnnotationMode::AddArrow => &mut self.default_arrow,
+            AnnotationMode::Select | AnnotationMode::AddLine => &mut self.default_line,
+        }
     }
 
     pub fn delete_selected(&mut self, visible_images: &[Arc<Mutex<ModifiedImage>>]) {
@@ -158,7 +168,7 @@ impl AnnotationTool {
         }
 
         if let Some(create) = &self.create_drag {
-            let mut data = self.default_line;
+            let mut data = self.creation_line_style();
             data.p1 = create.start;
             data.p2 = create.current;
             paint_line_overlay(painter, &data, &transform);
@@ -219,7 +229,7 @@ impl AnnotationTool {
         {
             let pressed_texture_pos = transform.widget_to_texture(pressed_pos);
             match self.mode {
-                AnnotationMode::AddLine => {
+                AnnotationMode::AddLine | AnnotationMode::AddArrow => {
                     self.selected_id = AnnotationId::default();
                     self.create_drag = Some(CreateDrag {
                         start: pressed_texture_pos,
@@ -291,7 +301,7 @@ impl AnnotationTool {
             return;
         }
         let id = AnnotationId::next();
-        let mut data = self.default_line;
+        let mut data = self.creation_line_style();
         data.p1 = create.start;
         data.p2 = create.current;
         for image in visible_images {
@@ -358,6 +368,13 @@ impl AnnotationTool {
             }
         }
     }
+
+    fn creation_line_style(&self) -> LineAnnotationData {
+        match self.mode {
+            AnnotationMode::AddArrow => self.default_arrow,
+            AnnotationMode::Select | AnnotationMode::AddLine => self.default_line,
+        }
+    }
 }
 
 fn shortcut_modifier(response: &egui::Response) -> bool {
@@ -383,7 +400,7 @@ fn cursor_icon_for_state(
         return None;
     }
     match mode {
-        AnnotationMode::AddLine => Some(egui::CursorIcon::Crosshair),
+        AnnotationMode::AddLine | AnnotationMode::AddArrow => Some(egui::CursorIcon::Crosshair),
         AnnotationMode::Select if hover_hit.is_some() => Some(egui::CursorIcon::Grab),
         AnnotationMode::Select => None,
     }

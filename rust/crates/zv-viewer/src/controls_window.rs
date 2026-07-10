@@ -7,7 +7,7 @@ use egui_extras::{Column, TableBuilder};
 use egui_phosphor::regular as ph;
 
 use crate::annotation_tool::{AnnotationMode, AnnotationTool};
-use crate::annotations::{AnnotationId, LineAnnotationData};
+use crate::annotations::{AnnotationId, LineAnnotationData, LineEndpointStyle};
 use crate::color_image::{
     PixelSRGBA, closest_color_entries, convert_srgba_to_lab, convert_srgba_to_linear_rgb, convert_srgba_to_xyz,
 };
@@ -286,6 +286,18 @@ impl ControlsWindow {
                                 ctx.request_repaint_of(egui::ViewportId::ROOT);
                                 ui.close();
                             }
+                            if ui
+                                .add(
+                                    egui::Button::new("Add Arrow")
+                                        .shortcut_text("⇧A")
+                                        .selected(mode == AnnotationMode::AddArrow),
+                                )
+                                .clicked()
+                            {
+                                push_action(&action_queue, AppAction::SetAnnotationMode(AnnotationMode::AddArrow));
+                                ctx.request_repaint_of(egui::ViewportId::ROOT);
+                                ui.close();
+                            }
                         });
                     });
                     ui.menu_button("Window", |ui| {
@@ -410,16 +422,26 @@ fn render_annotation_tools_tab(
             push_action(action_queue, AppAction::SetAnnotationMode(next_mode));
             ctx.request_repaint_of(egui::ViewportId::ROOT);
         }
+        let is_arrow = mode == AnnotationMode::AddArrow;
+        if arrow_tool_button(ui, is_arrow).on_hover_text("Add Arrow (Shift+A)").clicked() {
+            let next_mode = if is_arrow {
+                AnnotationMode::Select
+            } else {
+                AnnotationMode::AddArrow
+            };
+            push_action(action_queue, AppAction::SetAnnotationMode(next_mode));
+            ctx.request_repaint_of(egui::ViewportId::ROOT);
+        }
     });
 
     ui.separator();
 
     let mut ui_state = ui_state.lock().ok();
     let selected_line = selected_line_data(image_list, tool.selected_id());
-    if mode == AnnotationMode::AddLine || selected_line.is_some() {
+    if matches!(mode, AnnotationMode::AddLine | AnnotationMode::AddArrow) || selected_line.is_some() {
         let selected_id = tool.selected_id();
         let mut line = selected_line.unwrap_or_else(|| *tool.default_line_mut());
-        let response = render_line_controls(ui, &mut line, selected_line.is_some());
+        let response = render_line_controls(ui, &mut line, selected_line.is_some(), mode);
         if response.changed {
             if selected_id.is_valid() {
                 if let Some(state) = ui_state.as_deref_mut() {
@@ -457,11 +479,40 @@ fn modifier_tool_button(icon: &'static str) -> egui::Button<'static> {
     egui::Button::new(egui::RichText::new(icon).size(MODIFIER_TOOL_ICON_SIZE)).min_size(MODIFIER_TOOL_BUTTON_SIZE)
 }
 
-fn render_line_controls(ui: &mut egui::Ui, line: &mut LineAnnotationData, selected: bool) -> LineStyleControlResponse {
+fn arrow_tool_button(ui: &mut egui::Ui, selected: bool) -> egui::Response {
+    let response = ui.add(egui::Button::new("").min_size(MODIFIER_TOOL_BUTTON_SIZE).selected(selected));
+    let visuals = ui.style().interact_selectable(&response, selected);
+    let center = response.rect.center();
+    let start = center + egui::vec2(-6.0, 4.0);
+    let tip = center + egui::vec2(6.0, -4.0);
+    let direction = (tip - start).normalized();
+    let perpendicular = egui::vec2(-direction.y, direction.x);
+    let head_base = tip - direction * 5.0;
+    let color = visuals.fg_stroke.color;
+    let stroke_width = visuals.fg_stroke.width.max(1.5);
+
+    ui.painter()
+        .line_segment([start, tip], egui::Stroke::new(stroke_width, color));
+    ui.painter().add(egui::Shape::convex_polygon(
+        vec![tip, head_base + perpendicular * 3.0, head_base - perpendicular * 3.0],
+        color,
+        egui::Stroke::NONE,
+    ));
+    response
+}
+
+fn render_line_controls(
+    ui: &mut egui::Ui,
+    line: &mut LineAnnotationData,
+    selected: bool,
+    mode: AnnotationMode,
+) -> LineStyleControlResponse {
     let mut output = LineStyleControlResponse::default();
 
     let header = if selected {
         "Selected line  |  Delete / Backspace to remove"
+    } else if mode == AnnotationMode::AddArrow {
+        "New arrow style"
     } else {
         "New line style"
     };
@@ -527,8 +578,8 @@ fn render_line_controls(ui: &mut egui::Ui, line: &mut LineAnnotationData, select
         }
     });
 
-            render_disabled_line_style_combo(ui, "Start", "None");
-            render_disabled_line_style_combo(ui, "End", "None");
+            render_line_endpoint_style_combo(ui, "Start", &mut line.start_style, &mut output);
+            render_line_endpoint_style_combo(ui, "End", &mut line.end_style, &mut output);
             render_disabled_line_style_combo(ui, "Stroke", "Solid");
         });
 
@@ -550,6 +601,28 @@ fn render_disabled_line_style_combo(ui: &mut egui::Ui, label: &'static str, valu
                 .width(width)
                 .show_ui(ui, |_ui| {});
         });
+    });
+}
+
+fn render_line_endpoint_style_combo(
+    ui: &mut egui::Ui,
+    label: &'static str,
+    style: &mut LineEndpointStyle,
+    output: &mut LineStyleControlResponse,
+) {
+    render_line_style_row(ui, label, |ui, width| {
+        let before = *style;
+        egui::ComboBox::from_id_salt(label)
+            .selected_text(style.label())
+            .width(width)
+            .show_ui(ui, |ui| {
+                ui.selectable_value(style, LineEndpointStyle::None, LineEndpointStyle::None.label());
+                ui.selectable_value(style, LineEndpointStyle::Arrow, LineEndpointStyle::Arrow.label());
+            });
+        if *style != before {
+            output.changed = true;
+            output.committed = true;
+        }
     });
 }
 
@@ -580,7 +653,13 @@ fn apply_selected_line_style_live(
 ) {
     for image in visible_modified_images(image_list) {
         if let Ok(mut image) = image.lock() {
-            image.update_line_style(selected_id, line.color, line.stroke_width);
+            image.update_line_style(
+                selected_id,
+                line.color,
+                line.stroke_width,
+                line.start_style,
+                line.end_style,
+            );
         }
     }
 }

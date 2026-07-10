@@ -47,11 +47,6 @@ const SHORTCUTS: &[(egui::Key, ShortcutScope, AppAction)] = &[
         AppAction::ResizeWindow(WindowResizeAction::Normal),
     ),
     (
-        egui::Key::A,
-        ShortcutScope::GlobalWhenNotTyping,
-        AppAction::ResizeWindow(WindowResizeAction::RestoreAspectRatio),
-    ),
-    (
         egui::Key::M,
         ShortcutScope::GlobalWhenNotTyping,
         AppAction::ResizeWindow(WindowResizeAction::Maxspect),
@@ -83,6 +78,9 @@ fn push_annotation_shortcuts(
     }
     if input.key_pressed(egui::Key::L) && input.modifiers.shift {
         out_actions.push(AppAction::SetAnnotationMode(AnnotationMode::AddLine));
+    }
+    if input.key_pressed(egui::Key::A) && input.modifiers.shift {
+        out_actions.push(AppAction::SetAnnotationMode(AnnotationMode::AddArrow));
     }
     if input.key_pressed(egui::Key::Escape) {
         out_actions.push(AppAction::SetAnnotationMode(AnnotationMode::Select));
@@ -148,6 +146,16 @@ fn push_resize_text_shortcuts(
 ) {
     if !scope_allows(ShortcutScope::GlobalWhenNotTyping, viewport, typing_text) {
         return;
+    }
+
+    if input.key_pressed(egui::Key::A)
+        && !input.modifiers.shift
+        && !input.modifiers.alt
+        && !input.modifiers.ctrl
+        && !input.modifiers.command
+        && !input.modifiers.mac_cmd
+    {
+        out_actions.push(AppAction::ResizeWindow(WindowResizeAction::RestoreAspectRatio));
     }
 
     let mut typed_angle = false;
