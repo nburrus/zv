@@ -36,6 +36,11 @@ const ICON_ROTATE_LEFT: &str = ph::ARROW_COUNTER_CLOCKWISE;
 const ICON_ROTATE_RIGHT: &str = ph::ARROW_CLOCKWISE;
 const ICON_LINE: &str = ph::LINE_SEGMENT;
 
+fn command_shortcut(key: char) -> String {
+    let modifier = if cfg!(target_os = "macos") { "Cmd" } else { "Ctrl" };
+    format!("{modifier}+{key}")
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ControlsTab {
     ImageList,
@@ -210,14 +215,20 @@ impl ControlsWindow {
                 let ed = editor_state.lock().map(|g| g.clone()).unwrap_or_default();
                 egui::MenuBar::new().ui(ui, |ui| {
                     ui.menu_button("File", |ui| {
-                        if ui.add(egui::Button::new("Open Image…").shortcut_text("⌘O")).clicked() {
+                        if ui
+                            .add(egui::Button::new("Open Image…").shortcut_text(command_shortcut('O')))
+                            .clicked()
+                        {
                             push_action(&action_queue, AppAction::OpenImage);
                             ctx.request_repaint_of(egui::ViewportId::ROOT);
                             ui.close();
                         }
                         ui.separator();
                         if ui
-                            .add_enabled(ed.has_changes, egui::Button::new("Save Image…").shortcut_text("⌘S"))
+                            .add_enabled(
+                                ed.has_changes,
+                                egui::Button::new("Save Image…").shortcut_text(command_shortcut('S')),
+                            )
                             .clicked()
                         {
                             push_action(&action_queue, AppAction::SaveImageEdits);
@@ -225,7 +236,10 @@ impl ControlsWindow {
                             ui.close();
                         }
                         ui.separator();
-                        if ui.add(egui::Button::new("Close Image").shortcut_text("⌘W")).clicked() {
+                        if ui
+                            .add(egui::Button::new("Close Image").shortcut_text(command_shortcut('W')))
+                            .clicked()
+                        {
                             push_action(&action_queue, AppAction::CloseImage);
                             ctx.request_repaint_of(egui::ViewportId::ROOT);
                             ui.close();
@@ -239,7 +253,10 @@ impl ControlsWindow {
                     });
                     ui.menu_button("Edit", |ui| {
                         if ui
-                            .add_enabled(ed.can_undo, egui::Button::new("Undo").shortcut_text("⌘Z"))
+                            .add_enabled(
+                                ed.can_undo,
+                                egui::Button::new("Undo").shortcut_text(command_shortcut('Z')),
+                            )
                             .clicked()
                         {
                             push_action(&action_queue, AppAction::UndoImageEdit);
@@ -258,7 +275,7 @@ impl ControlsWindow {
                         if ui
                             .add_enabled(
                                 ed.has_selection,
-                                egui::Button::new("Delete Selected Annotation").shortcut_text("⌫"),
+                                egui::Button::new("Delete Selected Annotation").shortcut_text("Del"),
                             )
                             .clicked()
                         {
@@ -277,7 +294,7 @@ impl ControlsWindow {
                             if ui
                                 .add(
                                     egui::Button::new("Add Line")
-                                        .shortcut_text("⇧L")
+                                        .shortcut_text("Shift+L")
                                         .selected(mode == AnnotationMode::AddLine),
                                 )
                                 .clicked()
@@ -289,7 +306,7 @@ impl ControlsWindow {
                             if ui
                                 .add(
                                     egui::Button::new("Add Arrow")
-                                        .shortcut_text("⇧A")
+                                        .shortcut_text("Shift+A")
                                         .selected(mode == AnnotationMode::AddArrow),
                                 )
                                 .clicked()
