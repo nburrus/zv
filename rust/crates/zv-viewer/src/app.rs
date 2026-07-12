@@ -3,7 +3,7 @@ use std::time::Instant;
 
 use eframe::egui;
 
-use crate::annotations::AnnotationRenderer;
+use crate::annotations::{AnnotationRenderer, shared_font_definitions};
 use crate::debug::{DebugConfig, RuntimeDebug};
 use crate::render::WgpuImageRenderer;
 use crate::viewer::Viewer;
@@ -23,9 +23,7 @@ impl ZvApp {
         debug_config: DebugConfig,
     ) -> Self {
         tracing::info!("creating zv-viewer app");
-        let mut fonts = egui::FontDefinitions::default();
-        egui_phosphor::add_to_fonts(&mut fonts, egui_phosphor::Variant::Regular);
-        cc.egui_ctx.set_fonts(fonts);
+        cc.egui_ctx.set_fonts(shared_font_definitions());
 
         if let Some(render_state) = &cc.wgpu_render_state {
             let mut renderer = render_state.renderer.write();

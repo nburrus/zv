@@ -234,6 +234,7 @@ impl Viewer {
             AnnotationMode::AddArrow => "add_arrow",
             AnnotationMode::AddRectangle => "add_rectangle",
             AnnotationMode::AddEllipse => "add_ellipse",
+            AnnotationMode::AddText => "add_text",
         };
         let selected_id = tool.selected_id();
         let visible = self.visible_modified_images();
@@ -255,12 +256,14 @@ impl Viewer {
                         start_style: style.start_style.label(),
                         end_style: style.end_style.label(),
                     }),
-                    AnnotationElement::Rectangle { .. } | AnnotationElement::Ellipse { .. } => None,
+                    AnnotationElement::Rectangle { .. }
+                    | AnnotationElement::Ellipse { .. }
+                    | AnnotationElement::Text { .. } => None,
                 });
                 let selected_box = selected_element.and_then(|element| match element {
                     AnnotationElement::Rectangle { bounds, stroke, .. } => Some(("rectangle", bounds, stroke)),
                     AnnotationElement::Ellipse { bounds, stroke, .. } => Some(("ellipse", bounds, stroke)),
-                    AnnotationElement::Line { .. } => None,
+                    AnnotationElement::Line { .. } | AnnotationElement::Text { .. } => None,
                 });
                 let selected_box = selected_box.map(|(kind, bounds, stroke)| AnnotationBoxDebug {
                     kind,

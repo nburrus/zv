@@ -4,7 +4,7 @@ use eframe::egui_wgpu::wgpu;
 
 use crate::annotations::{
     AnnotationDocument, AnnotationElement, AnnotationId, AnnotationRenderer, BoundingBox, LineEndpointStyle,
-    StrokeStyle,
+    StrokeStyle, TextStyle, resize_text_bounds_to_content,
 };
 use crate::color_image::ImageSRGBA;
 use crate::image_io::write_rgba_image;
@@ -83,6 +83,11 @@ impl ModifiedImage {
         &self.annotations
     }
 
+    pub fn image_size(&self) -> [u32; 2] {
+        let data = self.original_data.cpu_data();
+        [data.width(), data.height()]
+    }
+
     pub fn annotations_mut(&mut self) -> &mut AnnotationDocument {
         &mut self.annotations
     }
@@ -126,10 +131,13 @@ impl ModifiedImage {
         let Some(element) = self.annotations.find_by_id_mut(id) else {
             return false;
         };
-        if *element.stroke() == stroke {
+        let Some(current) = element.stroke_mut() else {
+            return false;
+        };
+        if *current == stroke {
             return false;
         }
-        *element.stroke_mut() = stroke;
+        *current = stroke;
         self.mark_annotations_dirty();
         true
     }
@@ -152,6 +160,23 @@ impl ModifiedImage {
         }
         style.start_style = start_style;
         style.end_style = end_style;
+        self.mark_annotations_dirty();
+        true
+    }
+
+    pub fn update_text(&mut self, id: AnnotationId, replacement: TextStyle) -> bool {
+        let size = self.image_size();
+        let Some(AnnotationElement::Text { bounds, style, .. }) = self.annotations.find_by_id_mut(id) else {
+            return false;
+        };
+        if *style == replacement {
+            return false;
+        }
+        let reflow = style.text != replacement.text || style.font_size != replacement.font_size;
+        *style = replacement;
+        if reflow {
+            resize_text_bounds_to_content(bounds, style, size);
+        }
         self.mark_annotations_dirty();
         true
     }
@@ -314,7 +339,9 @@ fn rotate_annotations(document: &mut AnnotationDocument, direction: RotationDire
                 segment.p1 = rotate_uv(segment.p1, direction);
                 segment.p2 = rotate_uv(segment.p2, direction);
             }
-            AnnotationElement::Rectangle { bounds, .. } | AnnotationElement::Ellipse { bounds, .. } => {
+            AnnotationElement::Rectangle { bounds, .. }
+            | AnnotationElement::Ellipse { bounds, .. }
+            | AnnotationElement::Text { bounds, .. } => {
                 rotate_bounding_box_uv(bounds, direction);
             }
         }

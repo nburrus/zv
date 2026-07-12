@@ -1,11 +1,58 @@
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::mpsc;
+use std::sync::{OnceLock, mpsc};
 
 use eframe::egui;
 use eframe::egui_wgpu::{self, wgpu};
 
 use crate::color_image::ImageSRGBA;
 use crate::image_item_data::ImageItemData;
+
+/// Font definitions shared by the UI context and [`text_context`], so
+/// annotation text lays out with the same glyphs everywhere.
+pub fn shared_font_definitions() -> egui::FontDefinitions {
+    let mut fonts = egui::FontDefinitions::default();
+    egui_phosphor::add_to_fonts(&mut fonts, egui_phosphor::Variant::Regular);
+    fonts
+}
+
+/// Context used for all image-space text work: bounds measurement and the
+/// composite rasterization in [`AnnotationRenderer`].
+///
+/// Rendering text at all forces a context into the composite path: egui's
+/// glyph atlas lives inside a `Context` and is only populated during its
+/// begin/end passes. Solid shapes (lines, boxes) tessellate context-free,
+/// which is why the pre-text compositor didn't need one.
+///
+/// It has to be a *dedicated* context rather than the UI one, for three
+/// reasons:
+/// - Scale: glyph rasterization and metrics are quantized per
+///   pixels_per_point. The composite maps one point to one image pixel
+///   (scale 1.0); the UI context runs at the display scale. This also keeps
+///   saved images identical across displays.
+/// - Pass lifecycle: the composite must run its own begin/end pass to
+///   rasterize glyphs and collect font-texture deltas, and the UI context is
+///   mid-frame (owned by eframe) when compositing happens.
+/// - Texture deltas are single-consumer: eframe's renderer drains the UI
+///   context's deltas for its own GPU atlas; [`AnnotationRenderer`] drains
+///   this context's deltas for its offscreen renderer. Sharing one stream
+///   would starve one of the two.
+///
+/// The flip side is that all measurement must go through this context too
+/// (see [`measure_text`]): bounds measured with one atlas and text rendered
+/// with another would disagree by fractions of a glyph, and the composite
+/// clips text hard to its bounds.
+fn text_context() -> &'static egui::Context {
+    static CONTEXT: OnceLock<egui::Context> = OnceLock::new();
+    CONTEXT.get_or_init(|| {
+        let ctx = egui::Context::default();
+        ctx.set_fonts(shared_font_definitions());
+        // Fonts only exist after a first pass; run an empty one so text can
+        // be measured before the first composite. The pass output is
+        // discarded: AnnotationRenderer re-seeds the full font atlas anyway.
+        let _ = ctx.run(egui::RawInput::default(), |_| {});
+        ctx
+    })
+}
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Hash)]
 pub struct AnnotationId(u64);
@@ -29,8 +76,8 @@ pub struct LineSegment {
     pub p2: egui::Vec2,
 }
 
-/// Axis-aligned bounding box in normalized texture coordinates. Rectangles
-/// and ellipses are entirely defined by theirs.
+/// Axis-aligned bounding box in normalized texture coordinates. Rectangles,
+/// ellipses, and text annotations are positioned by one.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct BoundingBox {
     pub min: egui::Vec2,
@@ -49,6 +96,25 @@ pub struct LineStyle {
     pub stroke: StrokeStyle,
     pub start_style: LineEndpointStyle,
     pub end_style: LineEndpointStyle,
+}
+
+/// Full style of a text annotation; its geometry is a [`BoundingBox`].
+#[derive(Clone, Debug, PartialEq)]
+pub struct TextStyle {
+    pub text: String,
+    pub color: egui::Color32,
+    /// Font size in image-space pixels.
+    pub font_size: f32,
+}
+
+impl Default for TextStyle {
+    fn default() -> Self {
+        Self {
+            text: "Text".to_owned(),
+            color: egui::Color32::YELLOW,
+            font_size: 24.0,
+        }
+    }
 }
 
 impl Default for StrokeStyle {
@@ -137,6 +203,11 @@ pub enum AnnotationElement {
         bounds: BoundingBox,
         stroke: StrokeStyle,
     },
+    Text {
+        id: AnnotationId,
+        bounds: BoundingBox,
+        style: TextStyle,
+    },
 }
 
 /// How the shape under construction or edit reacts to Shift being held.
@@ -153,6 +224,7 @@ pub enum AnnotationKind {
     Line,
     Rectangle,
     Ellipse,
+    Text,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -181,21 +253,23 @@ impl AnnotationHandle {
 impl AnnotationElement {
     pub fn id(&self) -> AnnotationId {
         match self {
-            Self::Line { id, .. } | Self::Rectangle { id, .. } | Self::Ellipse { id, .. } => *id,
+            Self::Line { id, .. } | Self::Rectangle { id, .. } | Self::Ellipse { id, .. } | Self::Text { id, .. } => {
+                *id
+            }
         }
     }
 
     pub fn line_style(&self) -> Option<&LineStyle> {
         match self {
             Self::Line { style, .. } => Some(style),
-            Self::Rectangle { .. } | Self::Ellipse { .. } => None,
+            Self::Rectangle { .. } | Self::Ellipse { .. } | Self::Text { .. } => None,
         }
     }
 
     pub fn line_style_mut(&mut self) -> Option<&mut LineStyle> {
         match self {
             Self::Line { style, .. } => Some(style),
-            Self::Rectangle { .. } | Self::Ellipse { .. } => None,
+            Self::Rectangle { .. } | Self::Ellipse { .. } | Self::Text { .. } => None,
         }
     }
 
@@ -204,27 +278,31 @@ impl AnnotationElement {
             Self::Line { .. } => AnnotationKind::Line,
             Self::Rectangle { .. } => AnnotationKind::Rectangle,
             Self::Ellipse { .. } => AnnotationKind::Ellipse,
+            Self::Text { .. } => AnnotationKind::Text,
         }
     }
 
-    pub fn stroke(&self) -> &StrokeStyle {
+    pub fn stroke(&self) -> Option<&StrokeStyle> {
         match self {
-            Self::Line { style, .. } => &style.stroke,
-            Self::Rectangle { stroke, .. } | Self::Ellipse { stroke, .. } => stroke,
+            Self::Line { style, .. } => Some(&style.stroke),
+            Self::Rectangle { stroke, .. } | Self::Ellipse { stroke, .. } => Some(stroke),
+            Self::Text { .. } => None,
         }
     }
 
-    pub fn stroke_mut(&mut self) -> &mut StrokeStyle {
+    pub fn stroke_mut(&mut self) -> Option<&mut StrokeStyle> {
         match self {
-            Self::Line { style, .. } => &mut style.stroke,
-            Self::Rectangle { stroke, .. } | Self::Ellipse { stroke, .. } => stroke,
+            Self::Line { style, .. } => Some(&mut style.stroke),
+            Self::Rectangle { stroke, .. } | Self::Ellipse { stroke, .. } => Some(stroke),
+            Self::Text { .. } => None,
         }
     }
 
-    pub fn shift_constraint(&self) -> ShiftConstraint {
+    pub fn shift_constraint(&self) -> Option<ShiftConstraint> {
         match self {
-            Self::Line { .. } => ShiftConstraint::SnapTo45Degrees,
-            Self::Rectangle { .. } | Self::Ellipse { .. } => ShiftConstraint::Square,
+            Self::Line { .. } => Some(ShiftConstraint::SnapTo45Degrees),
+            Self::Rectangle { .. } | Self::Ellipse { .. } => Some(ShiftConstraint::Square),
+            Self::Text { .. } => None,
         }
     }
 
@@ -247,7 +325,9 @@ impl AnnotationElement {
                 AnnotationHandle::LineEnd => Some(segment.p2),
                 _ => None,
             },
-            Self::Rectangle { bounds, .. } | Self::Ellipse { bounds, .. } => bounds.handle_pos(handle),
+            Self::Rectangle { bounds, .. } | Self::Ellipse { bounds, .. } | Self::Text { bounds, .. } => {
+                bounds.handle_pos(handle)
+            }
         }
     }
 
@@ -257,7 +337,7 @@ impl AnnotationElement {
                 segment.p1 += delta;
                 segment.p2 += delta;
             }
-            Self::Rectangle { bounds, .. } | Self::Ellipse { bounds, .. } => {
+            Self::Rectangle { bounds, .. } | Self::Ellipse { bounds, .. } | Self::Text { bounds, .. } => {
                 bounds.min += delta;
                 bounds.max += delta;
             }
@@ -281,12 +361,25 @@ impl AnnotationElement {
                 AnnotationHandle::LineEnd => segment.p2 = texture_pos,
                 _ => {}
             },
-            Self::Rectangle { bounds, .. } | Self::Ellipse { bounds, .. } => {
+            Self::Rectangle { bounds, .. } | Self::Ellipse { bounds, .. } | Self::Text { bounds, .. } => {
                 bounds.min = texture_pos.min(opposite);
                 bounds.max = texture_pos.max(opposite);
             }
         }
     }
+}
+
+pub fn fit_text_font_size(extent: egui::Vec2, current_size: f32, box_size: egui::Vec2) -> f32 {
+    const MIN_SIZE: f32 = 1.0;
+    const MAX_SIZE: f32 = 512.0;
+    if current_size <= 0.0 || extent.x <= 0.0 || extent.y <= 0.0 || box_size.x <= 0.0 || box_size.y <= 0.0 {
+        return current_size.clamp(MIN_SIZE, MAX_SIZE);
+    }
+    let fitted = current_size * (box_size.x / extent.x).min(box_size.y / extent.y);
+    // Quantize to 0.5: every distinct font size rasterizes a fresh glyph set
+    // into the font atlas, and a resize drag would otherwise fill it with
+    // hundreds of one-off sizes.
+    ((fitted * 2.0).round() * 0.5).clamp(MIN_SIZE, MAX_SIZE)
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -396,6 +489,7 @@ impl AnnotationDocument {
                     bounds.widget_rect(transform),
                     transform.stroke_hit_tolerance_widget(stroke.width) + body_tolerance_px,
                 ),
+                AnnotationElement::Text { bounds, .. } => bounds.widget_rect(transform).contains(widget_pos),
             };
             if body_hit {
                 return Some(AnnotationHitResult {
@@ -445,34 +539,118 @@ impl WidgetToTextureTransform {
     }
 }
 
-pub fn annotation_shapes_for_image(document: &AnnotationDocument, width: u32, height: u32) -> Vec<egui::Shape> {
+fn annotation_shapes_for_image(
+    document: &AnnotationDocument,
+    width: u32,
+    height: u32,
+) -> Vec<egui::epaint::ClippedShape> {
     let mut shapes = Vec::new();
+    let full_clip = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(width as f32, height as f32));
     for element in document.elements() {
-        match element {
+        let (clip_rect, element_shapes) = match element {
             AnnotationElement::Line { segment, style, .. } => {
                 let p1 = egui::pos2(segment.p1.x * width as f32, segment.p1.y * height as f32);
                 let p2 = egui::pos2(segment.p2.x * width as f32, segment.p2.y * height as f32);
-                shapes.extend(line_shapes(style, p1, p2, style.stroke.width.max(1.0)));
+                (full_clip, line_shapes(style, p1, p2, style.stroke.width.max(1.0)))
             }
-            AnnotationElement::Rectangle { bounds, stroke, .. } => {
-                shapes.push(egui::Shape::rect_stroke(
+            AnnotationElement::Rectangle { bounds, stroke, .. } => (
+                full_clip,
+                vec![egui::Shape::rect_stroke(
                     bounds.pixel_rect(width, height),
                     0.0,
                     egui::Stroke::new(stroke.width.max(1.0), stroke.color),
                     egui::StrokeKind::Middle,
-                ));
-            }
+                )],
+            ),
             AnnotationElement::Ellipse { bounds, stroke, .. } => {
                 let rect = bounds.pixel_rect(width, height);
-                shapes.push(egui::Shape::ellipse_stroke(
-                    rect.center(),
-                    rect.size() * 0.5,
-                    egui::Stroke::new(stroke.width.max(1.0), stroke.color),
-                ));
+                (
+                    full_clip,
+                    vec![egui::Shape::ellipse_stroke(
+                        rect.center(),
+                        rect.size() * 0.5,
+                        egui::Stroke::new(stroke.width.max(1.0), stroke.color),
+                    )],
+                )
             }
-        }
+            AnnotationElement::Text { bounds, style, .. } => {
+                let rect = bounds.pixel_rect(width, height);
+                let shape = text_context().fonts_mut(|fonts| {
+                    egui::Shape::text(
+                        fonts,
+                        rect.min + egui::vec2(text_box_padding(style.font_size), 0.0),
+                        egui::Align2::LEFT_TOP,
+                        &style.text,
+                        egui::FontId::proportional(style.font_size.max(1.0)),
+                        style.color,
+                    )
+                });
+                (rect.intersect(full_clip), vec![shape])
+            }
+        };
+        shapes.extend(
+            element_shapes
+                .into_iter()
+                .map(|shape| egui::epaint::ClippedShape { clip_rect, shape }),
+        );
     }
     shapes
+}
+
+/// Rendered size of `text` in image-space pixels. Must lay out through
+/// [`text_context`] — the same fonts the composite renders with — so the
+/// boxes derived from it enclose the rasterized text exactly.
+fn measure_text(text: &str, font_size: f32) -> egui::Vec2 {
+    text_context().fonts_mut(|fonts| {
+        fonts
+            .layout_no_wrap(
+                // Keep a minimal non-empty extent so an emptied annotation
+                // still has a visible, grabbable box.
+                if text.is_empty() { " " } else { text }.to_owned(),
+                egui::FontId::proportional(font_size.max(1.0)),
+                egui::Color32::WHITE,
+            )
+            .size()
+    })
+}
+
+/// Horizontal padding between a text annotation's box and its glyphs, in
+/// image-space pixels. Proportional to the font size so the box keeps the
+/// same look at any scale.
+fn text_box_padding(font_size: f32) -> f32 {
+    font_size * 0.25
+}
+
+/// Rendered text size plus the horizontal box padding on both sides.
+fn padded_text_extent(style: &TextStyle) -> egui::Vec2 {
+    measure_text(&style.text, style.font_size) + egui::vec2(2.0 * text_box_padding(style.font_size), 0.0)
+}
+
+pub fn fit_text_to_bounds(bounds: &BoundingBox, style: &mut TextStyle, image_size: [u32; 2]) {
+    // Both the text extent and the padding scale linearly with the font
+    // size, so fitting the padded extent yields the exact padded-box fit.
+    let extent = padded_text_extent(style);
+    let box_size = bounds.pixel_rect(image_size[0], image_size[1]).size();
+    style.font_size = fit_text_font_size(extent, style.font_size, box_size);
+}
+
+/// Resizes the box to the rendered text while preserving its top-left corner
+/// and the requested image-space font size. This is used for controls-window
+/// edits; direct box manipulation uses [`fit_text_to_bounds`] instead.
+pub fn resize_text_bounds_to_content(bounds: &mut BoundingBox, style: &TextStyle, image_size: [u32; 2]) {
+    let extent = padded_text_extent(style);
+    let image_size = egui::vec2(image_size[0].max(1) as f32, image_size[1].max(1) as f32);
+    bounds.max = bounds.min + extent / image_size;
+}
+
+pub fn text_bounds_at(center: egui::Vec2, style: &TextStyle, image_size: [u32; 2]) -> BoundingBox {
+    let extent = padded_text_extent(style);
+    let image_size = egui::vec2(image_size[0].max(1) as f32, image_size[1].max(1) as f32);
+    let half_extent = extent / image_size * 0.5;
+    BoundingBox {
+        min: center - half_extent,
+        max: center + half_extent,
+    }
 }
 
 /// Paints the widget-space preview of an element, e.g. while it is being
@@ -499,6 +677,17 @@ pub fn paint_element_overlay(
             let rect = bounds.widget_rect(transform);
             let stroke = egui::Stroke::new(transform.stroke_width_widget(stroke.width), stroke.color);
             painter.add(egui::Shape::ellipse_stroke(rect.center(), rect.size() * 0.5, stroke));
+        }
+        AnnotationElement::Text { bounds, style, .. } => {
+            let rect = bounds.widget_rect(transform);
+            let scale = transform.image_pixel_to_widget_scale().x;
+            painter.with_clip_rect(rect).text(
+                rect.min + egui::vec2(text_box_padding(style.font_size) * scale, 0.0),
+                egui::Align2::LEFT_TOP,
+                &style.text,
+                egui::FontId::proportional((style.font_size * scale).max(1.0)),
+                style.color,
+            );
         }
     }
 }
@@ -573,6 +762,14 @@ pub fn paint_annotation_handles(
     element: &AnnotationElement,
     transform: &WidgetToTextureTransform,
 ) {
+    if let AnnotationElement::Text { bounds, .. } = element {
+        painter.rect_stroke(
+            bounds.widget_rect(transform),
+            0.0,
+            egui::Stroke::new(1.0, egui::Color32::from_white_alpha(180)),
+            egui::StrokeKind::Inside,
+        );
+    }
     for &handle in element.handles() {
         let Some(handle_pos) = element.handle_texture_pos(handle) else {
             continue;
@@ -589,7 +786,7 @@ pub fn paint_annotation_handles(
 
 pub struct AnnotationRenderer {
     renderer: egui_wgpu::Renderer,
-    white_texture_uploaded: bool,
+    font_texture_seeded: bool,
     composite_resources: Option<AnnotationCompositeResources>,
 }
 
@@ -609,7 +806,7 @@ impl AnnotationRenderer {
                 wgpu::TextureFormat::Rgba8Unorm,
                 egui_wgpu::RendererOptions::default(),
             ),
-            white_texture_uploaded: false,
+            font_texture_seeded: false,
             composite_resources: None,
         }
     }
@@ -641,21 +838,23 @@ impl AnnotationRenderer {
             )
         };
 
-        let shapes = annotation_shapes_for_image(document, width, height)
-            .into_iter()
-            .map(|shape| egui::epaint::ClippedShape {
-                clip_rect: egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(width as f32, height as f32)),
-                shape,
-            })
-            .collect::<Vec<_>>();
-        let mut tessellator =
-            egui::epaint::Tessellator::new(1.0, egui::epaint::TessellationOptions::default(), [1, 1], Vec::new());
-        let paint_jobs = tessellator.tessellate_shapes(shapes);
+        // Text shapes must be built inside a pass of the text context: laying
+        // them out rasterizes any new glyphs into its font atlas, and end_pass
+        // hands back the texture deltas that keep this renderer's GPU copy of
+        // that atlas in sync.
+        let ctx = text_context();
+        ctx.begin_pass(egui::RawInput::default());
+        let shapes = annotation_shapes_for_image(document, width, height);
+        let full_output = ctx.end_pass();
+        let paint_jobs = ctx.tessellate(shapes, 1.0);
         let screen_descriptor = egui_wgpu::ScreenDescriptor {
             size_in_pixels: [width, height],
             pixels_per_point: 1.0,
         };
-        self.ensure_white_texture(device, queue);
+        self.seed_font_texture(device, queue);
+        for (id, delta) in &full_output.textures_delta.set {
+            self.renderer.update_texture(device, queue, *id, delta);
+        }
 
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("zv annotation composite encoder"),
@@ -725,21 +924,29 @@ impl AnnotationRenderer {
         }
         drop(mapped);
         readback_buffer.unmap();
+        for id in &full_output.textures_delta.free {
+            self.renderer.free_texture(id);
+        }
 
         Some(ImageItemData::new(ImageSRGBA::from_tightly_packed_bytes(
             width, height, &tight,
         )))
     }
 
-    fn ensure_white_texture(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
-        if self.white_texture_uploaded {
+    /// Uploads the full font atlas (which also holds the white pixel used by
+    /// solid shapes) the first time this renderer composites. Necessary
+    /// because the atlas's initial full delta may already have been consumed
+    /// by a [`text_context`] pass whose output nobody rendered; from then on
+    /// the per-pass deltas are incremental.
+    fn seed_font_texture(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
+        if self.font_texture_seeded {
             return;
         }
-        let image = egui::epaint::ColorImage::filled([1, 1], egui::Color32::WHITE);
+        let image = text_context().fonts(|fonts| fonts.image());
         let delta = egui::epaint::ImageDelta::full(image, egui::TextureOptions::LINEAR);
         self.renderer
             .update_texture(device, queue, egui::TextureId::default(), &delta);
-        self.white_texture_uploaded = true;
+        self.font_texture_seeded = true;
     }
 
     fn ensure_composite_resources(&mut self, device: &wgpu::Device, width: u32, height: u32) {
@@ -995,6 +1202,63 @@ mod tests {
             document
                 .hit_test(egui::pos2(50.0, 50.0), &transform(), AnnotationId::default(), 6.0, 4.0)
                 .is_none()
+        );
+    }
+
+    #[test]
+    fn text_uses_bounding_box_handles_and_body_hit_testing() {
+        let id = AnnotationId::next();
+        let mut document = AnnotationDocument::default();
+        document.add_element(AnnotationElement::Text {
+            id,
+            bounds: BoundingBox {
+                min: egui::vec2(0.2, 0.3),
+                max: egui::vec2(0.7, 0.8),
+            },
+            style: TextStyle::default(),
+        });
+
+        let hit = document.hit_test(egui::pos2(50.0, 50.0), &transform(), AnnotationId::default(), 6.0, 4.0);
+        assert_eq!(hit.map(|hit| hit.part), Some(AnnotationHitPart::Body));
+        let handle = document.hit_test(egui::pos2(20.0, 30.0), &transform(), id, 6.0, 4.0);
+        assert_eq!(
+            handle.map(|hit| hit.part),
+            Some(AnnotationHitPart::Handle(AnnotationHandle::TopLeft))
+        );
+    }
+
+    #[test]
+    fn text_move_and_resize_reuse_bounding_box_geometry() {
+        let mut element = AnnotationElement::Text {
+            id: AnnotationId::next(),
+            bounds: BoundingBox {
+                min: egui::vec2(0.2, 0.3),
+                max: egui::vec2(0.7, 0.8),
+            },
+            style: TextStyle::default(),
+        };
+        element.move_by(egui::vec2(0.1, -0.1));
+        element.move_handle_to(AnnotationHandle::TopLeft, egui::vec2(0.1, 0.1));
+        let AnnotationElement::Text { bounds, .. } = element else {
+            unreachable!()
+        };
+        assert_eq!(bounds.min, egui::vec2(0.1, 0.1));
+        assert_eq!(bounds.max, egui::vec2(0.8, 0.7));
+    }
+
+    #[test]
+    fn fit_text_font_size_uses_limiting_dimension_and_handles_degenerate_input() {
+        assert_eq!(
+            fit_text_font_size(egui::vec2(200.0, 50.0), 20.0, egui::vec2(100.0, 100.0)),
+            10.0
+        );
+        assert_eq!(
+            fit_text_font_size(egui::Vec2::ZERO, 24.0, egui::vec2(100.0, 100.0)),
+            24.0
+        );
+        assert_eq!(
+            fit_text_font_size(egui::vec2(10.0, 10.0), 20.0, egui::vec2(1000.0, 1000.0)),
+            512.0
         );
     }
 }

@@ -4,7 +4,8 @@ use eframe::egui;
 
 use crate::annotations::{
     AnnotationElement, AnnotationHandle, AnnotationHitPart, AnnotationId, BoundingBox, LineEndpointStyle, LineSegment,
-    LineStyle, ShiftConstraint, StrokeStyle, WidgetToTextureTransform, paint_annotation_handles, paint_element_overlay,
+    LineStyle, ShiftConstraint, StrokeStyle, TextStyle, WidgetToTextureTransform, fit_text_to_bounds,
+    paint_annotation_handles, paint_element_overlay, text_bounds_at,
 };
 use crate::modified_image::{ImageUndoAction, ModifiedImage};
 
@@ -15,6 +16,7 @@ pub enum AnnotationMode {
     AddArrow,
     AddRectangle,
     AddEllipse,
+    AddText,
 }
 
 impl AnnotationMode {
@@ -22,7 +24,7 @@ impl AnnotationMode {
         match self {
             Self::AddLine | Self::AddArrow => Some(ShiftConstraint::SnapTo45Degrees),
             Self::AddRectangle | Self::AddEllipse => Some(ShiftConstraint::Square),
-            Self::Select => None,
+            Self::Select | Self::AddText => None,
         }
     }
 }
@@ -41,8 +43,9 @@ struct EditDrag {
     moved: bool,
     snapshots: Vec<EditSnapshot>,
     /// For handle drags: the opposite handle, which stays fixed, and the
-    /// Shift constraint of the dragged element.
-    fixed_anchor: Option<(egui::Vec2, ShiftConstraint)>,
+    /// Shift constraint of the dragged element (None for text, which
+    /// resizes freely).
+    fixed_anchor: Option<(egui::Vec2, Option<ShiftConstraint>)>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -64,6 +67,7 @@ pub struct AnnotationTool {
     default_stroke: StrokeStyle,
     default_line_endpoints: [LineEndpointStyle; 2],
     default_arrow_endpoints: [LineEndpointStyle; 2],
+    default_text_style: TextStyle,
     create_drag: Option<CreateDrag>,
     edit_drag: Option<EditDrag>,
 }
@@ -76,6 +80,7 @@ impl Default for AnnotationTool {
             default_stroke: StrokeStyle::default(),
             default_line_endpoints: [LineEndpointStyle::None, LineEndpointStyle::None],
             default_arrow_endpoints: [LineEndpointStyle::None, LineEndpointStyle::Arrow],
+            default_text_style: TextStyle::default(),
             create_drag: None,
             edit_drag: None,
         }
@@ -134,6 +139,14 @@ impl AnnotationTool {
 
     pub fn set_default_stroke(&mut self, stroke: StrokeStyle) {
         self.default_stroke = stroke;
+    }
+
+    pub fn default_text_style(&self) -> &TextStyle {
+        &self.default_text_style
+    }
+
+    pub fn set_default_text_style(&mut self, style: TextStyle) {
+        self.default_text_style = style;
     }
 
     pub fn delete_selected(&mut self, visible_images: &[Arc<Mutex<ModifiedImage>>]) {
@@ -273,6 +286,9 @@ impl AnnotationTool {
                         current: pressed_texture_pos,
                     });
                 }
+                AnnotationMode::AddText => {
+                    self.create_text_at(pressed_texture_pos, transform.image_size, visible_images);
+                }
                 AnnotationMode::Select => {
                     self.start_select_interaction(pressed_pos, pressed_texture_pos, &transform, visible_images);
                 }
@@ -281,13 +297,13 @@ impl AnnotationTool {
 
         if let Some(create) = &mut self.create_drag {
             if primary_down || primary_released {
-                create.current = match self.mode.shift_constraint() {
-                    Some(constraint) => {
-                        constrained_texture_pos(create.start, pointer_pos, constraint, shift_down, &transform)
-                    }
-                    // Unreachable in practice: a create drag only exists in Add* modes.
-                    None => texture_pos,
-                };
+                create.current = constrained_texture_pos(
+                    create.start,
+                    pointer_pos,
+                    self.mode.shift_constraint(),
+                    shift_down,
+                    &transform,
+                );
             }
         }
 
@@ -368,6 +384,25 @@ impl AnnotationTool {
         self.mode = AnnotationMode::Select;
     }
 
+    fn create_text_at(
+        &mut self,
+        center: egui::Vec2,
+        image_size: [u32; 2],
+        visible_images: &[Arc<Mutex<ModifiedImage>>],
+    ) {
+        let id = AnnotationId::next();
+        let style = self.default_text_style.clone();
+        let bounds = text_bounds_at(center, &style, image_size);
+        let element = AnnotationElement::Text { id, bounds, style };
+        for image in visible_images {
+            if let Ok(mut image) = image.lock() {
+                image.add_element(element.clone());
+            }
+        }
+        self.selected_id = id;
+        self.mode = AnnotationMode::Select;
+    }
+
     fn creation_element(&self, id: AnnotationId, create: &CreateDrag) -> AnnotationElement {
         match self.mode {
             AnnotationMode::AddRectangle | AnnotationMode::AddEllipse => {
@@ -382,7 +417,7 @@ impl AnnotationTool {
                     AnnotationElement::Rectangle { id, bounds, stroke }
                 }
             }
-            AnnotationMode::Select | AnnotationMode::AddLine | AnnotationMode::AddArrow => AnnotationElement::Line {
+            AnnotationMode::AddLine | AnnotationMode::AddArrow => AnnotationElement::Line {
                 id,
                 segment: LineSegment {
                     p1: create.start,
@@ -390,6 +425,9 @@ impl AnnotationTool {
                 },
                 style: self.creation_line_style(),
             },
+            AnnotationMode::Select | AnnotationMode::AddText => {
+                unreachable!("create drags only start in shape Add modes")
+            }
         }
     }
 
@@ -430,11 +468,15 @@ impl AnnotationTool {
                 }
                 for image in visible_images {
                     if let Ok(mut image) = image.lock() {
+                        let image_size = image.image_size();
                         if let Some(element) = image.annotations_mut().find_by_id_mut(edit.id) {
                             if let Some((anchor, _)) = edit.fixed_anchor {
                                 element.move_handle_with_anchor(handle, texture_pos, anchor);
                             } else {
                                 element.move_handle_to(handle, texture_pos);
+                            }
+                            if let AnnotationElement::Text { bounds, style, .. } = element {
+                                fit_text_to_bounds(bounds, style, image_size);
                             }
                             image.mark_annotations_dirty();
                         }
@@ -479,13 +521,13 @@ impl AnnotationTool {
 fn constrained_texture_pos(
     anchor_texture: egui::Vec2,
     pointer_widget: egui::Pos2,
-    constraint: ShiftConstraint,
+    constraint: Option<ShiftConstraint>,
     shift_down: bool,
     transform: &WidgetToTextureTransform,
 ) -> egui::Vec2 {
-    if !shift_down {
+    let Some(constraint) = constraint.filter(|_| shift_down) else {
         return transform.widget_to_texture(pointer_widget);
-    }
+    };
     let anchor_widget = transform.texture_to_widget(anchor_texture);
     let delta = pointer_widget - anchor_widget;
     let constrained_delta = match constraint {
@@ -535,7 +577,8 @@ fn cursor_icon_for_state(
         AnnotationMode::AddLine
         | AnnotationMode::AddArrow
         | AnnotationMode::AddRectangle
-        | AnnotationMode::AddEllipse => Some(egui::CursorIcon::Crosshair),
+        | AnnotationMode::AddEllipse
+        | AnnotationMode::AddText => Some(egui::CursorIcon::Crosshair),
         AnnotationMode::Select if hover_hit.is_some() => Some(egui::CursorIcon::Grab),
         AnnotationMode::Select => None,
     }

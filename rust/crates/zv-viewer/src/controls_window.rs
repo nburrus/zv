@@ -7,7 +7,9 @@ use egui_extras::{Column, TableBuilder};
 use egui_phosphor::regular as ph;
 
 use crate::annotation_tool::{AnnotationMode, AnnotationTool};
-use crate::annotations::{AnnotationElement, AnnotationId, AnnotationKind, LineEndpointStyle, LineStyle, StrokeStyle};
+use crate::annotations::{
+    AnnotationElement, AnnotationId, AnnotationKind, LineEndpointStyle, LineStyle, StrokeStyle, TextStyle,
+};
 use crate::color_image::{
     PixelSRGBA, closest_color_entries, convert_srgba_to_lab, convert_srgba_to_linear_rgb, convert_srgba_to_xyz,
 };
@@ -305,6 +307,18 @@ impl ControlsWindow {
                             }
                             if ui
                                 .add(
+                                    egui::Button::new("Add Text")
+                                        .shortcut_text("Shift+T")
+                                        .selected(mode == AnnotationMode::AddText),
+                                )
+                                .clicked()
+                            {
+                                push_action(&action_queue, AppAction::SetAnnotationMode(AnnotationMode::AddText));
+                                ctx.request_repaint_of(egui::ViewportId::ROOT);
+                                ui.close();
+                            }
+                            if ui
+                                .add(
                                     egui::Button::new("Add Rectangle")
                                         .shortcut_text("Shift+R")
                                         .selected(mode == AnnotationMode::AddRectangle),
@@ -482,6 +496,7 @@ fn render_annotation_tools_tab(
         for (annotation_mode, label, tooltip) in [
             (AnnotationMode::AddRectangle, "▭", "Add Rectangle (Shift+R)"),
             (AnnotationMode::AddEllipse, "○", "Add Ellipse (Shift+E)"),
+            (AnnotationMode::AddText, "T", "Add Text (Shift+T)"),
         ] {
             let selected = mode == annotation_mode;
             if ui
@@ -518,7 +533,10 @@ fn render_annotation_tools_tab(
     let show_box_panel = !show_line_panel
         && (matches!(mode, AnnotationMode::AddRectangle | AnnotationMode::AddEllipse)
             || matches!(selected_kind, Some(AnnotationKind::Rectangle | AnnotationKind::Ellipse)));
-    if !show_line_panel && !show_box_panel {
+    let show_text_panel = !show_line_panel
+        && !show_box_panel
+        && (mode == AnnotationMode::AddText || selected_kind == Some(AnnotationKind::Text));
+    if !show_line_panel && !show_box_panel && !show_text_panel {
         if let Some(state) = ui_state.as_deref_mut() {
             flush_annotation_style_edit(image_list, state);
         }
@@ -531,6 +549,7 @@ fn render_annotation_tools_tab(
     enum PanelEdit {
         Line(LineStyle),
         Stroke(StrokeStyle),
+        Text(TextStyle),
     }
     let (response, edit, editing_selected) = if show_line_panel {
         let selected_style = selected_element
@@ -540,10 +559,10 @@ fn render_annotation_tools_tab(
         let mut style = selected_style.unwrap_or_else(|| tool.default_line_style());
         let response = render_line_controls(ui, &mut style, selected_style.is_some(), mode);
         (response, PanelEdit::Line(style), selected_style.is_some())
-    } else {
+    } else if show_box_panel {
         let selected = selected_element
             .as_ref()
-            .map(|element| (element.kind(), *element.stroke()));
+            .and_then(|element| Some((element.kind(), *element.stroke()?)));
         let mut stroke = selected.map_or_else(|| tool.default_stroke(), |(_, stroke)| stroke);
         let kind = selected.map_or(
             if mode == AnnotationMode::AddEllipse {
@@ -555,6 +574,15 @@ fn render_annotation_tools_tab(
         );
         let response = render_box_annotation_controls(ui, &mut stroke, selected.is_some(), kind);
         (response, PanelEdit::Stroke(stroke), selected.is_some())
+    } else {
+        let selected = selected_element.as_ref().and_then(|element| match element {
+            AnnotationElement::Text { style, .. } => Some(style.clone()),
+            _ => None,
+        });
+        let editing_selected = selected.is_some();
+        let mut style = selected.unwrap_or_else(|| tool.default_text_style().clone());
+        let response = render_text_controls(ui, &mut style, editing_selected);
+        (response, PanelEdit::Text(style), editing_selected)
     };
 
     if response.changed {
@@ -573,12 +601,17 @@ fn render_annotation_tools_tab(
                     apply_selected_stroke_live(image_list, selected_id, stroke);
                     tool.set_default_stroke(stroke);
                 }
+                PanelEdit::Text(style) => {
+                    apply_selected_text_live(image_list, selected_id, style.clone());
+                    tool.set_default_text_style(style);
+                }
             }
             ctx.request_repaint_of(egui::ViewportId::ROOT);
         } else {
             match edit {
                 PanelEdit::Line(style) => tool.set_default_line_style(style),
                 PanelEdit::Stroke(stroke) => tool.set_default_stroke(stroke),
+                PanelEdit::Text(style) => tool.set_default_text_style(style),
             }
         }
     }
@@ -664,6 +697,7 @@ fn render_box_annotation_controls(
         AnnotationKind::Rectangle => "rectangle",
         AnnotationKind::Ellipse => "ellipse",
         AnnotationKind::Line => "line",
+        AnnotationKind::Text => "text",
     };
     let header = if selected {
         format!("Selected {kind_label}  |  Delete / Backspace to remove")
@@ -676,6 +710,40 @@ fn render_box_annotation_controls(
     output
 }
 
+fn render_text_controls(ui: &mut egui::Ui, style: &mut TextStyle, selected: bool) -> StyleControlResponse {
+    let mut output = StyleControlResponse::default();
+    let header = if selected {
+        "Selected text  |  Delete / Backspace to remove"
+    } else {
+        "New text style"
+    };
+    ui.label(egui::RichText::new(header).color(ui.visuals().weak_text_color()));
+
+    let text_response = ui.add(
+        egui::TextEdit::multiline(&mut style.text)
+            .desired_rows(4)
+            .desired_width(f32::INFINITY),
+    );
+    output.changed |= text_response.changed();
+    output.committed |= text_response.lost_focus();
+
+    egui::Grid::new("text_annotation_style_grid")
+        .num_columns(2)
+        .show(ui, |ui| {
+            render_style_row(ui, "Color", |ui, width| {
+                color_row_controls(ui, width, &mut style.color, &mut output);
+            });
+            render_style_row(ui, "Font Size", |ui, width| {
+                ui.spacing_mut().slider_width = width - LINE_STYLE_WIDTH_VALUE_WIDTH - ui.spacing().item_spacing.x;
+                let response = ui.add(egui::Slider::new(&mut style.font_size, 8.0..=96.0).show_value(false));
+                ui.label(format!("{:.1}", style.font_size));
+                output.changed |= response.changed();
+                output.committed |= response.lost_focus() || response.drag_stopped();
+            });
+        });
+    output
+}
+
 fn render_stroke_controls(
     ui: &mut egui::Ui,
     grid_id: &'static str,
@@ -684,38 +752,7 @@ fn render_stroke_controls(
 ) {
     egui::Grid::new(grid_id).num_columns(2).show(ui, |ui| {
         render_style_row(ui, "Color", |ui, width| {
-            let mut color = stroke.color;
-            let mut rgb = [color.r() as i32, color.g() as i32, color.b() as i32];
-            let response = ui.color_edit_button_srgba(&mut color);
-            output.color_popup_open = egui::Popup::is_id_open(ui.ctx(), response.id.with("popup"));
-            if response.changed() {
-                stroke.color = color;
-                rgb = [color.r() as i32, color.g() as i32, color.b() as i32];
-                output.changed = true;
-            }
-            if response.drag_stopped()
-                || response.lost_focus()
-                || (response.changed() && ui.input(|input| input.pointer.any_released()))
-            {
-                output.committed = true;
-            }
-
-            let field_width =
-                ((width - LINE_STYLE_COLOR_SWATCH_WIDTH - ui.spacing().item_spacing.x * 3.0) / 3.0).max(64.0);
-            let mut rgb_changed = false;
-            for (prefix, value) in ["R ", "G ", "B "].into_iter().zip(rgb.iter_mut()) {
-                rgb_changed |= ui
-                    .add_sized(
-                        [field_width, ui.spacing().interact_size.y],
-                        egui::DragValue::new(value).range(0..=255).speed(1).prefix(prefix),
-                    )
-                    .changed();
-            }
-            if rgb_changed {
-                stroke.color = egui::Color32::from_rgb(rgb[0] as u8, rgb[1] as u8, rgb[2] as u8);
-                output.changed = true;
-                output.committed = true;
-            }
+            color_row_controls(ui, width, &mut stroke.color, output);
         });
 
         render_style_row(ui, "Width", |ui, width| {
@@ -729,6 +766,39 @@ fn render_stroke_controls(
             output.committed |= response.drag_stopped() || response.lost_focus();
         });
     });
+}
+
+/// Color swatch plus R/G/B drag fields, shared by every style panel.
+fn color_row_controls(ui: &mut egui::Ui, width: f32, color: &mut egui::Color32, output: &mut StyleControlResponse) {
+    let mut rgb = [color.r() as i32, color.g() as i32, color.b() as i32];
+    let response = ui.color_edit_button_srgba(color);
+    output.color_popup_open = egui::Popup::is_id_open(ui.ctx(), response.id.with("popup"));
+    if response.changed() {
+        rgb = [color.r() as i32, color.g() as i32, color.b() as i32];
+        output.changed = true;
+    }
+    if response.drag_stopped()
+        || response.lost_focus()
+        || (response.changed() && ui.input(|input| input.pointer.any_released()))
+    {
+        output.committed = true;
+    }
+
+    let field_width = ((width - LINE_STYLE_COLOR_SWATCH_WIDTH - ui.spacing().item_spacing.x * 3.0) / 3.0).max(64.0);
+    let mut rgb_changed = false;
+    for (prefix, value) in ["R ", "G ", "B "].into_iter().zip(rgb.iter_mut()) {
+        rgb_changed |= ui
+            .add_sized(
+                [field_width, ui.spacing().interact_size.y],
+                egui::DragValue::new(value).range(0..=255).speed(1).prefix(prefix),
+            )
+            .changed();
+    }
+    if rgb_changed {
+        *color = egui::Color32::from_rgb(rgb[0] as u8, rgb[1] as u8, rgb[2] as u8);
+        output.changed = true;
+        output.committed = true;
+    }
 }
 
 fn render_style_row(ui: &mut egui::Ui, label: &'static str, add_control: impl FnOnce(&mut egui::Ui, f32)) {
@@ -829,6 +899,14 @@ fn apply_selected_stroke_live(image_list: &Arc<Mutex<ImageList>>, selected_id: A
     for image in visible_modified_images(image_list) {
         if let Ok(mut image) = image.lock() {
             image.update_stroke_style(selected_id, stroke);
+        }
+    }
+}
+
+fn apply_selected_text_live(image_list: &Arc<Mutex<ImageList>>, selected_id: AnnotationId, style: TextStyle) {
+    for image in visible_modified_images(image_list) {
+        if let Ok(mut image) = image.lock() {
+            image.update_text(selected_id, style.clone());
         }
     }
 }
