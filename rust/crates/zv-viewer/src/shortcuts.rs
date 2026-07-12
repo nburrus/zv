@@ -82,6 +82,12 @@ fn push_annotation_shortcuts(
     if input.key_pressed(egui::Key::A) && input.modifiers.shift {
         out_actions.push(AppAction::SetAnnotationMode(AnnotationMode::AddArrow));
     }
+    if input.key_pressed(egui::Key::R) && input.modifiers.shift {
+        out_actions.push(AppAction::SetAnnotationMode(AnnotationMode::AddRectangle));
+    }
+    if input.key_pressed(egui::Key::E) && input.modifiers.shift {
+        out_actions.push(AppAction::SetAnnotationMode(AnnotationMode::AddEllipse));
+    }
     if input.key_pressed(egui::Key::Escape) {
         out_actions.push(AppAction::SetAnnotationMode(AnnotationMode::Select));
     }

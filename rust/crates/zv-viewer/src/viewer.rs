@@ -6,9 +6,11 @@ use rfd;
 use eframe::{egui, egui_wgpu};
 
 use crate::annotation_tool::{AnnotationMode, AnnotationTool};
-use crate::annotations::AnnotationRenderer;
+use crate::annotations::{AnnotationElement, AnnotationRenderer};
 use crate::controls_window::ControlsWindow;
-use crate::debug::{AnnotationDebugState, AnnotationLineDebug, SelectedImageDebug, ViewerDebugState};
+use crate::debug::{
+    AnnotationBoxDebug, AnnotationDebugState, AnnotationLineDebug, SelectedImageDebug, ViewerDebugState,
+};
 use crate::image_list::{ImageId, ImageList, PendingImageChange};
 use crate::image_window::{CursorPixelInfo, ImageWindow};
 use crate::image_window_geometry::{ImageWindowGeometryState, WindowResizeAction};
@@ -223,12 +225,15 @@ impl Viewer {
                 count: 0,
                 counts_by_image: Vec::new(),
                 selected_line: None,
+                selected_box: None,
             };
         };
         let mode = match tool.mode() {
             AnnotationMode::Select => "select",
             AnnotationMode::AddLine => "add_line",
             AnnotationMode::AddArrow => "add_arrow",
+            AnnotationMode::AddRectangle => "add_rectangle",
+            AnnotationMode::AddEllipse => "add_ellipse",
         };
         let selected_id = tool.selected_id();
         let visible = self.visible_modified_images();
@@ -236,25 +241,36 @@ impl Viewer {
             .iter()
             .filter_map(|image| Some(image.lock().ok()?.annotations().elements().len()))
             .collect();
-        let (count, selected_line) = visible
+        let (count, selected_line, selected_box) = visible
             .into_iter()
             .find_map(|image| {
                 let image = image.lock().ok()?;
                 let count = image.annotations().elements().len();
-                let selected_line = image
-                    .annotations()
-                    .find_by_id(selected_id)
-                    .and_then(|element| element.line())
-                    .map(|line| AnnotationLineDebug {
-                        p1: [line.p1.x, line.p1.y],
-                        p2: [line.p2.x, line.p2.y],
-                        stroke_width: line.stroke_width,
-                        start_style: line.start_style.label(),
-                        end_style: line.end_style.label(),
-                    });
-                Some((count, selected_line))
+                let selected_element = image.annotations().find_by_id(selected_id);
+                let selected_line = selected_element.and_then(|element| match element {
+                    AnnotationElement::Line { segment, style, .. } => Some(AnnotationLineDebug {
+                        p1: [segment.p1.x, segment.p1.y],
+                        p2: [segment.p2.x, segment.p2.y],
+                        stroke_width: style.stroke.width,
+                        start_style: style.start_style.label(),
+                        end_style: style.end_style.label(),
+                    }),
+                    AnnotationElement::Rectangle { .. } | AnnotationElement::Ellipse { .. } => None,
+                });
+                let selected_box = selected_element.and_then(|element| match element {
+                    AnnotationElement::Rectangle { bounds, stroke, .. } => Some(("rectangle", bounds, stroke)),
+                    AnnotationElement::Ellipse { bounds, stroke, .. } => Some(("ellipse", bounds, stroke)),
+                    AnnotationElement::Line { .. } => None,
+                });
+                let selected_box = selected_box.map(|(kind, bounds, stroke)| AnnotationBoxDebug {
+                    kind,
+                    min: [bounds.min.x, bounds.min.y],
+                    max: [bounds.max.x, bounds.max.y],
+                    stroke_width: stroke.width,
+                });
+                Some((count, selected_line, selected_box))
             })
-            .unwrap_or((0, None));
+            .unwrap_or((0, None, None));
         AnnotationDebugState {
             mode,
             selected: tool.selected_id_is_valid(),
@@ -263,6 +279,7 @@ impl Viewer {
             count,
             counts_by_image,
             selected_line,
+            selected_box,
         }
     }
 

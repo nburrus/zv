@@ -21,14 +21,87 @@ impl AnnotationId {
     }
 }
 
+/// Directed segment in normalized texture coordinates. The direction
+/// matters: endpoint styles (e.g. arrowheads) are attached per end.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct LineAnnotationData {
+pub struct LineSegment {
     pub p1: egui::Vec2,
     pub p2: egui::Vec2,
+}
+
+/// Axis-aligned bounding box in normalized texture coordinates. Rectangles
+/// and ellipses are entirely defined by theirs.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct BoundingBox {
+    pub min: egui::Vec2,
+    pub max: egui::Vec2,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct StrokeStyle {
     pub color: egui::Color32,
-    pub stroke_width: f32,
+    pub width: f32,
+}
+
+/// Full style of a line annotation: stroke plus per-endpoint decoration.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct LineStyle {
+    pub stroke: StrokeStyle,
     pub start_style: LineEndpointStyle,
     pub end_style: LineEndpointStyle,
+}
+
+impl Default for StrokeStyle {
+    fn default() -> Self {
+        Self {
+            color: egui::Color32::YELLOW,
+            width: 2.0,
+        }
+    }
+}
+
+impl Default for LineSegment {
+    fn default() -> Self {
+        Self {
+            p1: egui::vec2(0.1, 0.1),
+            p2: egui::vec2(0.5, 0.5),
+        }
+    }
+}
+
+impl Default for BoundingBox {
+    fn default() -> Self {
+        Self {
+            min: egui::vec2(0.1, 0.1),
+            max: egui::vec2(0.5, 0.5),
+        }
+    }
+}
+
+impl BoundingBox {
+    pub fn handle_pos(&self, handle: AnnotationHandle) -> Option<egui::Vec2> {
+        match handle {
+            AnnotationHandle::TopLeft => Some(self.min),
+            AnnotationHandle::TopRight => Some(egui::vec2(self.max.x, self.min.y)),
+            AnnotationHandle::BottomLeft => Some(egui::vec2(self.min.x, self.max.y)),
+            AnnotationHandle::BottomRight => Some(self.max),
+            AnnotationHandle::LineStart | AnnotationHandle::LineEnd => None,
+        }
+    }
+
+    pub fn widget_rect(&self, transform: &WidgetToTextureTransform) -> egui::Rect {
+        egui::Rect::from_two_pos(
+            transform.texture_to_widget(self.min),
+            transform.texture_to_widget(self.max),
+        )
+    }
+
+    pub fn pixel_rect(&self, width: u32, height: u32) -> egui::Rect {
+        egui::Rect::from_min_max(
+            egui::pos2(self.min.x * width as f32, self.min.y * height as f32),
+            egui::pos2(self.max.x * width as f32, self.max.y * height as f32),
+        )
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -47,69 +120,171 @@ impl LineEndpointStyle {
     }
 }
 
-impl Default for LineAnnotationData {
-    fn default() -> Self {
-        Self {
-            p1: egui::vec2(0.1, 0.1),
-            p2: egui::vec2(0.5, 0.5),
-            color: egui::Color32::YELLOW,
-            stroke_width: 2.0,
-            start_style: LineEndpointStyle::None,
-            end_style: LineEndpointStyle::None,
-        }
-    }
-}
-
 #[derive(Clone, Debug, PartialEq)]
 pub enum AnnotationElement {
-    Line { id: AnnotationId, data: LineAnnotationData },
+    Line {
+        id: AnnotationId,
+        segment: LineSegment,
+        style: LineStyle,
+    },
+    Rectangle {
+        id: AnnotationId,
+        bounds: BoundingBox,
+        stroke: StrokeStyle,
+    },
+    Ellipse {
+        id: AnnotationId,
+        bounds: BoundingBox,
+        stroke: StrokeStyle,
+    },
+}
+
+/// How the shape under construction or edit reacts to Shift being held.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ShiftConstraint {
+    /// Snap the dragged endpoint to 45° increments around the anchor.
+    SnapTo45Degrees,
+    /// Force equal extents on both axes around the anchor (square, circle).
+    Square,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AnnotationKind {
+    Line,
+    Rectangle,
+    Ellipse,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AnnotationHandle {
+    LineStart,
+    LineEnd,
+    TopLeft,
+    TopRight,
+    BottomLeft,
+    BottomRight,
+}
+
+impl AnnotationHandle {
+    pub fn opposite(self) -> Self {
+        match self {
+            Self::LineStart => Self::LineEnd,
+            Self::LineEnd => Self::LineStart,
+            Self::TopLeft => Self::BottomRight,
+            Self::TopRight => Self::BottomLeft,
+            Self::BottomLeft => Self::TopRight,
+            Self::BottomRight => Self::TopLeft,
+        }
+    }
 }
 
 impl AnnotationElement {
     pub fn id(&self) -> AnnotationId {
         match self {
-            Self::Line { id, .. } => *id,
+            Self::Line { id, .. } | Self::Rectangle { id, .. } | Self::Ellipse { id, .. } => *id,
         }
     }
 
-    pub fn line(&self) -> Option<&LineAnnotationData> {
+    pub fn line_style(&self) -> Option<&LineStyle> {
         match self {
-            Self::Line { data, .. } => Some(data),
+            Self::Line { style, .. } => Some(style),
+            Self::Rectangle { .. } | Self::Ellipse { .. } => None,
         }
     }
 
-    pub fn line_mut(&mut self) -> Option<&mut LineAnnotationData> {
+    pub fn line_style_mut(&mut self) -> Option<&mut LineStyle> {
         match self {
-            Self::Line { data, .. } => Some(data),
+            Self::Line { style, .. } => Some(style),
+            Self::Rectangle { .. } | Self::Ellipse { .. } => None,
         }
     }
 
-    pub fn handle_texture_pos(&self, handle_idx: usize) -> Option<egui::Vec2> {
+    pub fn kind(&self) -> AnnotationKind {
         match self {
-            Self::Line { data, .. } => match handle_idx {
-                0 => Some(data.p1),
-                1 => Some(data.p2),
+            Self::Line { .. } => AnnotationKind::Line,
+            Self::Rectangle { .. } => AnnotationKind::Rectangle,
+            Self::Ellipse { .. } => AnnotationKind::Ellipse,
+        }
+    }
+
+    pub fn stroke(&self) -> &StrokeStyle {
+        match self {
+            Self::Line { style, .. } => &style.stroke,
+            Self::Rectangle { stroke, .. } | Self::Ellipse { stroke, .. } => stroke,
+        }
+    }
+
+    pub fn stroke_mut(&mut self) -> &mut StrokeStyle {
+        match self {
+            Self::Line { style, .. } => &mut style.stroke,
+            Self::Rectangle { stroke, .. } | Self::Ellipse { stroke, .. } => stroke,
+        }
+    }
+
+    pub fn shift_constraint(&self) -> ShiftConstraint {
+        match self {
+            Self::Line { .. } => ShiftConstraint::SnapTo45Degrees,
+            Self::Rectangle { .. } | Self::Ellipse { .. } => ShiftConstraint::Square,
+        }
+    }
+
+    pub fn handles(&self) -> &'static [AnnotationHandle] {
+        match self {
+            Self::Line { .. } => &[AnnotationHandle::LineStart, AnnotationHandle::LineEnd],
+            _ => &[
+                AnnotationHandle::TopLeft,
+                AnnotationHandle::TopRight,
+                AnnotationHandle::BottomLeft,
+                AnnotationHandle::BottomRight,
+            ],
+        }
+    }
+
+    pub fn handle_texture_pos(&self, handle: AnnotationHandle) -> Option<egui::Vec2> {
+        match self {
+            Self::Line { segment, .. } => match handle {
+                AnnotationHandle::LineStart => Some(segment.p1),
+                AnnotationHandle::LineEnd => Some(segment.p2),
                 _ => None,
             },
+            Self::Rectangle { bounds, .. } | Self::Ellipse { bounds, .. } => bounds.handle_pos(handle),
         }
     }
 
     pub fn move_by(&mut self, delta: egui::Vec2) {
         match self {
-            Self::Line { data, .. } => {
-                data.p1 += delta;
-                data.p2 += delta;
+            Self::Line { segment, .. } => {
+                segment.p1 += delta;
+                segment.p2 += delta;
+            }
+            Self::Rectangle { bounds, .. } | Self::Ellipse { bounds, .. } => {
+                bounds.min += delta;
+                bounds.max += delta;
             }
         }
     }
 
-    pub fn move_handle_to(&mut self, handle_idx: usize, texture_pos: egui::Vec2) {
+    pub fn move_handle_to(&mut self, handle: AnnotationHandle, texture_pos: egui::Vec2) {
+        let opposite = self.handle_texture_pos(handle.opposite());
+        if let Some(opposite) = opposite {
+            self.move_handle_with_anchor(handle, texture_pos, opposite);
+        }
+    }
+
+    /// Moves `handle` to `texture_pos`. `opposite` pins the corner across
+    /// from a box handle so it stays fixed even when the drag crosses it;
+    /// lines only move the dragged endpoint and ignore it.
+    pub fn move_handle_with_anchor(&mut self, handle: AnnotationHandle, texture_pos: egui::Vec2, opposite: egui::Vec2) {
         match self {
-            Self::Line { data, .. } => match handle_idx {
-                0 => data.p1 = texture_pos,
-                1 => data.p2 = texture_pos,
+            Self::Line { segment, .. } => match handle {
+                AnnotationHandle::LineStart => segment.p1 = texture_pos,
+                AnnotationHandle::LineEnd => segment.p2 = texture_pos,
                 _ => {}
             },
+            Self::Rectangle { bounds, .. } | Self::Ellipse { bounds, .. } => {
+                bounds.min = texture_pos.min(opposite);
+                bounds.max = texture_pos.max(opposite);
+            }
         }
     }
 }
@@ -117,14 +292,13 @@ impl AnnotationElement {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AnnotationHitPart {
     Body,
-    Handle,
+    Handle(AnnotationHandle),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct AnnotationHitResult {
     pub id: AnnotationId,
     pub part: AnnotationHitPart,
-    pub handle_idx: Option<usize>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -133,8 +307,8 @@ pub struct AnnotationDocument {
 }
 
 impl AnnotationDocument {
-    pub fn add_line(&mut self, id: AnnotationId, data: LineAnnotationData) {
-        self.elements.push(AnnotationElement::Line { id, data });
+    pub fn add_element(&mut self, element: AnnotationElement) {
+        self.elements.push(element);
     }
 
     pub fn remove_by_id(&mut self, id: AnnotationId) -> Option<AnnotationElement> {
@@ -148,6 +322,18 @@ impl AnnotationDocument {
 
     pub fn find_by_id_mut(&mut self, id: AnnotationId) -> Option<&mut AnnotationElement> {
         self.elements.iter_mut().find(|element| element.id() == id)
+    }
+
+    pub fn replace_by_id(&mut self, replacement: AnnotationElement) -> bool {
+        let Some(element) = self
+            .elements
+            .iter_mut()
+            .find(|element| element.id() == replacement.id())
+        else {
+            return false;
+        };
+        *element = replacement;
+        true
     }
 
     pub fn elements(&self) -> &[AnnotationElement] {
@@ -176,38 +362,45 @@ impl AnnotationDocument {
     ) -> Option<AnnotationHitResult> {
         if selected_id.is_valid() {
             if let Some(element) = self.find_by_id(selected_id) {
-                if let Some(handle_idx) = hit_handle(element, widget_pos, transform, handle_radius_px) {
+                if let Some(handle) = hit_handle(element, widget_pos, transform, handle_radius_px) {
                     return Some(AnnotationHitResult {
                         id: selected_id,
-                        part: AnnotationHitPart::Handle,
-                        handle_idx: Some(handle_idx),
+                        part: AnnotationHitPart::Handle(handle),
                     });
                 }
             }
         }
 
         for element in self.elements.iter().rev() {
-            if let Some(handle_idx) = hit_handle(element, widget_pos, transform, handle_radius_px) {
+            if let Some(handle) = hit_handle(element, widget_pos, transform, handle_radius_px) {
                 return Some(AnnotationHitResult {
                     id: element.id(),
-                    part: AnnotationHitPart::Handle,
-                    handle_idx: Some(handle_idx),
+                    part: AnnotationHitPart::Handle(handle),
                 });
             }
 
             let body_hit = match element {
-                AnnotationElement::Line { data, .. } => {
-                    let p1 = transform.texture_to_widget(data.p1);
-                    let p2 = transform.texture_to_widget(data.p2);
+                AnnotationElement::Line { segment, style, .. } => {
+                    let p1 = transform.texture_to_widget(segment.p1);
+                    let p2 = transform.texture_to_widget(segment.p2);
                     distance_to_segment(widget_pos, p1, p2)
-                        <= body_tolerance_px + transform.stroke_hit_tolerance_widget(data.stroke_width)
+                        <= body_tolerance_px + transform.stroke_hit_tolerance_widget(style.stroke.width)
                 }
+                AnnotationElement::Rectangle { bounds, stroke, .. } => {
+                    let rect = bounds.widget_rect(transform);
+                    let tolerance = transform.stroke_hit_tolerance_widget(stroke.width) + body_tolerance_px;
+                    rect.expand(tolerance).contains(widget_pos) && !rect.shrink(tolerance).contains(widget_pos)
+                }
+                AnnotationElement::Ellipse { bounds, stroke, .. } => ellipse_border_hit(
+                    widget_pos,
+                    bounds.widget_rect(transform),
+                    transform.stroke_hit_tolerance_widget(stroke.width) + body_tolerance_px,
+                ),
             };
             if body_hit {
                 return Some(AnnotationHitResult {
                     id: element.id(),
                     part: AnnotationHitPart::Body,
-                    handle_idx: None,
                 });
             }
         }
@@ -242,7 +435,7 @@ impl WidgetToTextureTransform {
         self.widget_rect.size() / visible_texels
     }
 
-    pub fn line_stroke_width_widget(&self, stroke_width: f32) -> f32 {
+    pub fn stroke_width_widget(&self, stroke_width: f32) -> f32 {
         (stroke_width * self.image_pixel_to_widget_scale().x).max(1.0)
     }
 
@@ -252,30 +445,78 @@ impl WidgetToTextureTransform {
     }
 }
 
-pub fn line_shapes_for_image(document: &AnnotationDocument, width: u32, height: u32) -> Vec<egui::Shape> {
+pub fn annotation_shapes_for_image(document: &AnnotationDocument, width: u32, height: u32) -> Vec<egui::Shape> {
     let mut shapes = Vec::new();
     for element in document.elements() {
         match element {
-            AnnotationElement::Line { data, .. } => {
-                let p1 = egui::pos2(data.p1.x * width as f32, data.p1.y * height as f32);
-                let p2 = egui::pos2(data.p2.x * width as f32, data.p2.y * height as f32);
-                shapes.extend(line_shapes(data, p1, p2, data.stroke_width.max(1.0)));
+            AnnotationElement::Line { segment, style, .. } => {
+                let p1 = egui::pos2(segment.p1.x * width as f32, segment.p1.y * height as f32);
+                let p2 = egui::pos2(segment.p2.x * width as f32, segment.p2.y * height as f32);
+                shapes.extend(line_shapes(style, p1, p2, style.stroke.width.max(1.0)));
+            }
+            AnnotationElement::Rectangle { bounds, stroke, .. } => {
+                shapes.push(egui::Shape::rect_stroke(
+                    bounds.pixel_rect(width, height),
+                    0.0,
+                    egui::Stroke::new(stroke.width.max(1.0), stroke.color),
+                    egui::StrokeKind::Middle,
+                ));
+            }
+            AnnotationElement::Ellipse { bounds, stroke, .. } => {
+                let rect = bounds.pixel_rect(width, height);
+                shapes.push(egui::Shape::ellipse_stroke(
+                    rect.center(),
+                    rect.size() * 0.5,
+                    egui::Stroke::new(stroke.width.max(1.0), stroke.color),
+                ));
             }
         }
     }
     shapes
 }
 
-pub fn paint_line_overlay(painter: &egui::Painter, data: &LineAnnotationData, transform: &WidgetToTextureTransform) {
-    painter.extend(line_shapes(
-        data,
-        transform.texture_to_widget(data.p1),
-        transform.texture_to_widget(data.p2),
-        transform.line_stroke_width_widget(data.stroke_width),
-    ));
+/// Paints the widget-space preview of an element, e.g. while it is being
+/// dragged into existence and does not belong to a document yet.
+pub fn paint_element_overlay(
+    painter: &egui::Painter,
+    element: &AnnotationElement,
+    transform: &WidgetToTextureTransform,
+) {
+    match element {
+        AnnotationElement::Line { segment, style, .. } => {
+            painter.extend(line_shapes(
+                style,
+                transform.texture_to_widget(segment.p1),
+                transform.texture_to_widget(segment.p2),
+                transform.stroke_width_widget(style.stroke.width),
+            ));
+        }
+        AnnotationElement::Rectangle { bounds, stroke, .. } => {
+            let stroke = egui::Stroke::new(transform.stroke_width_widget(stroke.width), stroke.color);
+            painter.rect_stroke(bounds.widget_rect(transform), 0.0, stroke, egui::StrokeKind::Middle);
+        }
+        AnnotationElement::Ellipse { bounds, stroke, .. } => {
+            let rect = bounds.widget_rect(transform);
+            let stroke = egui::Stroke::new(transform.stroke_width_widget(stroke.width), stroke.color);
+            painter.add(egui::Shape::ellipse_stroke(rect.center(), rect.size() * 0.5, stroke));
+        }
+    }
 }
 
-fn line_shapes(data: &LineAnnotationData, p1: egui::Pos2, p2: egui::Pos2, thickness: f32) -> Vec<egui::Shape> {
+fn ellipse_border_hit(pos: egui::Pos2, rect: egui::Rect, tolerance: f32) -> bool {
+    let radii = rect.size() * 0.5;
+    if radii.x <= 0.0 || radii.y <= 0.0 {
+        return false;
+    }
+    let normalized = (pos - rect.center()) / radii;
+    let radial = normalized.length();
+    // Normalizing the tolerance by the smaller radius slightly widens the hit
+    // band along the long axis of eccentric ellipses. Good enough for pointer
+    // picking and much cheaper than a true distance-to-ellipse computation.
+    (radial - 1.0).abs() <= tolerance / radii.x.min(radii.y)
+}
+
+fn line_shapes(style: &LineStyle, p1: egui::Pos2, p2: egui::Pos2, thickness: f32) -> Vec<egui::Shape> {
     let delta = p2 - p1;
     let length = delta.length();
     if length <= 0.5 {
@@ -286,22 +527,22 @@ fn line_shapes(data: &LineAnnotationData, p1: egui::Pos2, p2: egui::Pos2, thickn
     let head_length = 10.0_f32.max(thickness * 4.0);
     let mut shaft_start = p1;
     let mut shaft_end = p2;
-    if data.start_style == LineEndpointStyle::Arrow {
+    if style.start_style == LineEndpointStyle::Arrow {
         shaft_start += direction * head_length.min(length * 0.45);
     }
-    if data.end_style == LineEndpointStyle::Arrow {
+    if style.end_style == LineEndpointStyle::Arrow {
         shaft_end -= direction * head_length.min(length * 0.45);
     }
 
     let mut shapes = vec![egui::Shape::line_segment(
         [shaft_start, shaft_end],
-        egui::Stroke::new(thickness, data.color),
+        egui::Stroke::new(thickness, style.stroke.color),
     )];
-    if data.start_style == LineEndpointStyle::Arrow {
-        shapes.push(arrowhead_shape(p1, -direction, data.color, thickness));
+    if style.start_style == LineEndpointStyle::Arrow {
+        shapes.push(arrowhead_shape(p1, -direction, style.stroke.color, thickness));
     }
-    if data.end_style == LineEndpointStyle::Arrow {
-        shapes.push(arrowhead_shape(p2, direction, data.color, thickness));
+    if style.end_style == LineEndpointStyle::Arrow {
+        shapes.push(arrowhead_shape(p2, direction, style.stroke.color, thickness));
     }
     shapes
 }
@@ -327,9 +568,13 @@ fn arrowhead_shape(
     )
 }
 
-pub fn paint_line_handles(painter: &egui::Painter, element: &AnnotationElement, transform: &WidgetToTextureTransform) {
-    for handle_idx in 0..2 {
-        let Some(handle_pos) = element.handle_texture_pos(handle_idx) else {
+pub fn paint_annotation_handles(
+    painter: &egui::Painter,
+    element: &AnnotationElement,
+    transform: &WidgetToTextureTransform,
+) {
+    for &handle in element.handles() {
+        let Some(handle_pos) = element.handle_texture_pos(handle) else {
             continue;
         };
         let center = transform.texture_to_widget(handle_pos);
@@ -396,7 +641,7 @@ impl AnnotationRenderer {
             )
         };
 
-        let shapes = line_shapes_for_image(document, width, height)
+        let shapes = annotation_shapes_for_image(document, width, height)
             .into_iter()
             .map(|shape| egui::epaint::ClippedShape {
                 clip_rect: egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(width as f32, height as f32)),
@@ -567,10 +812,10 @@ fn hit_handle(
     widget_pos: egui::Pos2,
     transform: &WidgetToTextureTransform,
     handle_radius_px: f32,
-) -> Option<usize> {
-    (0..2).find(|&handle_idx| {
+) -> Option<AnnotationHandle> {
+    element.handles().iter().copied().find(|&handle| {
         element
-            .handle_texture_pos(handle_idx)
+            .handle_texture_pos(handle)
             .is_some_and(|pos| transform.texture_to_widget(pos).distance(widget_pos) <= handle_radius_px)
     })
 }
@@ -603,66 +848,78 @@ mod tests {
     fn line_handles_are_texture_endpoints() {
         let element = AnnotationElement::Line {
             id: AnnotationId(1),
-            data: LineAnnotationData {
+            segment: LineSegment {
                 p1: egui::vec2(0.25, 0.5),
                 p2: egui::vec2(0.75, 0.5),
-                ..Default::default()
             },
+            style: LineStyle::default(),
         };
-        assert_eq!(element.handle_texture_pos(0), Some(egui::vec2(0.25, 0.5)));
-        assert_eq!(element.handle_texture_pos(1), Some(egui::vec2(0.75, 0.5)));
-        assert_eq!(element.handle_texture_pos(2), None);
+        assert_eq!(
+            element.handle_texture_pos(AnnotationHandle::LineStart),
+            Some(egui::vec2(0.25, 0.5))
+        );
+        assert_eq!(
+            element.handle_texture_pos(AnnotationHandle::LineEnd),
+            Some(egui::vec2(0.75, 0.5))
+        );
+        assert_eq!(element.handle_texture_pos(AnnotationHandle::TopLeft), None);
     }
 
     #[test]
     fn line_hit_test_prefers_selected_handle() {
         let mut document = AnnotationDocument::default();
         let id = AnnotationId(3);
-        document.add_line(
+        document.add_element(AnnotationElement::Line {
             id,
-            LineAnnotationData {
+            segment: LineSegment {
                 p1: egui::vec2(0.2, 0.2),
                 p2: egui::vec2(0.8, 0.2),
-                ..Default::default()
             },
-        );
+            style: LineStyle::default(),
+        });
 
         let hit = document
             .hit_test(egui::pos2(20.0, 20.0), &transform(), id, 6.0, 4.0)
             .expect("handle hit");
-        assert_eq!(hit.part, AnnotationHitPart::Handle);
-        assert_eq!(hit.handle_idx, Some(0));
+        assert_eq!(hit.part, AnnotationHitPart::Handle(AnnotationHandle::LineStart));
     }
 
     #[test]
     fn line_body_can_be_moved() {
         let mut element = AnnotationElement::Line {
             id: AnnotationId(7),
-            data: LineAnnotationData {
+            segment: LineSegment {
                 p1: egui::vec2(0.1, 0.2),
                 p2: egui::vec2(0.3, 0.4),
-                ..Default::default()
             },
+            style: LineStyle::default(),
         };
         element.move_by(egui::vec2(0.1, -0.1));
-        let data = element.line().unwrap();
-        assert_eq!(data.p1, egui::vec2(0.2, 0.1));
-        assert_eq!(data.p2, egui::vec2(0.4, 0.3));
+        let AnnotationElement::Line { segment, .. } = element else {
+            panic!("expected line");
+        };
+        assert_eq!(segment.p1, egui::vec2(0.2, 0.1));
+        assert_eq!(segment.p2, egui::vec2(0.4, 0.3));
     }
 
     #[test]
     fn line_hit_test_scales_stroke_width_to_widget_pixels() {
         let mut document = AnnotationDocument::default();
         let id = AnnotationId(9);
-        document.add_line(
+        document.add_element(AnnotationElement::Line {
             id,
-            LineAnnotationData {
+            segment: LineSegment {
                 p1: egui::vec2(0.1, 0.5),
                 p2: egui::vec2(0.9, 0.5),
-                stroke_width: 10.0,
+            },
+            style: LineStyle {
+                stroke: StrokeStyle {
+                    width: 10.0,
+                    ..Default::default()
+                },
                 ..Default::default()
             },
-        );
+        });
         let transform = WidgetToTextureTransform {
             widget_rect: egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(200.0, 200.0)),
             uv_min: egui::Vec2::ZERO,
@@ -675,5 +932,69 @@ mod tests {
             .expect("scaled stroke hit");
         assert_eq!(hit.id, id);
         assert_eq!(hit.part, AnnotationHitPart::Body);
+    }
+
+    #[test]
+    fn rectangle_handles_resize_from_the_opposite_corner() {
+        let mut element = AnnotationElement::Rectangle {
+            id: AnnotationId(10),
+            bounds: BoundingBox {
+                min: egui::vec2(0.2, 0.3),
+                max: egui::vec2(0.7, 0.8),
+            },
+            stroke: StrokeStyle::default(),
+        };
+        element.move_handle_to(AnnotationHandle::TopLeft, egui::vec2(0.1, 0.2));
+        let AnnotationElement::Rectangle { bounds, .. } = element else {
+            panic!("expected rectangle");
+        };
+        assert_eq!(bounds.min, egui::vec2(0.1, 0.2));
+        assert_eq!(bounds.max, egui::vec2(0.7, 0.8));
+    }
+
+    #[test]
+    fn rectangle_handle_can_cross_its_fixed_opposite_corner() {
+        let mut element = AnnotationElement::Rectangle {
+            id: AnnotationId(12),
+            bounds: BoundingBox {
+                min: egui::vec2(0.2, 0.3),
+                max: egui::vec2(0.7, 0.8),
+            },
+            stroke: StrokeStyle::default(),
+        };
+        element.move_handle_with_anchor(
+            AnnotationHandle::BottomRight,
+            egui::vec2(0.1, 0.2),
+            egui::vec2(0.2, 0.3),
+        );
+        let AnnotationElement::Rectangle { bounds, .. } = element else {
+            panic!("expected rectangle");
+        };
+        assert_eq!(bounds.min, egui::vec2(0.1, 0.2));
+        assert_eq!(bounds.max, egui::vec2(0.2, 0.3));
+    }
+
+    #[test]
+    fn ellipse_hit_test_targets_the_border_not_the_center() {
+        let mut document = AnnotationDocument::default();
+        let id = AnnotationId(11);
+        document.add_element(AnnotationElement::Ellipse {
+            id,
+            bounds: BoundingBox {
+                min: egui::vec2(0.2, 0.2),
+                max: egui::vec2(0.8, 0.8),
+            },
+            stroke: StrokeStyle::default(),
+        });
+        assert!(
+            document
+                .hit_test(egui::pos2(50.0, 20.0), &transform(), AnnotationId::default(), 6.0, 4.0)
+                .is_some()
+        );
+        assert!(
+            document
+                .hit_test(egui::pos2(50.0, 50.0), &transform(), AnnotationId::default(), 6.0, 4.0)
+                .is_none()
+        );
     }
 }

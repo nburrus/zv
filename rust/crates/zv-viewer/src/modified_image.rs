@@ -3,7 +3,8 @@ use std::path::{Path, PathBuf};
 use eframe::egui_wgpu::wgpu;
 
 use crate::annotations::{
-    AnnotationDocument, AnnotationElement, AnnotationId, AnnotationRenderer, LineAnnotationData, LineEndpointStyle,
+    AnnotationDocument, AnnotationElement, AnnotationId, AnnotationRenderer, BoundingBox, LineEndpointStyle,
+    StrokeStyle,
 };
 use crate::color_image::ImageSRGBA;
 use crate::image_io::write_rgba_image;
@@ -20,12 +21,13 @@ pub enum ImageUndoAction {
     RemoveAnnotation {
         id: AnnotationId,
     },
+    /// Re-adds a deleted element to the document.
     RestoreAnnotation {
         element: AnnotationElement,
     },
-    RestoreLine {
-        id: AnnotationId,
-        data: LineAnnotationData,
+    /// Overwrites an existing element with an earlier state of itself.
+    RestoreElementState {
+        element: AnnotationElement,
     },
     ReplaceBaseImage {
         cpu_data: ImageSRGBA,
@@ -106,8 +108,9 @@ impl ModifiedImage {
         self.actions.push(action);
     }
 
-    pub fn add_line(&mut self, id: AnnotationId, data: LineAnnotationData) {
-        self.annotations.add_line(id, data);
+    pub fn add_element(&mut self, element: AnnotationElement) {
+        let id = element.id();
+        self.annotations.add_element(element);
         self.mark_annotations_dirty();
         self.push_undo_action(ImageUndoAction::RemoveAnnotation { id });
     }
@@ -119,46 +122,38 @@ impl ModifiedImage {
         }
     }
 
-    pub fn update_line_style(
-        &mut self,
-        id: AnnotationId,
-        color: eframe::egui::Color32,
-        stroke_width: f32,
-        start_style: LineEndpointStyle,
-        end_style: LineEndpointStyle,
-    ) -> Option<LineAnnotationData> {
+    pub fn update_stroke_style(&mut self, id: AnnotationId, stroke: StrokeStyle) -> bool {
         let Some(element) = self.annotations.find_by_id_mut(id) else {
-            return None;
+            return false;
         };
-        let Some(line) = element.line_mut() else {
-            return None;
-        };
-        if line.color == color
-            && (line.stroke_width - stroke_width).abs() <= f32::EPSILON
-            && line.start_style == start_style
-            && line.end_style == end_style
-        {
-            return None;
+        if *element.stroke() == stroke {
+            return false;
         }
-        let previous = *line;
-        line.color = color;
-        line.stroke_width = stroke_width;
-        line.start_style = start_style;
-        line.end_style = end_style;
+        *element.stroke_mut() = stroke;
         self.mark_annotations_dirty();
-        Some(previous)
+        true
     }
 
-    pub fn push_line_style_undo(&mut self, id: AnnotationId, previous: LineAnnotationData) {
-        let Some(element) = self.annotations.find_by_id(id) else {
-            return;
+    pub fn update_line_endpoint_styles(
+        &mut self,
+        id: AnnotationId,
+        start_style: LineEndpointStyle,
+        end_style: LineEndpointStyle,
+    ) -> bool {
+        let Some(style) = self
+            .annotations
+            .find_by_id_mut(id)
+            .and_then(|element| element.line_style_mut())
+        else {
+            return false;
         };
-        let Some(line) = element.line() else {
-            return;
-        };
-        if *line != previous {
-            self.push_undo_action(ImageUndoAction::RestoreLine { id, data: previous });
+        if style.start_style == start_style && style.end_style == end_style {
+            return false;
         }
+        style.start_style = start_style;
+        style.end_style = end_style;
+        self.mark_annotations_dirty();
+        true
     }
 
     pub fn undo_last_change(&mut self) {
@@ -171,17 +166,12 @@ impl ModifiedImage {
                 self.mark_annotations_dirty();
             }
             ImageUndoAction::RestoreAnnotation { element } => {
-                match element {
-                    AnnotationElement::Line { id, data } => self.annotations.add_line(id, data),
-                }
+                self.annotations.add_element(element);
                 self.mark_annotations_dirty();
             }
-            ImageUndoAction::RestoreLine { id, data } => {
-                if let Some(element) = self.annotations.find_by_id_mut(id) {
-                    if let Some(line) = element.line_mut() {
-                        *line = data;
-                        self.mark_annotations_dirty();
-                    }
+            ImageUndoAction::RestoreElementState { element } => {
+                if self.annotations.replace_by_id(element) {
+                    self.mark_annotations_dirty();
                 }
             }
             ImageUndoAction::ReplaceBaseImage { cpu_data, annotations } => {
@@ -320,12 +310,26 @@ fn image_pixels_equal(a: &ImageSRGBA, b: &ImageSRGBA) -> bool {
 fn rotate_annotations(document: &mut AnnotationDocument, direction: RotationDirection) {
     for element in document.elements_mut() {
         match element {
-            AnnotationElement::Line { data, .. } => {
-                data.p1 = rotate_uv(data.p1, direction);
-                data.p2 = rotate_uv(data.p2, direction);
+            AnnotationElement::Line { segment, .. } => {
+                segment.p1 = rotate_uv(segment.p1, direction);
+                segment.p2 = rotate_uv(segment.p2, direction);
+            }
+            AnnotationElement::Rectangle { bounds, .. } | AnnotationElement::Ellipse { bounds, .. } => {
+                rotate_bounding_box_uv(bounds, direction);
             }
         }
     }
+}
+
+fn rotate_bounding_box_uv(bounds: &mut BoundingBox, direction: RotationDirection) {
+    let corners = [
+        rotate_uv(bounds.min, direction),
+        rotate_uv(eframe::egui::vec2(bounds.max.x, bounds.min.y), direction),
+        rotate_uv(eframe::egui::vec2(bounds.min.x, bounds.max.y), direction),
+        rotate_uv(bounds.max, direction),
+    ];
+    bounds.min = corners.iter().copied().reduce(|a, b| a.min(b)).unwrap();
+    bounds.max = corners.iter().copied().reduce(|a, b| a.max(b)).unwrap();
 }
 
 fn rotate_uv(uv: eframe::egui::Vec2, direction: RotationDirection) -> eframe::egui::Vec2 {
@@ -365,9 +369,18 @@ fn rotate_image(src: &ImageSRGBA, direction: RotationDirection) -> ImageItemData
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::annotations::{LineSegment, LineStyle};
     use crate::color_image::{ImageSRGBA, PixelSRGBA};
     use crate::image_io::load_rgba_image;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn add_default_line(modified: &mut ModifiedImage, id: AnnotationId) {
+        modified.add_element(AnnotationElement::Line {
+            id,
+            segment: LineSegment::default(),
+            style: LineStyle::default(),
+        });
+    }
 
     fn image() -> ImageItemData {
         image_with_color(PixelSRGBA {
@@ -399,7 +412,7 @@ mod tests {
     fn undo_line_creation_removes_annotation() {
         let mut modified = ModifiedImage::new(image(), None);
         let id = AnnotationId::next();
-        modified.add_line(id, LineAnnotationData::default());
+        add_default_line(&mut modified, id);
         assert!(!modified.annotations().is_empty());
 
         modified.undo_last_change();
@@ -407,43 +420,90 @@ mod tests {
     }
 
     #[test]
+    fn live_rectangle_style_updates_can_be_committed_as_one_undo_step() {
+        let mut modified = ModifiedImage::new(image(), None);
+        let id = AnnotationId::next();
+        let before_bounds = BoundingBox::default();
+        let before_stroke = StrokeStyle::default();
+        modified.add_element(AnnotationElement::Rectangle {
+            id,
+            bounds: before_bounds,
+            stroke: before_stroke,
+        });
+
+        modified.update_stroke_style(
+            id,
+            StrokeStyle {
+                color: eframe::egui::Color32::RED,
+                width: 7.0,
+            },
+        );
+        modified.push_undo_action(ImageUndoAction::RestoreElementState {
+            element: AnnotationElement::Rectangle {
+                id,
+                bounds: before_bounds,
+                stroke: before_stroke,
+            },
+        });
+        modified.undo_last_change();
+
+        let AnnotationElement::Rectangle { bounds, stroke, .. } = modified.annotations().find_by_id(id).unwrap() else {
+            panic!("expected rectangle");
+        };
+        assert_eq!(*bounds, before_bounds);
+        assert_eq!(*stroke, before_stroke);
+    }
+
+    #[test]
     fn live_line_style_updates_can_be_committed_as_one_undo_step() {
         let mut modified = ModifiedImage::new(image(), None);
         let id = AnnotationId::next();
-        let before = LineAnnotationData::default();
-        modified.add_line(id, before);
+        let before = LineStyle::default();
+        modified.add_element(AnnotationElement::Line {
+            id,
+            segment: LineSegment::default(),
+            style: before,
+        });
         modified.actions.clear();
 
-        modified.update_line_style(
+        modified.update_stroke_style(
             id,
-            eframe::egui::Color32::RED,
-            7.0,
-            LineEndpointStyle::None,
-            LineEndpointStyle::Arrow,
+            StrokeStyle {
+                color: eframe::egui::Color32::RED,
+                width: 7.0,
+            },
         );
-        modified.update_line_style(
+        modified.update_line_endpoint_styles(id, LineEndpointStyle::None, LineEndpointStyle::Arrow);
+        modified.update_stroke_style(
             id,
-            eframe::egui::Color32::GREEN,
-            12.0,
-            LineEndpointStyle::Arrow,
-            LineEndpointStyle::None,
+            StrokeStyle {
+                color: eframe::egui::Color32::GREEN,
+                width: 12.0,
+            },
         );
+        modified.update_line_endpoint_styles(id, LineEndpointStyle::Arrow, LineEndpointStyle::None);
 
         assert!(!modified.can_undo());
-        modified.push_line_style_undo(id, before);
+        modified.push_undo_action(ImageUndoAction::RestoreElementState {
+            element: AnnotationElement::Line {
+                id,
+                segment: LineSegment::default(),
+                style: before,
+            },
+        });
         assert!(modified.can_undo());
 
         modified.undo_last_change();
 
-        let line = modified.annotations().find_by_id(id).unwrap().line().unwrap();
-        assert_eq!(*line, before);
+        let style = modified.annotations().find_by_id(id).unwrap().line_style().unwrap();
+        assert_eq!(*style, before);
         assert!(!modified.can_undo());
     }
 
     #[test]
     fn discard_clears_annotations_and_undo() {
         let mut modified = ModifiedImage::new(image(), None);
-        modified.add_line(AnnotationId::next(), LineAnnotationData::default());
+        add_default_line(&mut modified, AnnotationId::next());
         modified.discard_changes();
         assert!(modified.annotations().is_empty());
         assert!(!modified.can_undo());
@@ -481,20 +541,22 @@ mod tests {
     fn rotation_transforms_annotations_instead_of_clearing_them() {
         let mut modified = ModifiedImage::new(image(), None);
         let id = AnnotationId::next();
-        modified.add_line(
+        modified.add_element(AnnotationElement::Line {
             id,
-            LineAnnotationData {
+            segment: LineSegment {
                 p1: eframe::egui::vec2(0.25, 0.5),
                 p2: eframe::egui::vec2(0.75, 0.25),
-                ..LineAnnotationData::default()
             },
-        );
+            style: LineStyle::default(),
+        });
 
         modified.rotate_cw();
 
-        let line = modified.annotations().find_by_id(id).unwrap().line().unwrap();
-        assert_eq!(line.p1, eframe::egui::vec2(0.5, 0.25));
-        assert_eq!(line.p2, eframe::egui::vec2(0.75, 0.75));
+        let AnnotationElement::Line { segment, .. } = modified.annotations().find_by_id(id).unwrap() else {
+            panic!("expected line");
+        };
+        assert_eq!(segment.p1, eframe::egui::vec2(0.5, 0.25));
+        assert_eq!(segment.p2, eframe::egui::vec2(0.75, 0.75));
     }
 
     #[test]
@@ -524,7 +586,7 @@ mod tests {
             a: 255,
         };
         let mut modified = ModifiedImage::new(image_with_color(original), None);
-        modified.add_line(AnnotationId::next(), LineAnnotationData::default());
+        add_default_line(&mut modified, AnnotationId::next());
         modified.annotated_data = Some(image_with_color(annotated));
 
         let revision = modified.display_revision();
@@ -555,7 +617,7 @@ mod tests {
         };
         let output_path = temp_png_path("save-rebases");
         let mut modified = ModifiedImage::new(image_with_color(original), None);
-        modified.add_line(AnnotationId::next(), LineAnnotationData::default());
+        add_default_line(&mut modified, AnnotationId::next());
         modified.annotated_data = Some(image_with_color(annotated));
 
         let revision = modified.display_revision();
@@ -585,7 +647,7 @@ mod tests {
         };
         let output_path = temp_png_path("repeated-save");
         let mut modified = ModifiedImage::new(image(), None);
-        modified.add_line(AnnotationId::next(), LineAnnotationData::default());
+        add_default_line(&mut modified, AnnotationId::next());
         modified.annotated_data = Some(image_with_color(annotated));
         modified.save_changes(Some(&output_path)).unwrap();
 

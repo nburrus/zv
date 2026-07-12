@@ -41,6 +41,7 @@ pub struct AnnotationDebugState {
     pub count: usize,
     pub counts_by_image: Vec<usize>,
     pub selected_line: Option<AnnotationLineDebug>,
+    pub selected_box: Option<AnnotationBoxDebug>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -50,6 +51,14 @@ pub struct AnnotationLineDebug {
     pub stroke_width: f32,
     pub start_style: &'static str,
     pub end_style: &'static str,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct AnnotationBoxDebug {
+    pub kind: &'static str,
+    pub min: [f32; 2],
+    pub max: [f32; 2],
+    pub stroke_width: f32,
 }
 
 #[derive(Clone, Debug)]
@@ -157,6 +166,8 @@ enum DebugKey {
     Escape,
     ShiftL,
     ShiftA,
+    ShiftR,
+    ShiftE,
     CtrlS,
     CtrlZ,
     Q,
@@ -561,6 +572,20 @@ impl RuntimeDebug {
             ),
             DebugKey::ShiftA => (
                 egui::Key::A,
+                egui::Modifiers {
+                    shift: true,
+                    ..Default::default()
+                },
+            ),
+            DebugKey::ShiftR => (
+                egui::Key::R,
+                egui::Modifiers {
+                    shift: true,
+                    ..Default::default()
+                },
+            ),
+            DebugKey::ShiftE => (
+                egui::Key::E,
                 egui::Modifiers {
                     shift: true,
                     ..Default::default()

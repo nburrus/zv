@@ -10,9 +10,9 @@ result as pixels. Annotations should behave like editable objects while the app
 session is active, instead of being baked immediately as independent modifier
 stack entries.
 
-V1 focuses on line and text annotations. Rectangle, ellipse, arrow, freehand,
-and richer text editing can be added once the core object model and interaction
-model are stable.
+The Rust viewer currently focuses on line, arrow, rectangle, and ellipse
+annotations. Text, freehand, and richer editing can be added once the core
+object model and interaction model are stable.
 
 Because ZV is still pre-alpha, this rework does not need to preserve or migrate
 the existing annotation implementation. The old one-shot `LineTool` /
@@ -72,6 +72,9 @@ V1 annotation modes:
 
 - Select/edit annotations.
 - Add line.
+- Add arrow.
+- Add rectangle.
+- Add ellipse.
 - Add text.
 
 Line behavior:
@@ -382,7 +385,7 @@ Manual checks:
 - Ctrl-click zoom behavior does not conflict with annotation dragging.
 - Cursor overlay remains useful when not actively dragging annotations.
 
-### Phase 4: Text Annotations
+### Phase 4: Text Annotations (Planned)
 
 Add text annotations on top of the same model/tool pipeline.
 
@@ -411,7 +414,7 @@ Manual checks:
 - Long text does not crash or corrupt drawing; clipping/wrapping behavior is
   acceptable for V1.
 
-### Phase 5: UI Polish And Cleanup
+### Phase 5: UI Polish And Cleanup (In Progress)
 
 Remove obsolete annotation paths and make the workflow coherent.
 
@@ -431,12 +434,42 @@ Tests:
 - Undo works across mixed operations: color edit, line create, text create,
   line move, normal modifier.
 
-### Phase 6: Deferred Extensions
+### Phase 6: Rectangle And Ellipse Extensions (Rust: Complete)
+
+Rectangle and ellipse annotations are implemented in the Rust viewer.
+
+Deliverables:
+
+- Add rectangle and ellipse element variants with normalized bounds.
+- Create rectangle and ellipse annotations by click-drag and mirror them across
+  visible valid images.
+- Select and move rectangle and ellipse annotations; resize them with four
+  corner handles.
+- Keep the opposite corner fixed throughout a resize so the dragged corner can
+  cross it and continue growing in the other direction.
+- Hold Shift while creating or resizing to constrain rectangles to squares and
+  ellipses to circles; constrain lines and arrows to 45-degree increments.
+- Hit-test rectangle and ellipse strokes in screen space.
+- Render the same outline geometry in the live overlay and final compositor.
+- Include creation, deletion, movement, resizing, rotation, and undo.
+- Expose toolbar/menu actions and Shift+R / Shift+E shortcuts.
+- Expose color and line-width controls for new and selected rectangles and
+  ellipses, with live mirrored updates and gesture-level undo.
+- Share stroke style, named resize handles, annotation-kind metadata, rendering
+  helpers, controls, and whole-element undo across annotation types.
+- Carry any edited annotation stroke color and width forward as the shared
+  default for subsequently created lines, arrows, rectangles, and ellipses.
+
+Tests:
+
+- Rectangle corner resizing preserves the opposite corner.
+- Ellipse hit-testing selects its border rather than its interior.
+
+### Phase 7: Deferred Extensions
 
 These are intentionally out of V1 unless the core system proves stable:
 
-- Rectangle and ellipse annotations.
-- Arrowheads and callout styles.
+- Additional arrowhead and callout styles.
 - Freehand drawing.
 - Multi-select and group move.
 - Annotation z-order controls.
@@ -467,13 +500,15 @@ These are intentionally out of V1 unless the core system proves stable:
   careful font-size handling — possibly a separate atlas or explicit scaling —
   to match the live overlay output.
 
-## Acceptance Criteria
+## Current Rust Acceptance Criteria
 
-- Users can create multiple line and text annotations.
-- Users can select, move, resize, edit style/content, delete, and undo
-  annotations.
+- Users can create multiple line, arrow, rectangle, and ellipse annotations.
+- Users can select, move, resize, delete, and undo those annotations.
+- Line, arrow, rectangle, and ellipse stroke color/width can be edited.
 - Annotation edits mirror across currently visible valid images.
 - Annotations are always displayed and saved after normal image modifiers.
 - Saving bakes annotations into pixels and clears editable annotation state.
 - Existing crop, resize, rotate, color editor, save, discard, and undo behavior
   remains intact for non-annotation workflows.
+
+Text-specific acceptance criteria remain part of planned Phase 4.

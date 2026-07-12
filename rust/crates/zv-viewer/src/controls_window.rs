@@ -7,7 +7,7 @@ use egui_extras::{Column, TableBuilder};
 use egui_phosphor::regular as ph;
 
 use crate::annotation_tool::{AnnotationMode, AnnotationTool};
-use crate::annotations::{AnnotationId, LineAnnotationData, LineEndpointStyle};
+use crate::annotations::{AnnotationElement, AnnotationId, AnnotationKind, LineEndpointStyle, LineStyle, StrokeStyle};
 use crate::color_image::{
     PixelSRGBA, closest_color_entries, convert_srgba_to_lab, convert_srgba_to_linear_rgb, convert_srgba_to_xyz,
 };
@@ -53,15 +53,15 @@ struct ImageDragPayload {
     index: usize,
 }
 
-#[derive(Clone, Copy, Debug)]
-struct LineStyleEditState {
+#[derive(Clone, Debug)]
+struct AnnotationStyleEditState {
     selected_id: AnnotationId,
-    before: LineAnnotationData,
+    before: AnnotationElement,
     color_popup_was_open: bool,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
-struct LineStyleControlResponse {
+struct StyleControlResponse {
     changed: bool,
     committed: bool,
     color_popup_open: bool,
@@ -73,7 +73,7 @@ struct ControlsUiState {
     size_texts: [String; 2],
     size_being_edited: [bool; 2],
     lock_ratio: bool,
-    line_style_edit: Option<LineStyleEditState>,
+    annotation_style_edit: Option<AnnotationStyleEditState>,
 }
 
 impl Default for ControlsUiState {
@@ -83,7 +83,7 @@ impl Default for ControlsUiState {
             size_texts: [String::new(), String::new()],
             size_being_edited: [false, false],
             lock_ratio: true,
-            line_style_edit: None,
+            annotation_style_edit: None,
         }
     }
 }
@@ -305,6 +305,33 @@ impl ControlsWindow {
                             }
                             if ui
                                 .add(
+                                    egui::Button::new("Add Rectangle")
+                                        .shortcut_text("Shift+R")
+                                        .selected(mode == AnnotationMode::AddRectangle),
+                                )
+                                .clicked()
+                            {
+                                push_action(
+                                    &action_queue,
+                                    AppAction::SetAnnotationMode(AnnotationMode::AddRectangle),
+                                );
+                                ctx.request_repaint_of(egui::ViewportId::ROOT);
+                                ui.close();
+                            }
+                            if ui
+                                .add(
+                                    egui::Button::new("Add Ellipse")
+                                        .shortcut_text("Shift+E")
+                                        .selected(mode == AnnotationMode::AddEllipse),
+                                )
+                                .clicked()
+                            {
+                                push_action(&action_queue, AppAction::SetAnnotationMode(AnnotationMode::AddEllipse));
+                                ctx.request_repaint_of(egui::ViewportId::ROOT);
+                                ui.close();
+                            }
+                            if ui
+                                .add(
                                     egui::Button::new("Add Arrow")
                                         .shortcut_text("Shift+A")
                                         .selected(mode == AnnotationMode::AddArrow),
@@ -440,7 +467,10 @@ fn render_annotation_tools_tab(
             ctx.request_repaint_of(egui::ViewportId::ROOT);
         }
         let is_arrow = mode == AnnotationMode::AddArrow;
-        if arrow_tool_button(ui, is_arrow).on_hover_text("Add Arrow (Shift+A)").clicked() {
+        if arrow_tool_button(ui, is_arrow)
+            .on_hover_text("Add Arrow (Shift+A)")
+            .clicked()
+        {
             let next_mode = if is_arrow {
                 AnnotationMode::Select
             } else {
@@ -449,46 +479,118 @@ fn render_annotation_tools_tab(
             push_action(action_queue, AppAction::SetAnnotationMode(next_mode));
             ctx.request_repaint_of(egui::ViewportId::ROOT);
         }
+        for (annotation_mode, label, tooltip) in [
+            (AnnotationMode::AddRectangle, "▭", "Add Rectangle (Shift+R)"),
+            (AnnotationMode::AddEllipse, "○", "Add Ellipse (Shift+E)"),
+        ] {
+            let selected = mode == annotation_mode;
+            if ui
+                .add(
+                    egui::Button::new(egui::RichText::new(label).size(MODIFIER_TOOL_ICON_SIZE))
+                        .min_size(MODIFIER_TOOL_BUTTON_SIZE)
+                        .selected(selected),
+                )
+                .on_hover_text(tooltip)
+                .clicked()
+            {
+                push_action(
+                    action_queue,
+                    AppAction::SetAnnotationMode(if selected {
+                        AnnotationMode::Select
+                    } else {
+                        annotation_mode
+                    }),
+                );
+                ctx.request_repaint_of(egui::ViewportId::ROOT);
+            }
+        }
     });
 
     ui.separator();
 
     let mut ui_state = ui_state.lock().ok();
-    let selected_line = selected_line_data(image_list, tool.selected_id());
-    if matches!(mode, AnnotationMode::AddLine | AnnotationMode::AddArrow) || selected_line.is_some() {
-        let selected_id = tool.selected_id();
-        let mut line = selected_line.unwrap_or_else(|| *tool.default_line_mut());
-        let response = render_line_controls(ui, &mut line, selected_line.is_some(), mode);
-        if response.changed {
-            if selected_id.is_valid() {
-                if let Some(state) = ui_state.as_deref_mut() {
-                    if state.line_style_edit.is_none_or(|edit| edit.selected_id != selected_id) {
-                        flush_line_style_edit(image_list, state);
-                        state.line_style_edit = selected_line.map(|before| LineStyleEditState {
-                            selected_id,
-                            before,
-                            color_popup_was_open: response.color_popup_open,
-                        });
-                    }
-                }
-                apply_selected_line_style_live(image_list, selected_id, line);
-                ctx.request_repaint_of(egui::ViewportId::ROOT);
+    let selected_id = tool.selected_id();
+    let selected_element = selected_element_data(image_list, selected_id);
+    let selected_kind = selected_element.as_ref().map(AnnotationElement::kind);
+
+    let show_line_panel = matches!(mode, AnnotationMode::AddLine | AnnotationMode::AddArrow)
+        || selected_kind == Some(AnnotationKind::Line);
+    let show_box_panel = !show_line_panel
+        && (matches!(mode, AnnotationMode::AddRectangle | AnnotationMode::AddEllipse)
+            || matches!(selected_kind, Some(AnnotationKind::Rectangle | AnnotationKind::Ellipse)));
+    if !show_line_panel && !show_box_panel {
+        if let Some(state) = ui_state.as_deref_mut() {
+            flush_annotation_style_edit(image_list, state);
+        }
+        return;
+    }
+
+    // Render the panel for the selected element, or for the defaults of the
+    // annotation about to be created. The live-apply and undo choreography
+    // below is shared by both panels.
+    enum PanelEdit {
+        Line(LineStyle),
+        Stroke(StrokeStyle),
+    }
+    let (response, edit, editing_selected) = if show_line_panel {
+        let selected_style = selected_element
+            .as_ref()
+            .and_then(AnnotationElement::line_style)
+            .copied();
+        let mut style = selected_style.unwrap_or_else(|| tool.default_line_style());
+        let response = render_line_controls(ui, &mut style, selected_style.is_some(), mode);
+        (response, PanelEdit::Line(style), selected_style.is_some())
+    } else {
+        let selected = selected_element
+            .as_ref()
+            .map(|element| (element.kind(), *element.stroke()));
+        let mut stroke = selected.map_or_else(|| tool.default_stroke(), |(_, stroke)| stroke);
+        let kind = selected.map_or(
+            if mode == AnnotationMode::AddEllipse {
+                AnnotationKind::Ellipse
             } else {
-                *tool.default_line_mut() = line;
+                AnnotationKind::Rectangle
+            },
+            |(kind, _)| kind,
+        );
+        let response = render_box_annotation_controls(ui, &mut stroke, selected.is_some(), kind);
+        (response, PanelEdit::Stroke(stroke), selected.is_some())
+    };
+
+    if response.changed {
+        if editing_selected {
+            // Capture the pre-edit element before mutating it so the whole
+            // slider interaction can be undone as one step.
+            if let Some(state) = ui_state.as_deref_mut() {
+                begin_annotation_style_edit(image_list, state, selected_id, response.color_popup_open);
+            }
+            match edit {
+                PanelEdit::Line(style) => {
+                    apply_selected_line_style_live(image_list, selected_id, style);
+                    tool.set_default_stroke(style.stroke);
+                }
+                PanelEdit::Stroke(stroke) => {
+                    apply_selected_stroke_live(image_list, selected_id, stroke);
+                    tool.set_default_stroke(stroke);
+                }
+            }
+            ctx.request_repaint_of(egui::ViewportId::ROOT);
+        } else {
+            match edit {
+                PanelEdit::Line(style) => tool.set_default_line_style(style),
+                PanelEdit::Stroke(stroke) => tool.set_default_stroke(stroke),
             }
         }
-        if selected_id.is_valid()
-            && let Some(state) = ui_state.as_deref_mut()
-            && let Some(edit) = state.line_style_edit.as_mut()
-        {
-            let color_popup_closed = edit.color_popup_was_open && !response.color_popup_open;
-            edit.color_popup_was_open = response.color_popup_open;
-            if response.committed || color_popup_closed {
-                flush_line_style_edit(image_list, state);
-            }
+    }
+    if editing_selected
+        && let Some(state) = ui_state.as_deref_mut()
+        && let Some(edit_state) = state.annotation_style_edit.as_mut()
+    {
+        let color_popup_closed = edit_state.color_popup_was_open && !response.color_popup_open;
+        edit_state.color_popup_was_open = response.color_popup_open;
+        if response.committed || color_popup_closed {
+            flush_annotation_style_edit(image_list, state);
         }
-    } else if let Some(state) = ui_state.as_deref_mut() {
-        flush_line_style_edit(image_list, state);
     }
 }
 
@@ -497,7 +599,11 @@ fn modifier_tool_button(icon: &'static str) -> egui::Button<'static> {
 }
 
 fn arrow_tool_button(ui: &mut egui::Ui, selected: bool) -> egui::Response {
-    let response = ui.add(egui::Button::new("").min_size(MODIFIER_TOOL_BUTTON_SIZE).selected(selected));
+    let response = ui.add(
+        egui::Button::new("")
+            .min_size(MODIFIER_TOOL_BUTTON_SIZE)
+            .selected(selected),
+    );
     let visuals = ui.style().interact_selectable(&response, selected);
     let center = response.rect.center();
     let start = center + egui::vec2(-6.0, 4.0);
@@ -520,11 +626,11 @@ fn arrow_tool_button(ui: &mut egui::Ui, selected: bool) -> egui::Response {
 
 fn render_line_controls(
     ui: &mut egui::Ui,
-    line: &mut LineAnnotationData,
+    style: &mut LineStyle,
     selected: bool,
     mode: AnnotationMode,
-) -> LineStyleControlResponse {
-    let mut output = LineStyleControlResponse::default();
+) -> StyleControlResponse {
+    let mut output = StyleControlResponse::default();
 
     let header = if selected {
         "Selected line  |  Delete / Backspace to remove"
@@ -535,75 +641,97 @@ fn render_line_controls(
     };
     ui.label(egui::RichText::new(header).color(ui.visuals().weak_text_color()));
 
-    egui::Grid::new("line_style_grid")
+    render_stroke_controls(ui, "line_stroke_style_grid", &mut style.stroke, &mut output);
+    egui::Grid::new("line_endpoint_style_grid")
         .num_columns(2)
         .show(ui, |ui| {
-            render_line_style_row(ui, "Color", |ui, width| {
-        let mut color = line.color;
-        let mut red = color.r() as i32;
-        let mut green = color.g() as i32;
-        let mut blue = color.b() as i32;
-        // NOTE: this relies on egui deriving the color picker's popup id as
-        // `button_id.with("popup")` (an internal detail of `color_edit_button_*`).
-        // If a future egui changes that scheme, `color_popup_open` silently stays
-        // `false` and the open→closed commit never fires — the `response.changed()
-        // && pointer_released` branch below is the safety net that still commits.
-        let response = ui.color_edit_button_srgba(&mut color);
-        let color_popup_id = response.id.with("popup");
-        output.color_popup_open = egui::Popup::is_id_open(ui.ctx(), color_popup_id);
-        if response.changed() {
-            line.color = color;
-            red = color.r() as i32;
-            green = color.g() as i32;
-            blue = color.b() as i32;
-            output.changed = true;
-        }
-        let pointer_released = ui.input(|input| input.pointer.any_released());
-        if response.drag_stopped() || response.lost_focus() || (response.changed() && pointer_released) {
-            output.committed = true;
-        }
-
-        let mut rgb_changed = false;
-        let field_width = ((width - LINE_STYLE_COLOR_SWATCH_WIDTH - ui.spacing().item_spacing.x * 3.0) / 3.0).max(64.0);
-        for (prefix, value) in [("R ", &mut red), ("G ", &mut green), ("B ", &mut blue)] {
-            rgb_changed |= ui
-                .add_sized(
-                    [field_width, ui.spacing().interact_size.y],
-                    egui::DragValue::new(value).range(0..=255).speed(1).prefix(prefix),
-                )
-                .changed();
-        }
-        if rgb_changed {
-            line.color = egui::Color32::from_rgb(red as u8, green as u8, blue as u8);
-            output.changed = true;
-            output.committed = true;
-        }
-    });
-
-    render_line_style_row(ui, "Width", |ui, width| {
-        ui.spacing_mut().slider_width = width - LINE_STYLE_WIDTH_VALUE_WIDTH - ui.spacing().item_spacing.x;
-        let response = ui.add(egui::Slider::new(&mut line.stroke_width, 1.0..=10.0).show_value(false));
-        ui.add_sized(
-            [LINE_STYLE_WIDTH_VALUE_WIDTH, ui.spacing().interact_size.y],
-            egui::Label::new(format!("{:.1}", line.stroke_width)),
-        );
-        if response.changed() {
-            output.changed = true;
-        }
-        if response.drag_stopped() || response.lost_focus() {
-            output.committed = true;
-        }
-    });
-
-            render_line_endpoint_style_combo(ui, "Start", &mut line.start_style, &mut output);
-            render_line_endpoint_style_combo(ui, "End", &mut line.end_style, &mut output);
+            render_line_endpoint_style_combo(ui, "Start", &mut style.start_style, &mut output);
+            render_line_endpoint_style_combo(ui, "End", &mut style.end_style, &mut output);
             render_disabled_line_style_combo(ui, "Stroke", "Solid");
         });
 
     output
 }
 
-fn render_line_style_row(ui: &mut egui::Ui, label: &'static str, add_control: impl FnOnce(&mut egui::Ui, f32)) {
+fn render_box_annotation_controls(
+    ui: &mut egui::Ui,
+    stroke: &mut StrokeStyle,
+    selected: bool,
+    kind: AnnotationKind,
+) -> StyleControlResponse {
+    let mut output = StyleControlResponse::default();
+    let kind_label = match kind {
+        AnnotationKind::Rectangle => "rectangle",
+        AnnotationKind::Ellipse => "ellipse",
+        AnnotationKind::Line => "line",
+    };
+    let header = if selected {
+        format!("Selected {kind_label}  |  Delete / Backspace to remove")
+    } else {
+        format!("New {kind_label} style")
+    };
+    ui.label(egui::RichText::new(header).color(ui.visuals().weak_text_color()));
+
+    render_stroke_controls(ui, "box_annotation_stroke_style_grid", stroke, &mut output);
+    output
+}
+
+fn render_stroke_controls(
+    ui: &mut egui::Ui,
+    grid_id: &'static str,
+    stroke: &mut StrokeStyle,
+    output: &mut StyleControlResponse,
+) {
+    egui::Grid::new(grid_id).num_columns(2).show(ui, |ui| {
+        render_style_row(ui, "Color", |ui, width| {
+            let mut color = stroke.color;
+            let mut rgb = [color.r() as i32, color.g() as i32, color.b() as i32];
+            let response = ui.color_edit_button_srgba(&mut color);
+            output.color_popup_open = egui::Popup::is_id_open(ui.ctx(), response.id.with("popup"));
+            if response.changed() {
+                stroke.color = color;
+                rgb = [color.r() as i32, color.g() as i32, color.b() as i32];
+                output.changed = true;
+            }
+            if response.drag_stopped()
+                || response.lost_focus()
+                || (response.changed() && ui.input(|input| input.pointer.any_released()))
+            {
+                output.committed = true;
+            }
+
+            let field_width =
+                ((width - LINE_STYLE_COLOR_SWATCH_WIDTH - ui.spacing().item_spacing.x * 3.0) / 3.0).max(64.0);
+            let mut rgb_changed = false;
+            for (prefix, value) in ["R ", "G ", "B "].into_iter().zip(rgb.iter_mut()) {
+                rgb_changed |= ui
+                    .add_sized(
+                        [field_width, ui.spacing().interact_size.y],
+                        egui::DragValue::new(value).range(0..=255).speed(1).prefix(prefix),
+                    )
+                    .changed();
+            }
+            if rgb_changed {
+                stroke.color = egui::Color32::from_rgb(rgb[0] as u8, rgb[1] as u8, rgb[2] as u8);
+                output.changed = true;
+                output.committed = true;
+            }
+        });
+
+        render_style_row(ui, "Width", |ui, width| {
+            ui.spacing_mut().slider_width = width - LINE_STYLE_WIDTH_VALUE_WIDTH - ui.spacing().item_spacing.x;
+            let response = ui.add(egui::Slider::new(&mut stroke.width, 1.0..=10.0).show_value(false));
+            ui.add_sized(
+                [LINE_STYLE_WIDTH_VALUE_WIDTH, ui.spacing().interact_size.y],
+                egui::Label::new(format!("{:.1}", stroke.width)),
+            );
+            output.changed |= response.changed();
+            output.committed |= response.drag_stopped() || response.lost_focus();
+        });
+    });
+}
+
+fn render_style_row(ui: &mut egui::Ui, label: &'static str, add_control: impl FnOnce(&mut egui::Ui, f32)) {
     ui.label(label);
     let control_width = ui.available_width();
     ui.horizontal(|ui| add_control(ui, control_width));
@@ -611,7 +739,7 @@ fn render_line_style_row(ui: &mut egui::Ui, label: &'static str, add_control: im
 }
 
 fn render_disabled_line_style_combo(ui: &mut egui::Ui, label: &'static str, value: &'static str) {
-    render_line_style_row(ui, label, |ui, width| {
+    render_style_row(ui, label, |ui, width| {
         ui.add_enabled_ui(false, |ui| {
             egui::ComboBox::from_id_salt(label)
                 .selected_text(value)
@@ -625,9 +753,9 @@ fn render_line_endpoint_style_combo(
     ui: &mut egui::Ui,
     label: &'static str,
     style: &mut LineEndpointStyle,
-    output: &mut LineStyleControlResponse,
+    output: &mut StyleControlResponse,
 ) {
-    render_line_style_row(ui, label, |ui, width| {
+    render_style_row(ui, label, |ui, width| {
         let before = *style;
         egui::ComboBox::from_id_salt(label)
             .selected_text(style.label())
@@ -643,52 +771,64 @@ fn render_line_endpoint_style_combo(
     });
 }
 
-fn flush_line_style_edit(image_list: &Arc<Mutex<ImageList>>, state: &mut ControlsUiState) {
-    if let Some(edit) = state.line_style_edit.take() {
-        commit_selected_line_style_undo(image_list, edit.selected_id, edit.before);
-    }
-}
-
-fn selected_line_data(image_list: &Arc<Mutex<ImageList>>, selected_id: AnnotationId) -> Option<LineAnnotationData> {
-    if !selected_id.is_valid() {
-        return None;
-    }
-    visible_modified_images(image_list).into_iter().find_map(|image| {
-        let image = image.lock().ok()?;
-        image
-            .annotations()
-            .find_by_id(selected_id)
-            .and_then(|element| element.line())
-            .copied()
-    })
-}
-
-fn apply_selected_line_style_live(
+fn begin_annotation_style_edit(
     image_list: &Arc<Mutex<ImageList>>,
+    state: &mut ControlsUiState,
     selected_id: AnnotationId,
-    line: LineAnnotationData,
+    color_popup_open: bool,
 ) {
-    for image in visible_modified_images(image_list) {
-        if let Ok(mut image) = image.lock() {
-            image.update_line_style(
+    if state
+        .annotation_style_edit
+        .as_ref()
+        .is_none_or(|edit| edit.selected_id != selected_id)
+    {
+        flush_annotation_style_edit(image_list, state);
+        if let Some(before) = selected_element_data(image_list, selected_id) {
+            state.annotation_style_edit = Some(AnnotationStyleEditState {
                 selected_id,
-                line.color,
-                line.stroke_width,
-                line.start_style,
-                line.end_style,
-            );
+                before,
+                color_popup_was_open: color_popup_open,
+            });
         }
     }
 }
 
-fn commit_selected_line_style_undo(
-    image_list: &Arc<Mutex<ImageList>>,
-    selected_id: AnnotationId,
-    before: LineAnnotationData,
-) {
+fn flush_annotation_style_edit(image_list: &Arc<Mutex<ImageList>>, state: &mut ControlsUiState) {
+    if let Some(edit) = state.annotation_style_edit.take() {
+        for image in visible_modified_images(image_list) {
+            if let Ok(mut image) = image.lock()
+                && image.annotations().find_by_id(edit.selected_id) != Some(&edit.before)
+            {
+                image.push_undo_action(crate::modified_image::ImageUndoAction::RestoreElementState {
+                    element: edit.before.clone(),
+                });
+            }
+        }
+    }
+}
+
+fn selected_element_data(image_list: &Arc<Mutex<ImageList>>, selected_id: AnnotationId) -> Option<AnnotationElement> {
+    if !selected_id.is_valid() {
+        return None;
+    }
+    visible_modified_images(image_list)
+        .into_iter()
+        .find_map(|image| image.lock().ok()?.annotations().find_by_id(selected_id).cloned())
+}
+
+fn apply_selected_line_style_live(image_list: &Arc<Mutex<ImageList>>, selected_id: AnnotationId, style: LineStyle) {
     for image in visible_modified_images(image_list) {
         if let Ok(mut image) = image.lock() {
-            image.push_line_style_undo(selected_id, before);
+            image.update_stroke_style(selected_id, style.stroke);
+            image.update_line_endpoint_styles(selected_id, style.start_style, style.end_style);
+        }
+    }
+}
+
+fn apply_selected_stroke_live(image_list: &Arc<Mutex<ImageList>>, selected_id: AnnotationId, stroke: StrokeStyle) {
+    for image in visible_modified_images(image_list) {
+        if let Ok(mut image) = image.lock() {
+            image.update_stroke_style(selected_id, stroke);
         }
     }
 }
