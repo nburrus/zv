@@ -165,7 +165,6 @@ impl Viewer {
                 }
             }
 
-            let cursor_before = self.current_cursor_signature();
             let image_output = self.image_window.show(
                 ctx,
                 self.layout,
@@ -173,8 +172,7 @@ impl Viewer {
                 self.cursor_info.clone(),
                 self.annotation_tool.clone(),
             );
-            let cursor_after = self.current_cursor_signature();
-            if cursor_before != cursor_after && self.controls_window.is_enabled() {
+            if image_output.shared_state_changed && self.controls_window.is_enabled() {
                 ctx.request_repaint_of(self.controls_window.viewport_id());
             }
             if image_output.secondary_clicked {
@@ -881,13 +879,6 @@ impl Viewer {
             _ => None,
         };
         self.controls_window.set_target_position(target_position);
-    }
-
-    fn current_cursor_signature(&self) -> Option<(String, u32, u32, [u8; 4])> {
-        self.cursor_info.lock().ok().and_then(|info| {
-            info.as_ref()
-                .map(|cursor| (cursor.image_name.clone(), cursor.x, cursor.y, cursor.rgba))
-        })
     }
 
     fn set_layout(&mut self, layout: LayoutConfig) {

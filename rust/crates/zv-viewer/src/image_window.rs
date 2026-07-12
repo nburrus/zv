@@ -23,6 +23,14 @@ pub struct CursorPixelInfo {
     pub image_data: Arc<Mutex<ModifiedImage>>,
 }
 
+impl CursorPixelInfo {
+    // Whether both infos describe the same pixel, as far as the controls
+    // window display is concerned.
+    fn same_pixel(&self, other: &Self) -> bool {
+        self.image_name == other.image_name && self.x == other.x && self.y == other.y && self.rgba == other.rgba
+    }
+}
+
 impl std::fmt::Debug for CursorPixelInfo {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("CursorPixelInfo")
@@ -76,6 +84,10 @@ pub struct ImageWindow {
 pub struct ImageWindowOutput {
     pub image_rect: Option<egui::Rect>,
     pub secondary_clicked: bool,
+    // The cursor pixel info and annotation selection are shared with the
+    // controls window, which lives in a separate viewport and stays idle
+    // unless explicitly repainted when they change.
+    pub shared_state_changed: bool,
 }
 
 impl ImageWindow {
@@ -90,6 +102,7 @@ impl ImageWindow {
         let mut output = ImageWindowOutput {
             image_rect: None,
             secondary_clicked: false,
+            shared_state_changed: false,
         };
 
         egui::CentralPanel::default()
@@ -147,7 +160,7 @@ impl ImageWindow {
                             .ok()
                             .map(|image| [image.final_data().width(), image.final_data().height()])
                             .unwrap_or([1, 1]);
-                        tool.render_for_image(
+                        let annotation_output = tool.render_for_image(
                             ui,
                             &response,
                             image_data,
@@ -160,6 +173,7 @@ impl ImageWindow {
                             first_valid_index == Some(index),
                             &visible_images,
                         );
+                        output.shared_state_changed |= annotation_output.selection_changed;
                     }
 
                     let Some(pointer_pos) = response.hover_pos() else {
@@ -198,7 +212,7 @@ impl ImageWindow {
 
                 if let Some(hovered) = hovered {
                     if let Ok(mut info) = cursor_info.lock() {
-                        *info = Some(CursorPixelInfo {
+                        let new_info = CursorPixelInfo {
                             image_name: hovered.image_name.clone(),
                             x: hovered.sample.x,
                             y: hovered.sample.y,
@@ -207,7 +221,9 @@ impl ImageWindow {
                             uv: hovered.sample.uv,
                             rgba: hovered.sample.rgba,
                             image_data: hovered.image_data.clone(),
-                        });
+                        };
+                        output.shared_state_changed |= !info.as_ref().is_some_and(|old| old.same_pixel(&new_info));
+                        *info = Some(new_info);
                     }
                     paint_synced_cursor(
                         ui,
@@ -220,7 +236,7 @@ impl ImageWindow {
                     );
                     paint_synced_status_bars(ui, &images, &cell_rects, &hovered);
                 } else if let Ok(mut info) = cursor_info.lock() {
-                    *info = None;
+                    output.shared_state_changed |= info.take().is_some();
                 }
             });
 

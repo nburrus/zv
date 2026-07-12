@@ -87,6 +87,11 @@ impl Default for AnnotationTool {
     }
 }
 
+pub struct AnnotationRenderOutput {
+    /// Handling this frame's input changed the selected annotation.
+    pub selection_changed: bool,
+}
+
 impl AnnotationTool {
     pub fn mode(&self) -> AnnotationMode {
         self.mode
@@ -191,9 +196,10 @@ impl AnnotationTool {
         transform: WidgetToTextureTransform,
         first_valid_image: bool,
         visible_images: &[Arc<Mutex<ModifiedImage>>],
-    ) {
+    ) -> AnnotationRenderOutput {
         // Process input before painting so keyboard-only modifier changes are
         // reflected in this frame, even when the pointer has not moved.
+        let selection_before = self.selected_id;
         if first_valid_image {
             self.handle_input(response, transform, visible_images);
         }
@@ -235,6 +241,10 @@ impl AnnotationTool {
                     response.clone().on_hover_cursor(cursor);
                 }
             }
+        }
+
+        AnnotationRenderOutput {
+            selection_changed: self.selected_id != selection_before,
         }
     }
 
