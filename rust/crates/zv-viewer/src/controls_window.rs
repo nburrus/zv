@@ -246,6 +246,14 @@ impl ControlsWindow {
                             ctx.request_repaint_of(egui::ViewportId::ROOT);
                             ui.close();
                         }
+                        if ui
+                            .add(egui::Button::new("Delete Image on Disk").shortcut_text("Shift+Del"))
+                            .clicked()
+                        {
+                            push_action(&action_queue, AppAction::DeleteImageOnDisk);
+                            ctx.request_repaint_of(egui::ViewportId::ROOT);
+                            ui.close();
+                        }
                         ui.separator();
                         if ui.add(egui::Button::new("Close").shortcut_text("q")).clicked() {
                             push_action(&action_queue, AppAction::Quit);

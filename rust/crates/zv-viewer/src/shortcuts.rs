@@ -95,7 +95,11 @@ fn push_annotation_shortcuts(
         out_actions.push(AppAction::SetAnnotationMode(AnnotationMode::Select));
     }
     if input.key_pressed(egui::Key::Delete) {
-        out_actions.push(AppAction::DeleteSelectedAnnotation);
+        if input.modifiers.shift {
+            out_actions.push(AppAction::DeleteImageOnDisk);
+        } else {
+            out_actions.push(AppAction::DeleteSelectedAnnotation);
+        }
     }
     if input.key_pressed(egui::Key::Z) && (input.modifiers.ctrl || input.modifiers.command || input.modifiers.mac_cmd) {
         out_actions.push(AppAction::UndoImageEdit);

@@ -36,6 +36,7 @@ pub enum AppAction {
     SaveImageEdits,
     OpenImage,
     CloseImage,
+    DeleteImageOnDisk,
     RotateLeft,
     RotateRight,
 }
@@ -49,6 +50,9 @@ enum PendingConfirmation {
         original_selection_count: usize,
     },
     CloseImageAt {
+        index: usize,
+    },
+    DeleteImageAt {
         index: usize,
     },
 }
@@ -388,6 +392,16 @@ impl Viewer {
                         self.request_close_image_at(ctx, index);
                     }
                 }
+                AppAction::DeleteImageOnDisk => {
+                    let index = self
+                        .image_list
+                        .lock()
+                        .ok()
+                        .and_then(|image_list| image_list.first_selected_index());
+                    if let Some(index) = index {
+                        self.request_delete_image_at(ctx, index);
+                    }
+                }
                 AppAction::RotateLeft => {
                     self.apply_to_visible_images(|image| image.rotate_ccw());
                 }
@@ -450,6 +464,19 @@ impl Viewer {
         self.close_image_at(index);
     }
 
+    fn request_delete_image_at(&mut self, ctx: &egui::Context, index: usize) {
+        let has_source_path = self
+            .image_list
+            .lock()
+            .ok()
+            .is_some_and(|image_list| image_list.source_path_at(index).is_some());
+        if !has_source_path {
+            return;
+        }
+        self.pending_confirmation = Some(PendingConfirmation::DeleteImageAt { index });
+        ctx.request_repaint_of(egui::ViewportId::ROOT);
+    }
+
     fn close_root_viewport(&mut self, ctx: &egui::Context) {
         self.allow_close = true;
         // In this app, ROOT is the main image viewport/window.
@@ -460,6 +487,22 @@ impl Viewer {
         if let Ok(mut image_list) = self.image_list.lock() {
             image_list.remove_at(index);
         }
+        self.clear_missing_annotation_selection();
+    }
+
+    fn delete_image_at(&self, index: usize) {
+        let Ok(mut image_list) = self.image_list.lock() else {
+            return;
+        };
+        let Some(path) = image_list.source_path_at(index).map(Path::to_path_buf) else {
+            return;
+        };
+        if let Err(error) = std::fs::remove_file(&path) {
+            tracing::error!(image = %path.display(), %error, "failed to delete image from disk");
+            return;
+        }
+        image_list.remove_at(index);
+        drop(image_list);
         self.clear_missing_annotation_selection();
     }
 
@@ -489,6 +532,15 @@ impl Viewer {
                 "Close Image",
                 "This image has unsaved changes. What would you like to do?".to_owned(),
             ),
+            PendingConfirmation::DeleteImageAt { index } => (
+                "Delete Image on Disk?",
+                self.image_list
+                    .lock()
+                    .ok()
+                    .and_then(|image_list| image_list.source_path_at(index).map(Path::to_path_buf))
+                    .map(|path| format!("{} will be deleted.\nThis operation cannot be undone!", path.display()))
+                    .unwrap_or_else(|| "This image will be deleted.\nThis operation cannot be undone!".to_owned()),
+            ),
         };
         let response = egui::Modal::new(egui::Id::new("pending_changes_confirm_modal")).show(ctx, |ui| {
             ui.set_width(340.0);
@@ -497,6 +549,17 @@ impl Viewer {
             ui.label(message);
             ui.add_space(12.0);
             ui.horizontal(|ui| {
+                if let PendingConfirmation::DeleteImageAt { .. } = pending {
+                    let ok_response = ui.button("OK");
+                    ok_response.request_focus();
+                    if ok_response.clicked() || ui.input(|input| input.key_pressed(egui::Key::Enter)) {
+                        self.finish_pending_confirmation(ctx, pending);
+                    }
+                    if ui.button("Cancel").clicked() {
+                        self.cancel_pending_confirmation(pending);
+                    }
+                    return;
+                }
                 let save_response = ui.button("Save");
                 save_response.request_focus();
                 let save_requested = save_response.clicked() || ui.input(|input| input.key_pressed(egui::Key::Enter));
@@ -542,6 +605,7 @@ impl Viewer {
                     true
                 }
             }
+            PendingConfirmation::DeleteImageAt { .. } => true,
         }
     }
 
@@ -561,6 +625,7 @@ impl Viewer {
                     }
                 }
             }
+            PendingConfirmation::DeleteImageAt { .. } => {}
         }
         self.clear_missing_annotation_selection();
     }
@@ -589,6 +654,10 @@ impl Viewer {
             PendingConfirmation::CloseImageAt { index } => {
                 self.pending_confirmation = None;
                 self.close_image_at(index);
+            }
+            PendingConfirmation::DeleteImageAt { index } => {
+                self.pending_confirmation = None;
+                self.delete_image_at(index);
             }
         }
         ctx.request_repaint_of(egui::ViewportId::ROOT);

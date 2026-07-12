@@ -204,6 +204,11 @@ impl ImageList {
         self.items.remove(index);
         self.pending_preloads.remove(&id);
         self.cache.remove(id);
+        // Keep the viewer usable after removing the final image, matching the C++ viewer's fallback.
+        if self.items.is_empty() {
+            self.items.push(ImageItem::default_image(next_image_id()));
+        }
+        refresh_pretty_names(&mut self.items);
         let enabled = self.enabled_indices();
         if enabled.is_empty() {
             self.selection_start = 0;
@@ -355,6 +360,10 @@ impl ImageList {
 
     pub fn first_selected_index(&self) -> Option<usize> {
         self.selected_index()
+    }
+
+    pub fn source_path_at(&self, index: usize) -> Option<&Path> {
+        self.items.get(index)?.source_image_path.as_deref()
     }
 
     pub fn modified_image_at(&self, index: usize) -> Option<Arc<Mutex<ModifiedImage>>> {
@@ -786,6 +795,19 @@ mod tests {
         assert_eq!(rows[0].name, "<<default>>");
         assert_eq!(rows[0].source_path, None);
         assert_eq!(rows[0].size, Some((256, 256)));
+    }
+
+    #[test]
+    fn removing_last_image_restores_default_image() {
+        let mut images = list(&["/tmp/a.png"]);
+
+        images.remove_at(0);
+
+        let rows = images.visible_rows().collect::<Vec<_>>();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].name, "<<default>>");
+        assert_eq!(rows[0].source_path, None);
+        assert!(rows[0].selected);
     }
 
     #[test]
