@@ -10,6 +10,7 @@ use crate::annotation_tool::{AnnotationMode, AnnotationTool};
 use crate::annotations::{
     AnnotationElement, AnnotationId, AnnotationKind, LineEndpointStyle, LineStyle, StrokeStyle, TextStyle,
 };
+use crate::color_editor_ui::{ColorEditorUiState, render_color_editor_tab};
 use crate::color_image::{
     PixelSRGBA, closest_color_entries, convert_srgba_to_lab, convert_srgba_to_linear_rgb, convert_srgba_to_xyz,
 };
@@ -69,7 +70,6 @@ struct StyleControlResponse {
     color_popup_open: bool,
 }
 
-#[derive(Debug)]
 struct ControlsUiState {
     active_tab: ControlsTab,
     size_texts: [String; 2],
@@ -99,6 +99,7 @@ pub struct ControlsWindow {
     annotation_tool: Arc<Mutex<AnnotationTool>>,
     editor_state: Arc<Mutex<ImageEditorState>>,
     ui_state: Arc<Mutex<ControlsUiState>>,
+    color_editor_state: Arc<Mutex<ColorEditorUiState>>,
     enabled: bool,
     target_position: Option<egui::Pos2>,
     has_ever_been_shown: bool,
@@ -125,6 +126,7 @@ impl ControlsWindow {
             annotation_tool,
             editor_state,
             ui_state: Arc::new(Mutex::new(ControlsUiState::default())),
+            color_editor_state: Arc::new(Mutex::new(ColorEditorUiState::default())),
             enabled: false,
             target_position: None,
             has_ever_been_shown: false,
@@ -183,6 +185,7 @@ impl ControlsWindow {
         let image_widget_size = self.image_widget_size.clone();
         let last_auto_scrolled_selected = self.last_auto_scrolled_selected.clone();
         let ui_state = self.ui_state.clone();
+        let color_editor_state = self.color_editor_state.clone();
         let action_queue = self.action_queue.clone();
         let annotation_tool = self.annotation_tool.clone();
         let editor_state = self.editor_state.clone();
@@ -409,7 +412,9 @@ impl ControlsWindow {
                     ControlsTab::Modifiers => {
                         render_annotation_tools_tab(ui, &image_list, &annotation_tool, &ui_state, &action_queue, ctx)
                     }
-                    ControlsTab::ColorEditor => render_empty_tab(ui, "Color Editor"),
+                    ControlsTab::ColorEditor => {
+                        render_color_editor_tab(ui, ctx, &image_list, &color_editor_state, &action_queue);
+                    }
                 }
             });
         });
@@ -436,11 +441,6 @@ fn render_tabs(ui: &mut egui::Ui, ui_state: &Arc<Mutex<ControlsUiState>>) -> Con
     } else {
         ControlsTab::ImageList
     }
-}
-
-fn render_empty_tab(ui: &mut egui::Ui, label: &str) {
-    ui.add_space(12.0);
-    ui.label(egui::RichText::new(label).color(egui::Color32::from_gray(190)));
 }
 
 fn render_annotation_tools_tab(

@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use crate::color_image::{ImageSRGBA, PixelSRGBA};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -87,25 +85,6 @@ fn is_grayscale_like(image: &ImageSRGBA) -> bool {
             .unwrap();
         i16::from(p.r).abs_diff(i16::from(p.g)) <= 2 && i16::from(p.r).abs_diff(i16::from(p.b)) <= 2
     })
-}
-
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub struct StatsCacheKey {
-    pub image_identity: usize,
-    pub display_revision: u64,
-}
-
-#[derive(Default)]
-pub struct StatsCache {
-    entries: HashMap<StatsCacheKey, ImageColorStats>,
-}
-
-impl StatsCache {
-    pub fn get_or_compute(&mut self, key: StatsCacheKey, image: &ImageSRGBA) -> &ImageColorStats {
-        self.entries
-            .entry(key)
-            .or_insert_with(|| compute_image_color_stats(image))
-    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -460,38 +439,6 @@ mod tests {
         let s = compute_image_color_stats(&image(&[[42, 43, 44, 255], [42, 43, 44, 7]]));
         assert!(s.rgb_channels_equal);
         assert!(s.single_color);
-    }
-    #[test]
-    fn stats_cache_keys_identity_and_revision() {
-        let im = image(&[[1, 1, 1, 255]]);
-        let mut c = StatsCache::default();
-        let a = c.get_or_compute(
-            StatsCacheKey {
-                image_identity: 3,
-                display_revision: 0,
-            },
-            &im,
-        ) as *const _;
-        let b = c.get_or_compute(
-            StatsCacheKey {
-                image_identity: 3,
-                display_revision: 0,
-            },
-            &image(&[[9, 9, 9, 255]]),
-        ) as *const _;
-        assert_eq!(a, b);
-        assert_eq!(
-            c.get_or_compute(
-                StatsCacheKey {
-                    image_identity: 3,
-                    display_revision: 1
-                },
-                &im
-            )
-            .r
-            .mean,
-            1.0
-        );
     }
     #[test]
     fn levels_identity_replacement_gamma_clamping_alpha() {

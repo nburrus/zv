@@ -224,9 +224,13 @@ impl ModifiedImage {
         self.rotate(RotationDirection::CounterClockwise);
     }
 
-    pub fn apply_base_image_transform(&mut self, transform: impl FnOnce(&ImageSRGBA) -> ImageSRGBA) {
+    pub fn apply_base_image_transform(&mut self, transform: impl FnOnce(&ImageSRGBA) -> ImageSRGBA) -> bool {
         let replacement = transform(self.original_data.cpu_data());
+        if image_pixels_equal(self.original_data.cpu_data(), &replacement) {
+            return false;
+        }
         self.replace_base_image(replacement, self.annotations.clone());
+        true
     }
 
     fn rotate(&mut self, direction: RotationDirection) {

@@ -7,6 +7,9 @@ use eframe::{egui, egui_wgpu};
 
 use crate::annotation_tool::{AnnotationMode, AnnotationTool};
 use crate::annotations::{AnnotationElement, AnnotationRenderer};
+use crate::color_editor::{
+    HueShiftParams, LevelsAdjustment, OneShotOperation, apply_hue_shift, apply_levels, apply_one_shot,
+};
 use crate::controls_window::ControlsWindow;
 use crate::debug::{
     AnnotationBoxDebug, AnnotationDebugState, AnnotationLineDebug, SelectedImageDebug, ViewerDebugState,
@@ -21,7 +24,7 @@ use crate::viewport_geometry::{ViewportGeometry, ViewportResizeCommand};
 
 const CONFIRMATION_MIN_INNER_SIZE: egui::Vec2 = egui::vec2(420.0, 180.0);
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum AppAction {
     NextImage,
     PreviousImage,
@@ -39,6 +42,9 @@ pub enum AppAction {
     DeleteImageOnDisk,
     RotateLeft,
     RotateRight,
+    ApplyColorLevels(LevelsAdjustment),
+    ApplyColorHue(HueShiftParams),
+    ApplyColorOneShot(OneShotOperation),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -407,6 +413,19 @@ impl Viewer {
                 }
                 AppAction::RotateRight => {
                     self.apply_to_visible_images(|image| image.rotate_cw());
+                }
+                AppAction::ApplyColorLevels(params) => {
+                    apply_transform_to_images(&self.visible_modified_images(), move |base| apply_levels(base, params));
+                }
+                AppAction::ApplyColorHue(params) => {
+                    apply_transform_to_images(&self.visible_modified_images(), move |base| {
+                        apply_hue_shift(base, params)
+                    });
+                }
+                AppAction::ApplyColorOneShot(operation) => {
+                    apply_transform_to_images(&self.visible_modified_images(), move |base| {
+                        apply_one_shot(base, operation)
+                    });
                 }
             }
         }
@@ -958,6 +977,17 @@ impl Viewer {
     }
 }
 
+fn apply_transform_to_images(
+    images: &[Arc<Mutex<ModifiedImage>>],
+    transform: impl Fn(&crate::color_image::ImageSRGBA) -> crate::color_image::ImageSRGBA,
+) {
+    for image in images {
+        if let Ok(mut image) = image.lock() {
+            image.apply_base_image_transform(|base| transform(base));
+        }
+    }
+}
+
 fn layout_widget_size(first_image_size: egui::Vec2, layout: LayoutConfig, padding: f32) -> egui::Vec2 {
     egui::vec2(
         first_image_size.x * layout.cols as f32 + layout.cols.saturating_sub(1) as f32 * padding,
@@ -1018,6 +1048,26 @@ fn choose_save_path(image_name: &str, suggested_path: Option<&Path>) -> Option<P
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::color_editor::InvertTarget;
+    use crate::color_image::{ImageSRGBA, PixelSRGBA};
+    use crate::image_item_data::ImageItemData;
+
+    fn modified_pixel(rgba: [u8; 4]) -> Arc<Mutex<ModifiedImage>> {
+        Arc::new(Mutex::new(ModifiedImage::new(
+            ImageItemData::new(ImageSRGBA::from_tightly_packed_bytes(1, 1, &rgba)),
+            None,
+        )))
+    }
+
+    fn base_pixel(image: &Arc<Mutex<ModifiedImage>>) -> PixelSRGBA {
+        image
+            .lock()
+            .unwrap()
+            .pre_annotation_data()
+            .cpu_data()
+            .pixel(0, 0)
+            .unwrap()
+    }
 
     #[test]
     fn layout_widget_size_uses_first_image_and_grid_padding() {
@@ -1025,5 +1075,25 @@ mod tests {
             layout_widget_size(egui::vec2(320.0, 240.0), LayoutConfig { rows: 2, cols: 3 }, 1.0),
             egui::vec2(962.0, 481.0)
         );
+    }
+
+    #[test]
+    fn one_color_action_commits_once_to_every_visible_image() {
+        let first = modified_pixel([10, 20, 30, 40]);
+        let second = modified_pixel([100, 110, 120, 130]);
+        let images = vec![first.clone(), second.clone()];
+
+        apply_transform_to_images(&images, |base| {
+            apply_one_shot(base, OneShotOperation::Invert(InvertTarget::Rgb))
+        });
+        assert_eq!(base_pixel(&first).as_array(), [245, 235, 225, 40]);
+        assert_eq!(base_pixel(&second).as_array(), [155, 145, 135, 130]);
+        assert_eq!(first.lock().unwrap().display_revision(), 1);
+        assert_eq!(second.lock().unwrap().display_revision(), 1);
+
+        first.lock().unwrap().undo_last_change();
+        second.lock().unwrap().undo_last_change();
+        assert_eq!(base_pixel(&first).as_array(), [10, 20, 30, 40]);
+        assert_eq!(base_pixel(&second).as_array(), [100, 110, 120, 130]);
     }
 }
