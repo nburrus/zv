@@ -19,6 +19,7 @@ use crate::image_window::{CursorPixelInfo, ImageWindow};
 use crate::image_window_geometry::{ImageWindowGeometryState, WindowResizeAction};
 use crate::layout::{LayoutConfig, best_layout_for_image_count};
 use crate::modified_image::ModifiedImage;
+use crate::render::WgpuImageRenderer;
 use crate::shortcuts::{ShortcutViewport, collect_shortcuts};
 use crate::viewport_geometry::{ViewportGeometry, ViewportResizeCommand};
 
@@ -206,6 +207,7 @@ impl Viewer {
         self.update_controls_position(ctx);
         self.update_editor_state();
         self.controls_window.show(ctx);
+        self.update_color_preview(ctx, render_state);
         self.render_pending_confirmation(ctx, render_state);
 
         ViewerDebugState {
@@ -777,6 +779,22 @@ impl Viewer {
     fn update_visible_annotations(&self, render_state: Option<&egui_wgpu::RenderState>) {
         let images = self.visible_modified_images();
         self.update_modified_images_annotations(&images, render_state);
+    }
+
+    fn update_color_preview(&self, ctx: &egui::Context, render_state: Option<&egui_wgpu::RenderState>) {
+        let Some(render_state) = render_state else {
+            return;
+        };
+        let preview = self.controls_window.color_preview();
+        let mut renderer = render_state.renderer.write();
+        let Some(image_renderer) = renderer.callback_resources.get_mut::<WgpuImageRenderer>() else {
+            tracing::warn!("missing WgpuImageRenderer callback resource");
+            return;
+        };
+        if image_renderer.set_color_preview(&render_state.queue, preview) {
+            ctx.request_repaint_of(egui::ViewportId::ROOT);
+            ctx.request_repaint_of(self.controls_window.viewport_id());
+        }
     }
 
     fn update_pending_image_annotations(

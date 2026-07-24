@@ -9,6 +9,7 @@ use crate::color_editor::{
 };
 use crate::image_list::ImageList;
 use crate::modified_image::ModifiedImage;
+use crate::render::ColorPreview;
 use crate::viewer::AppAction;
 
 const HISTOGRAM_HEIGHT: f32 = 88.0;
@@ -186,6 +187,16 @@ enum PreviewSection {
 }
 
 impl ColorEditorUiState {
+    pub(crate) fn color_preview(&self) -> ColorPreview {
+        match self.pending_preview() {
+            Some(PreviewSection::Levels) => ColorPreview::Levels(self.levels),
+            Some(PreviewSection::Hue) => ColorPreview::Hue(HueShiftParams {
+                degrees: self.hue_degrees,
+            }),
+            None => ColorPreview::None,
+        }
+    }
+
     fn pending_preview(&self) -> Option<PreviewSection> {
         if !self.levels.is_identity() {
             Some(PreviewSection::Levels)
@@ -244,6 +255,7 @@ pub fn render_color_editor_tab(
         ui.weak("No loaded image");
         return;
     };
+    let preview_before = state.color_preview();
 
     render_levels_header(ui, &stats, &mut state);
     render_histogram(ui, &stats, &mut state);
@@ -253,6 +265,9 @@ pub fn render_color_editor_tab(
     render_hue_controls(ui, ctx, &mut state, action_queue);
     section_separator(ui);
     render_one_shot_controls(ui, ctx, &stats, &mut state, action_queue);
+    if state.color_preview() != preview_before {
+        repaint_both(ctx);
+    }
 }
 
 fn section_separator(ui: &mut egui::Ui) {
@@ -343,11 +358,13 @@ fn render_histogram(ui: &mut egui::Ui, stats: &ImageColorStats, state: &mut Colo
         ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
     }
     if let Some(handle) = active_handle {
-        response.show_tooltip_text(handle_tooltip(handle, state.current_levels()));
+        response.show_tooltip_ui(|ui| {
+            ui.add(egui::Label::new(handle_tooltip(handle, state.current_levels())).extend());
+        });
     } else if let Some(handle) = hovered_handle {
-        response
-            .clone()
-            .on_hover_text(handle_tooltip(handle, state.current_levels()));
+        response.clone().on_hover_ui(|ui| {
+            ui.add(egui::Label::new(handle_tooltip(handle, state.current_levels())).extend());
+        });
     } else if response.hovered()
         && stats.pixel_count > 0
         && let Some(pos) = pointer
@@ -816,12 +833,14 @@ mod tests {
     fn pending_previews_block_incompatible_sections() {
         let mut state = ColorEditorUiState::default();
         assert_eq!(state.pending_preview(), None);
+        assert_eq!(state.color_preview(), ColorPreview::None);
         assert!(state.allows_editing(PreviewSection::Levels));
         assert!(state.allows_editing(PreviewSection::Hue));
         assert!(state.allows_one_shot());
 
         state.levels.luma.input_black = 10;
         assert!(state.is_pending(PreviewSection::Levels));
+        assert_eq!(state.color_preview(), ColorPreview::Levels(state.levels));
         assert!(state.allows_editing(PreviewSection::Levels));
         assert!(!state.allows_editing(PreviewSection::Hue));
         assert!(!state.allows_one_shot());
@@ -829,11 +848,16 @@ mod tests {
 
         state.hue_degrees = 90.0;
         assert!(state.is_pending(PreviewSection::Hue));
+        assert_eq!(
+            state.color_preview(),
+            ColorPreview::Hue(HueShiftParams { degrees: 90.0 })
+        );
         assert!(state.allows_editing(PreviewSection::Hue));
         assert!(!state.allows_editing(PreviewSection::Levels));
         assert!(!state.allows_one_shot());
         state.reset_hue();
         assert_eq!(state.pending_preview(), None);
+        assert_eq!(state.color_preview(), ColorPreview::None);
     }
 
     #[test]

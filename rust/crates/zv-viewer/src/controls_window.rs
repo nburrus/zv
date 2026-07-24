@@ -19,7 +19,7 @@ use crate::image_window::CursorPixelInfo;
 use crate::image_window_geometry::WindowResizeAction;
 use crate::layout::LAYOUT_MENU_ENTRIES;
 use crate::modified_image::ModifiedImage;
-use crate::render::WgpuImageCallback;
+use crate::render::{ColorPreview, WgpuImageCallback};
 use crate::shortcuts::{ShortcutViewport, collect_shortcuts};
 use crate::viewer::{AppAction, ImageEditorState};
 
@@ -159,6 +159,13 @@ impl ControlsWindow {
 
     pub fn target_position(&self) -> Option<egui::Pos2> {
         self.target_position
+    }
+
+    pub fn color_preview(&self) -> ColorPreview {
+        self.color_editor_state
+            .lock()
+            .map(|state| state.color_preview())
+            .unwrap_or_default()
     }
 
     // Note: monitor_size has no origin; outer_rect.min may be negative or past
@@ -1234,9 +1241,16 @@ fn render_cursor_zoom_patch(ui: &mut egui::Ui, cursor: &CursorPixelInfo, rect: e
     );
     let uv_min = cursor.uv - half_uv;
     let uv_max = cursor.uv + half_uv;
+    // CursorPixelInfo, including the sRGB/Lab/HSV values and nearest-color names
+    // beside this patch, is sampled on the CPU from the stored image. The color
+    // editor preview exists only in the main image's fragment shader, so letting
+    // this callback follow it would change the magnified pixels without changing
+    // any of those readouts. Keep the entire cursor overlay internally consistent
+    // by deliberately bypassing the preview here.
     let callback = egui_wgpu::Callback::new_paint_callback(
         rect,
-        WgpuImageCallback::new(cursor.image_data.clone(), [uv_min.x, uv_min.y], [uv_max.x, uv_max.y]),
+        WgpuImageCallback::new(cursor.image_data.clone(), [uv_min.x, uv_min.y], [uv_max.x, uv_max.y])
+            .without_color_preview(),
     );
     ui.painter().add(callback);
 
