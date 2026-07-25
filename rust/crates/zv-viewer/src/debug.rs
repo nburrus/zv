@@ -168,6 +168,7 @@ enum DebugViewport {
 enum DebugKey {
     Delete,
     Escape,
+    E,
     ShiftL,
     ShiftA,
     ShiftR,
@@ -574,6 +575,7 @@ impl RuntimeDebug {
         let (key, modifiers) = match key {
             DebugKey::Delete => (egui::Key::Delete, egui::Modifiers::NONE),
             DebugKey::Escape => (egui::Key::Escape, egui::Modifiers::NONE),
+            DebugKey::E => (egui::Key::E, egui::Modifiers::NONE),
             DebugKey::ShiftL => (
                 egui::Key::L,
                 egui::Modifiers {

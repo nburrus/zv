@@ -145,6 +145,26 @@ impl ControlsWindow {
         }
     }
 
+    pub fn show_color_editor(&mut self) {
+        let already_visible = self.enabled
+            && self
+                .ui_state
+                .lock()
+                .is_ok_and(|state| state.active_tab == ControlsTab::ColorEditor);
+        if already_visible {
+            return;
+        }
+        if let Ok(mut state) = self.ui_state.lock() {
+            state.active_tab = ControlsTab::ColorEditor;
+        }
+        if !self.enabled {
+            self.enabled = true;
+            self.apply_initial_position_on_show = !self.has_ever_been_shown;
+            self.has_ever_been_shown = true;
+        }
+        self.focus_on_show = true;
+    }
+
     pub fn set_target_position(&mut self, position: Option<egui::Pos2>) {
         self.target_position = position;
     }
@@ -305,6 +325,12 @@ impl ControlsWindow {
                         }
                     });
                     ui.menu_button("Tools", |ui| {
+                        if ui.add(egui::Button::new("Color Editor").shortcut_text("e")).clicked() {
+                            push_action(&action_queue, AppAction::ShowColorEditor);
+                            ctx.request_repaint_of(egui::ViewportId::ROOT);
+                            ui.close();
+                        }
+                        ui.separator();
                         let mode = annotation_tool
                             .lock()
                             .ok()

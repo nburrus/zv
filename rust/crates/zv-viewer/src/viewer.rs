@@ -43,6 +43,7 @@ pub enum AppAction {
     DeleteImageOnDisk,
     RotateLeft,
     RotateRight,
+    ShowColorEditor,
     ApplyColorLevels(LevelsAdjustment),
     ApplyColorHue(HueShiftParams),
     ApplyColorOneShot(OneShotOperation),
@@ -415,6 +416,9 @@ impl Viewer {
                 }
                 AppAction::RotateRight => {
                     self.apply_to_visible_images(|image| image.rotate_cw());
+                }
+                AppAction::ShowColorEditor => {
+                    self.controls_window.show_color_editor();
                 }
                 AppAction::ApplyColorLevels(params) => {
                     apply_transform_to_images(&self.visible_modified_images(), move |base| apply_levels(base, params));
