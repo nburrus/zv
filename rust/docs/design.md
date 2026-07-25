@@ -140,6 +140,21 @@ This is intentional: CPU-side padding is part of the image representation so WGP
 The important invariant is that `bytes_per_row` is not assumed to be `width * 4`.
 Pixel access and texture upload both respect the stored stride.
 
+### Image Loading
+
+Image loading is implemented in `image_io.rs`.
+JPEG paths (`.jpg` and `.jpeg`, case-insensitive) are tried with the Rust `turbojpeg` crate first, which links to libjpeg-turbo/TurboJPEG.
+If TurboJPEG rejects the file, loading falls back to the generic `image` crate path.
+This preserves compatibility with mislabeled files, such as PNG data stored in a `.jpg` file.
+
+Non-JPEG formats continue to use the `image` crate directly.
+When both the TurboJPEG path and the fallback path fail for a JPEG extension, the returned error includes context from both attempts.
+
+The `turbojpeg` crate defaults enable `pkg-config`, `cmake`, and `require-simd`.
+On macOS, Linux, and Windows it can link against a system libturbojpeg discovered by pkg-config, or build libjpeg-turbo from source through CMake when a system library is not available.
+Source builds require the platform C/C++ toolchain, CMake, and an assembler for SIMD-capable builds such as NASM on x86/x86_64.
+This keeps the Rust viewer portable, but it does add native build prerequisites when prebuilt/system TurboJPEG is not found.
+
 ### `ImageItemData`
 
 `ImageItemData` is modeled after the C++ image item data role.
