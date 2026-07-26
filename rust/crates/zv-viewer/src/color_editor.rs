@@ -26,7 +26,8 @@ pub struct ImageColorStats {
     pub b: ChannelStats,
     pub a: ChannelStats,
     pub luma: ChannelStats,
-    pub rgb_channels_equal: bool,
+    /// Sampled, tolerant check rather than exact per-pixel equality; see [`is_grayscale_like`].
+    pub is_grayscale_like: bool,
     pub alpha_all_opaque: bool,
     pub has_any_transparency: bool,
     pub single_color: bool,
@@ -66,10 +67,13 @@ pub fn compute_image_color_stats(image: &ImageSRGBA) -> ImageColorStats {
     stats.alpha_all_opaque = stats.a.min == 255;
     stats.has_any_transparency = stats.a.min < 255;
     stats.single_color = stats.r.min == stats.r.max && stats.g.min == stats.g.max && stats.b.min == stats.b.max;
-    stats.rgb_channels_equal = is_grayscale_like(image);
+    stats.is_grayscale_like = is_grayscale_like(image);
     stats
 }
 
+/// Whether the image looks like a single-channel map replicated across R/G/B.
+/// Sampled and tolerant by design: it gates label-map operations, where a stray
+/// off-by-one from a lossy codec should not count as color.
 fn is_grayscale_like(image: &ImageSRGBA) -> bool {
     let count = u64::from(image.width()) * u64::from(image.height());
     if count == 0 {
@@ -83,7 +87,7 @@ fn is_grayscale_like(image: &ImageSRGBA) -> bool {
                 (i / u64::from(image.width())) as u32,
             )
             .unwrap();
-        i16::from(p.r).abs_diff(i16::from(p.g)) <= 2 && i16::from(p.r).abs_diff(i16::from(p.b)) <= 2
+        p.r.abs_diff(p.g) <= 2 && p.r.abs_diff(p.b) <= 2
     })
 }
 
@@ -139,6 +143,15 @@ pub struct LevelsAdjustment {
 impl LevelsAdjustment {
     pub fn is_identity(self) -> bool {
         self.luma.is_identity() && self.red.is_identity() && self.green.is_identity() && self.blue.is_identity()
+    }
+
+    /// Guards the one float in the adjustment. A NaN gamma compares unequal to
+    /// everything including itself, which would make `is_identity` permanently
+    /// false and leave the GPU preview re-uploading on every frame.
+    pub fn is_finite(self) -> bool {
+        [self.luma, self.red, self.green, self.blue]
+            .iter()
+            .all(|params| params.gamma.is_finite())
     }
 }
 
@@ -239,20 +252,6 @@ pub fn apply_hue_shift(image: &ImageSRGBA, params: HueShiftParams) -> ImageSRGBA
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub enum InvertTarget {
-    Rgb,
-    Red,
-    Green,
-    Blue,
-}
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum GrayscaleMode {
-    LumaSrgb,
-    Red,
-    Green,
-    Blue,
-}
-#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct LabelColorizeParams {
     pub seed: u32,
     pub background_value: u8,
@@ -270,8 +269,8 @@ pub enum OneShotOperation {
     SwapRedBlue,
     SwapRedGreen,
     SwapGreenBlue,
-    Invert(InvertTarget),
-    Grayscale(GrayscaleMode),
+    Invert,
+    Grayscale,
     HistogramEqualization,
     LabelColorize(LabelColorizeParams),
 }
@@ -301,31 +300,14 @@ pub fn apply_one_shot(image: &ImageSRGBA, operation: OneShotOperation) -> ImageS
             b: p.g,
             a: p.a,
         },
-        OneShotOperation::Invert(target) => PixelSRGBA {
-            r: if matches!(target, InvertTarget::Rgb | InvertTarget::Red) {
-                255 - p.r
-            } else {
-                p.r
-            },
-            g: if matches!(target, InvertTarget::Rgb | InvertTarget::Green) {
-                255 - p.g
-            } else {
-                p.g
-            },
-            b: if matches!(target, InvertTarget::Rgb | InvertTarget::Blue) {
-                255 - p.b
-            } else {
-                p.b
-            },
+        OneShotOperation::Invert => PixelSRGBA {
+            r: 255 - p.r,
+            g: 255 - p.g,
+            b: 255 - p.b,
             a: p.a,
         },
-        OneShotOperation::Grayscale(mode) => {
-            let v = match mode {
-                GrayscaleMode::LumaSrgb => luma_srgb(p),
-                GrayscaleMode::Red => p.r,
-                GrayscaleMode::Green => p.g,
-                GrayscaleMode::Blue => p.b,
-            };
+        OneShotOperation::Grayscale => {
+            let v = luma_srgb(p);
             PixelSRGBA {
                 r: v,
                 g: v,
@@ -430,14 +412,14 @@ mod tests {
         assert_eq!(s.r.histogram[0], 1);
         assert_eq!(s.r.histogram[100], 1);
         assert_eq!(s.luma.histogram[168], 1);
-        assert!(!s.rgb_channels_equal);
+        assert!(!s.is_grayscale_like);
         assert!(s.has_any_transparency);
         assert!(!s.alpha_all_opaque);
     }
     #[test]
     fn grayscale_tolerance_and_single_color() {
         let s = compute_image_color_stats(&image(&[[42, 43, 44, 255], [42, 43, 44, 7]]));
-        assert!(s.rgb_channels_equal);
+        assert!(s.is_grayscale_like);
         assert!(s.single_color);
     }
     #[test]
@@ -507,39 +489,13 @@ mod tests {
             [10, 30, 20, 77]
         );
         assert_eq!(
-            pixels(&apply_one_shot(&im, OneShotOperation::Invert(InvertTarget::Rgb)))[0].as_array(),
+            pixels(&apply_one_shot(&im, OneShotOperation::Invert))[0].as_array(),
             [245, 235, 225, 77]
         );
         assert_eq!(
-            pixels(&apply_one_shot(&im, OneShotOperation::Invert(InvertTarget::Red)))[0].as_array(),
-            [245, 20, 30, 77]
-        );
-        assert_eq!(
-            pixels(&apply_one_shot(&im, OneShotOperation::Invert(InvertTarget::Green)))[0].as_array(),
-            [10, 235, 30, 77]
-        );
-        assert_eq!(
-            pixels(&apply_one_shot(&im, OneShotOperation::Invert(InvertTarget::Blue)))[0].as_array(),
-            [10, 20, 225, 77]
-        );
-        assert_eq!(
-            pixels(&apply_one_shot(
-                &image(&[[255, 0, 0, 7]]),
-                OneShotOperation::Grayscale(GrayscaleMode::LumaSrgb)
-            ))[0]
-                .as_array(),
+            pixels(&apply_one_shot(&image(&[[255, 0, 0, 7]]), OneShotOperation::Grayscale))[0].as_array(),
             [54, 54, 54, 7]
         );
-        for (mode, expected) in [
-            (GrayscaleMode::Red, 10),
-            (GrayscaleMode::Green, 20),
-            (GrayscaleMode::Blue, 30),
-        ] {
-            assert_eq!(
-                pixels(&apply_one_shot(&im, OneShotOperation::Grayscale(mode)))[0].as_array(),
-                [expected, expected, expected, 77]
-            );
-        }
     }
     #[test]
     fn histogram_equalization_and_flat() {

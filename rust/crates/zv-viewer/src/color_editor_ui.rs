@@ -4,8 +4,8 @@ use eframe::egui;
 use egui_phosphor::regular as ph;
 
 use crate::color_editor::{
-    ChannelStats, GrayscaleMode, HueShiftParams, ImageColorStats, InvertTarget, LabelColorizeParams, LevelsAdjustment,
-    LevelsParams, OneShotOperation, compute_image_color_stats,
+    ChannelStats, HueShiftParams, ImageColorStats, LabelColorizeParams, LevelsAdjustment, LevelsParams,
+    OneShotOperation, compute_image_color_stats,
 };
 use crate::image_list::ImageList;
 use crate::modified_image::ModifiedImage;
@@ -157,7 +157,11 @@ impl StatsCache {
             self.entry = Some(StatsCacheEntry {
                 image: Arc::downgrade(image),
                 display_revision,
-                stats: compute_image_color_stats(image_data.final_data().cpu_data()),
+                // Color operations replace the base image and leave annotations as
+                // overlays, so the stats must describe the same pre-annotation pixels
+                // the operations will read. Using the annotated composite would let a
+                // drawn shape skew the histogram and flip the grayscale-only gates.
+                stats: compute_image_color_stats(image_data.pre_annotation_data().cpu_data()),
             });
         }
         self.entry.as_ref().map(|entry| &entry.stats)
@@ -220,6 +224,11 @@ impl ColorEditorUiState {
     /// One-shot operations commit immediately, so they need a clean slate.
     fn allows_one_shot(&self) -> bool {
         self.pending_preview().is_none()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_levels_for_test(&mut self, levels: LevelsAdjustment) {
+        self.levels = levels;
     }
 
     fn reset_levels(&mut self) {
@@ -493,7 +502,7 @@ fn show_histogram_tooltip(
     let pct = 100.0 * count as f64 / stats.pixel_count as f64;
     let cumulative_pct = 100.0 * cumulative as f64 / stats.pixel_count as f64;
     response.clone().on_hover_ui(|ui| {
-        ui.label(format!("Bin {bin}  [{bin}-{bin}]"));
+        ui.label(format!("Value {bin}"));
         ui.separator();
         ui.colored_label(
             color,
@@ -632,8 +641,8 @@ fn render_one_shot_controls(
                             ("Swap G/B", OneShotOperation::SwapGreenBlue),
                         ],
                         [
-                            ("Invert", OneShotOperation::Invert(InvertTarget::Rgb)),
-                            ("Grayscale", OneShotOperation::Grayscale(GrayscaleMode::LumaSrgb)),
+                            ("Invert", OneShotOperation::Invert),
+                            ("Grayscale", OneShotOperation::Grayscale),
                             ("HistEq", OneShotOperation::HistogramEqualization),
                         ],
                     ] {
@@ -651,7 +660,7 @@ fn render_one_shot_controls(
 
                     ui.horizontal_wrapped(|ui| {
                         let label_button = ui
-                            .add_enabled_ui(stats.rgb_channels_equal, |ui| ui.button("Label Colorize"))
+                            .add_enabled_ui(stats.is_grayscale_like, |ui| ui.button("Label Colorize"))
                             .inner;
                         if label_button.clicked() {
                             push_action(

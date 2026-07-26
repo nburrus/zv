@@ -74,7 +74,6 @@ impl ModifiedImage {
         self.display_revision
     }
 
-    #[allow(dead_code)]
     pub fn pre_annotation_data(&self) -> &ImageItemData {
         &self.original_data
     }
@@ -412,7 +411,7 @@ fn rotate_image(src: &ImageSRGBA, direction: RotationDirection) -> ImageSRGBA {
 mod tests {
     use super::*;
     use crate::annotations::{LineSegment, LineStyle};
-    use crate::color_editor::{GrayscaleMode, InvertTarget, OneShotOperation, apply_one_shot};
+    use crate::color_editor::{OneShotOperation, apply_one_shot};
     use crate::color_image::{ImageSRGBA, PixelSRGBA};
     use crate::image_io::load_rgba_image;
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -635,7 +634,7 @@ mod tests {
         modified.annotated_data = Some(image_with_color(annotated));
         let revision = modified.display_revision();
 
-        modified.apply_base_image_transform(|image| apply_one_shot(image, OneShotOperation::Invert(InvertTarget::Rgb)));
+        modified.apply_base_image_transform(|image| apply_one_shot(image, OneShotOperation::Invert));
 
         assert_eq!(first_pixel(modified.pre_annotation_data()), [245, 235, 225, 77]);
         assert!(modified.annotated_data.is_none());
@@ -664,9 +663,7 @@ mod tests {
         add_default_line(&mut modified, annotation_id);
         modified.actions.clear();
         let revision = modified.display_revision();
-        modified.apply_base_image_transform(|image| {
-            apply_one_shot(image, OneShotOperation::Grayscale(GrayscaleMode::LumaSrgb))
-        });
+        modified.apply_base_image_transform(|image| apply_one_shot(image, OneShotOperation::Grayscale));
 
         modified.undo_last_change();
 
@@ -689,16 +686,15 @@ mod tests {
         let mut modified = ModifiedImage::new(image_with_color(original), None);
         let revision = modified.display_revision();
 
-        modified.apply_base_image_transform(|image| apply_one_shot(image, OneShotOperation::Invert(InvertTarget::Red)));
-        modified
-            .apply_base_image_transform(|image| apply_one_shot(image, OneShotOperation::Invert(InvertTarget::Green)));
+        modified.apply_base_image_transform(|image| apply_one_shot(image, OneShotOperation::Invert));
+        modified.apply_base_image_transform(|image| apply_one_shot(image, OneShotOperation::SwapRedGreen));
 
-        assert_eq!(first_pixel(modified.pre_annotation_data()), [245, 235, 30, 77]);
+        assert_eq!(first_pixel(modified.pre_annotation_data()), [235, 245, 225, 77]);
         assert_eq!(modified.actions.len(), 2);
         assert_eq!(modified.display_revision(), revision + 2);
 
         modified.undo_last_change();
-        assert_eq!(first_pixel(modified.pre_annotation_data()), [245, 20, 30, 77]);
+        assert_eq!(first_pixel(modified.pre_annotation_data()), [245, 235, 225, 77]);
         assert!(modified.has_pending_changes());
         modified.undo_last_change();
         assert_eq!(first_pixel(modified.pre_annotation_data()), original.as_array());
@@ -716,12 +712,12 @@ mod tests {
         };
         let output_path = temp_png_path("base-transform-save");
         let mut modified = ModifiedImage::new(image_with_color(original), None);
-        modified.apply_base_image_transform(|image| apply_one_shot(image, OneShotOperation::Invert(InvertTarget::Rgb)));
+        modified.apply_base_image_transform(|image| apply_one_shot(image, OneShotOperation::Invert));
         modified.discard_changes();
         assert_eq!(first_pixel(modified.pre_annotation_data()), original.as_array());
         assert!(!modified.has_pending_changes());
 
-        modified.apply_base_image_transform(|image| apply_one_shot(image, OneShotOperation::Invert(InvertTarget::Rgb)));
+        modified.apply_base_image_transform(|image| apply_one_shot(image, OneShotOperation::Invert));
         modified.save_changes(Some(&output_path)).unwrap();
 
         assert_eq!(first_pixel(modified.pre_annotation_data()), [245, 235, 225, 77]);

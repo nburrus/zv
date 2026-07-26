@@ -20,11 +20,12 @@ pub enum ColorPreview {
 }
 
 impl ColorPreview {
-    /// A non-finite hue angle would never compare equal to itself, so the renderer would
+    /// A non-finite parameter would never compare equal to itself, so the renderer would
     /// see a new preview on every frame and keep re-uploading and repainting forever.
-    fn sanitized(self) -> Self {
+    pub(crate) fn sanitized(self) -> Self {
         match self {
             Self::Hue(params) if !params.degrees.is_finite() => Self::None,
+            Self::Levels(params) if !params.is_finite() => Self::None,
             other => other,
         }
     }
@@ -605,6 +606,28 @@ mod tests {
             );
         }
         let finite = ColorPreview::Hue(HueShiftParams { degrees: 90.0 });
+        assert_eq!(finite.sanitized(), finite);
+    }
+
+    #[test]
+    fn non_finite_levels_gamma_sanitizes_to_no_preview() {
+        for gamma in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+            let params = LevelsAdjustment {
+                green: LevelsParams {
+                    gamma,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+            assert_eq!(ColorPreview::Levels(params).sanitized(), ColorPreview::None);
+        }
+        let finite = ColorPreview::Levels(LevelsAdjustment {
+            luma: LevelsParams {
+                gamma: 2.2,
+                ..Default::default()
+            },
+            ..Default::default()
+        });
         assert_eq!(finite.sanitized(), finite);
     }
 

@@ -19,7 +19,7 @@ use crate::image_window::{CursorPixelInfo, ImageWindow};
 use crate::image_window_geometry::{ImageWindowGeometryState, WindowResizeAction};
 use crate::layout::{LayoutConfig, best_layout_for_image_count};
 use crate::modified_image::ModifiedImage;
-use crate::render::WgpuImageRenderer;
+use crate::render::{ColorPreview, WgpuImageRenderer};
 use crate::shortcuts::{ShortcutViewport, collect_shortcuts};
 use crate::viewport_geometry::{ViewportGeometry, ViewportResizeCommand};
 
@@ -88,6 +88,7 @@ pub struct Viewer {
     logged_first_image_load: bool,
     pending_confirmation: Option<PendingConfirmation>,
     allow_close: bool,
+    last_color_preview: ColorPreview,
 }
 
 impl Viewer {
@@ -121,11 +122,13 @@ impl Viewer {
             logged_first_image_load: false,
             pending_confirmation: None,
             allow_close: false,
+            last_color_preview: ColorPreview::None,
         }
     }
 
     pub fn update(&mut self, ctx: &egui::Context, render_state: Option<&egui_wgpu::RenderState>) -> ViewerDebugState {
         self.handle_root_close_request(ctx);
+        self.controls_window.consume_close_request();
         self.observe_root_viewport_geometry(ctx);
         self.collect_keyboard_actions(ctx);
         self.collect_controls_actions();
@@ -785,11 +788,19 @@ impl Viewer {
         self.update_modified_images_annotations(&images, render_state);
     }
 
-    fn update_color_preview(&self, ctx: &egui::Context, render_state: Option<&egui_wgpu::RenderState>) {
+    fn update_color_preview(&mut self, ctx: &egui::Context, render_state: Option<&egui_wgpu::RenderState>) {
         let Some(render_state) = render_state else {
             return;
         };
-        let preview = self.controls_window.color_preview();
+        // Sanitize before caching: a non-finite parameter compares unequal to itself,
+        // so an unsanitized cache would never register a hit.
+        let preview = self.controls_window.color_preview().sanitized();
+        // Every frame passes through here, almost always with nothing to do. Take the
+        // shared renderer's write lock only when the preview actually changed.
+        if self.last_color_preview == preview {
+            return;
+        }
+        self.last_color_preview = preview;
         let mut renderer = render_state.renderer.write();
         let Some(image_renderer) = renderer.callback_resources.get_mut::<WgpuImageRenderer>() else {
             tracing::warn!("missing WgpuImageRenderer callback resource");
@@ -1005,7 +1016,12 @@ fn apply_transform_to_images(
 ) {
     for image in images {
         if let Ok(mut image) = image.lock() {
-            image.apply_base_image_transform(|base| transform(base));
+            // Operations that decline to run (Label Colorize on a color image) and
+            // ones that happen to be identity both leave the pixels alone. Say so
+            // rather than letting the click look like it did nothing by accident.
+            if !image.apply_base_image_transform(|base| transform(base)) {
+                tracing::info!("color operation left the image unchanged");
+            }
         }
     }
 }
@@ -1070,7 +1086,6 @@ fn choose_save_path(image_name: &str, suggested_path: Option<&Path>) -> Option<P
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::color_editor::InvertTarget;
     use crate::color_image::{ImageSRGBA, PixelSRGBA};
     use crate::image_item_data::ImageItemData;
 
@@ -1105,9 +1120,7 @@ mod tests {
         let second = modified_pixel([100, 110, 120, 130]);
         let images = vec![first.clone(), second.clone()];
 
-        apply_transform_to_images(&images, |base| {
-            apply_one_shot(base, OneShotOperation::Invert(InvertTarget::Rgb))
-        });
+        apply_transform_to_images(&images, |base| apply_one_shot(base, OneShotOperation::Invert));
         assert_eq!(base_pixel(&first).as_array(), [245, 235, 225, 40]);
         assert_eq!(base_pixel(&second).as_array(), [155, 145, 135, 130]);
         assert_eq!(first.lock().unwrap().display_revision(), 1);

@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use eframe::egui;
@@ -105,6 +106,7 @@ pub struct ControlsWindow {
     has_ever_been_shown: bool,
     apply_initial_position_on_show: bool,
     focus_on_show: bool,
+    close_requested: Arc<AtomicBool>,
     last_auto_scrolled_selected: Arc<Mutex<Option<usize>>>,
 }
 
@@ -132,6 +134,7 @@ impl ControlsWindow {
             has_ever_been_shown: false,
             apply_initial_position_on_show: false,
             focus_on_show: false,
+            close_requested: Arc::new(AtomicBool::new(false)),
             last_auto_scrolled_selected: Arc::new(Mutex::new(None)),
         }
     }
@@ -181,7 +184,27 @@ impl ControlsWindow {
         self.target_position
     }
 
+    pub fn consume_close_request(&mut self) {
+        if self.close_requested.swap(false, Ordering::AcqRel) {
+            self.enabled = false;
+        }
+    }
+
+    /// The pending preview, or `None` whenever the color editor is not on screen.
+    /// A preview only exists as a shader effect on the main image, so leaving one
+    /// live after the tab is hidden would show an adjustment the user can neither
+    /// see the controls for nor undo, since it never reached the stored pixels.
     pub fn color_preview(&self) -> ColorPreview {
+        if !self.enabled {
+            return ColorPreview::None;
+        }
+        let showing_color_editor = self
+            .ui_state
+            .lock()
+            .is_ok_and(|state| state.active_tab == ControlsTab::ColorEditor);
+        if !showing_color_editor {
+            return ColorPreview::None;
+        }
         self.color_editor_state
             .lock()
             .map(|state| state.color_preview())
@@ -216,6 +239,7 @@ impl ControlsWindow {
         let action_queue = self.action_queue.clone();
         let annotation_tool = self.annotation_tool.clone();
         let editor_state = self.editor_state.clone();
+        let close_requested = self.close_requested.clone();
         let mut builder = egui::ViewportBuilder::default()
             .with_title("zv controls")
             .with_inner_size(egui::vec2(CONTROLS_WIDTH, CONTROLS_HEIGHT))
@@ -230,7 +254,13 @@ impl ControlsWindow {
             }
         }
 
-        ctx.show_viewport_deferred(self.viewport_id, builder, move |ctx, _class| {
+        ctx.show_viewport_deferred(self.viewport_id, builder, move |ctx, class| {
+            if class == egui::ViewportClass::Deferred && ctx.input(|input| input.viewport().close_requested()) {
+                ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+                close_requested.store(true, Ordering::Release);
+                ctx.request_repaint_of(egui::ViewportId::ROOT);
+            }
+
             apply_controls_visuals(ctx);
             let new_actions = collect_shortcuts(ctx, ShortcutViewport::Controls);
             if !new_actions.is_empty() {
@@ -465,11 +495,17 @@ fn apply_controls_visuals(ctx: &egui::Context) {
 
 fn render_tabs(ui: &mut egui::Ui, ui_state: &Arc<Mutex<ControlsUiState>>) -> ControlsTab {
     if let Ok(mut state) = ui_state.lock() {
+        let previous_tab = state.active_tab;
         ui.horizontal(|ui| {
             ui.selectable_value(&mut state.active_tab, ControlsTab::ImageList, "Image List");
             ui.selectable_value(&mut state.active_tab, ControlsTab::Modifiers, "Modifiers");
             ui.selectable_value(&mut state.active_tab, ControlsTab::ColorEditor, "Color Editor");
         });
+        if state.active_tab != previous_tab {
+            // Leaving or entering the color editor tab turns its pending preview off
+            // or back on, which only the main image viewport can repaint.
+            ui.ctx().request_repaint_of(egui::ViewportId::ROOT);
+        }
         state.active_tab
     } else {
         ControlsTab::ImageList
@@ -1567,4 +1603,74 @@ fn size_text_edit(ui: &mut egui::Ui, text: &mut String) -> egui::Response {
         )
     })
     .inner
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::color_editor::LevelsAdjustment;
+
+    fn controls_window() -> ControlsWindow {
+        ControlsWindow::new(
+            Arc::new(Mutex::new(ImageList::new(Vec::new()))),
+            Arc::new(Mutex::new(None)),
+            Arc::new(Mutex::new(None)),
+            Arc::new(Mutex::new(Vec::new())),
+            Arc::new(Mutex::new(AnnotationTool::default())),
+            Arc::new(Mutex::new(ImageEditorState::default())),
+        )
+    }
+
+    fn set_pending_levels(window: &ControlsWindow) -> ColorPreview {
+        let mut levels = LevelsAdjustment::default();
+        levels.luma.input_black = 10;
+        window.color_editor_state.lock().unwrap().set_levels_for_test(levels);
+        ColorPreview::Levels(levels)
+    }
+
+    #[test]
+    fn pending_preview_is_reported_only_while_the_color_editor_tab_is_on_screen() {
+        let mut window = controls_window();
+        let pending = set_pending_levels(&window);
+
+        // The tab has never been opened, so the preview must not reach the image.
+        assert_eq!(window.color_preview(), ColorPreview::None);
+
+        window.show_color_editor();
+        assert_eq!(window.color_preview(), pending);
+
+        window.ui_state.lock().unwrap().active_tab = ControlsTab::ImageList;
+        assert_eq!(window.color_preview(), ColorPreview::None);
+
+        window.ui_state.lock().unwrap().active_tab = ControlsTab::ColorEditor;
+        assert_eq!(window.color_preview(), pending);
+
+        // Closing the window must drop the preview without discarding the pending
+        // edit, so reopening shows the same adjustment and its Apply/Reset buttons.
+        window.toggle();
+        assert!(!window.is_enabled());
+        assert_eq!(window.color_preview(), ColorPreview::None);
+        window.toggle();
+        assert_eq!(window.color_preview(), pending);
+    }
+
+    #[test]
+    fn native_close_request_hides_controls_and_suppresses_pending_preview() {
+        let mut window = controls_window();
+        let pending = set_pending_levels(&window);
+        window.show_color_editor();
+        assert_eq!(window.color_preview(), pending);
+
+        window.close_requested.store(true, Ordering::Release);
+        window.consume_close_request();
+
+        assert!(!window.is_enabled());
+        assert_eq!(window.color_preview(), ColorPreview::None);
+
+        window.toggle();
+        assert_eq!(window.color_preview(), pending);
+
+        window.consume_close_request();
+        assert!(window.is_enabled());
+    }
 }
