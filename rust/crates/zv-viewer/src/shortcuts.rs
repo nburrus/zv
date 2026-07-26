@@ -63,8 +63,23 @@ pub fn collect_shortcuts(ctx: &egui::Context, viewport: ShortcutViewport) -> Vec
         push_resize_text_shortcuts(input, viewport, typing_text, &mut actions);
         push_layout_shortcuts(input, viewport, typing_text, &mut actions);
         push_annotation_shortcuts(input, viewport, typing_text, &mut actions);
+        push_color_editor_shortcut(input, viewport, typing_text, &mut actions);
     });
     actions
+}
+
+fn push_color_editor_shortcut(
+    input: &egui::InputState,
+    viewport: ShortcutViewport,
+    typing_text: bool,
+    out_actions: &mut Vec<AppAction>,
+) {
+    if scope_allows(ShortcutScope::GlobalWhenNotTyping, viewport, typing_text)
+        && input.modifiers == egui::Modifiers::NONE
+        && input.key_pressed(egui::Key::E)
+    {
+        out_actions.push(AppAction::ShowColorEditor);
+    }
 }
 
 fn push_annotation_shortcuts(

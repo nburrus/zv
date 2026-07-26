@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use eframe::egui;
@@ -10,6 +11,7 @@ use crate::annotation_tool::{AnnotationMode, AnnotationTool};
 use crate::annotations::{
     AnnotationElement, AnnotationId, AnnotationKind, LineEndpointStyle, LineStyle, StrokeStyle, TextStyle,
 };
+use crate::color_editor_ui::{ColorEditorUiState, render_color_editor_tab};
 use crate::color_image::{
     PixelSRGBA, closest_color_entries, convert_srgba_to_lab, convert_srgba_to_linear_rgb, convert_srgba_to_xyz,
 };
@@ -18,7 +20,7 @@ use crate::image_window::CursorPixelInfo;
 use crate::image_window_geometry::WindowResizeAction;
 use crate::layout::LAYOUT_MENU_ENTRIES;
 use crate::modified_image::ModifiedImage;
-use crate::render::WgpuImageCallback;
+use crate::render::{ColorPreview, WgpuImageCallback};
 use crate::shortcuts::{ShortcutViewport, collect_shortcuts};
 use crate::viewer::{AppAction, ImageEditorState};
 
@@ -69,7 +71,6 @@ struct StyleControlResponse {
     color_popup_open: bool,
 }
 
-#[derive(Debug)]
 struct ControlsUiState {
     active_tab: ControlsTab,
     size_texts: [String; 2],
@@ -99,11 +100,13 @@ pub struct ControlsWindow {
     annotation_tool: Arc<Mutex<AnnotationTool>>,
     editor_state: Arc<Mutex<ImageEditorState>>,
     ui_state: Arc<Mutex<ControlsUiState>>,
+    color_editor_state: Arc<Mutex<ColorEditorUiState>>,
     enabled: bool,
     target_position: Option<egui::Pos2>,
     has_ever_been_shown: bool,
     apply_initial_position_on_show: bool,
     focus_on_show: bool,
+    close_requested: Arc<AtomicBool>,
     last_auto_scrolled_selected: Arc<Mutex<Option<usize>>>,
 }
 
@@ -125,11 +128,13 @@ impl ControlsWindow {
             annotation_tool,
             editor_state,
             ui_state: Arc::new(Mutex::new(ControlsUiState::default())),
+            color_editor_state: Arc::new(Mutex::new(ColorEditorUiState::default())),
             enabled: false,
             target_position: None,
             has_ever_been_shown: false,
             apply_initial_position_on_show: false,
             focus_on_show: false,
+            close_requested: Arc::new(AtomicBool::new(false)),
             last_auto_scrolled_selected: Arc::new(Mutex::new(None)),
         }
     }
@@ -141,6 +146,26 @@ impl ControlsWindow {
             self.has_ever_been_shown = true;
             self.focus_on_show = true;
         }
+    }
+
+    pub fn show_color_editor(&mut self) {
+        let already_visible = self.enabled
+            && self
+                .ui_state
+                .lock()
+                .is_ok_and(|state| state.active_tab == ControlsTab::ColorEditor);
+        if already_visible {
+            return;
+        }
+        if let Ok(mut state) = self.ui_state.lock() {
+            state.active_tab = ControlsTab::ColorEditor;
+        }
+        if !self.enabled {
+            self.enabled = true;
+            self.apply_initial_position_on_show = !self.has_ever_been_shown;
+            self.has_ever_been_shown = true;
+        }
+        self.focus_on_show = true;
     }
 
     pub fn set_target_position(&mut self, position: Option<egui::Pos2>) {
@@ -157,6 +182,33 @@ impl ControlsWindow {
 
     pub fn target_position(&self) -> Option<egui::Pos2> {
         self.target_position
+    }
+
+    pub fn consume_close_request(&mut self) {
+        if self.close_requested.swap(false, Ordering::AcqRel) {
+            self.enabled = false;
+        }
+    }
+
+    /// The pending preview, or `None` whenever the color editor is not on screen.
+    /// A preview only exists as a shader effect on the main image, so leaving one
+    /// live after the tab is hidden would show an adjustment the user can neither
+    /// see the controls for nor undo, since it never reached the stored pixels.
+    pub fn color_preview(&self) -> ColorPreview {
+        if !self.enabled {
+            return ColorPreview::None;
+        }
+        let showing_color_editor = self
+            .ui_state
+            .lock()
+            .is_ok_and(|state| state.active_tab == ControlsTab::ColorEditor);
+        if !showing_color_editor {
+            return ColorPreview::None;
+        }
+        self.color_editor_state
+            .lock()
+            .map(|state| state.color_preview())
+            .unwrap_or_default()
     }
 
     // Note: monitor_size has no origin; outer_rect.min may be negative or past
@@ -183,9 +235,11 @@ impl ControlsWindow {
         let image_widget_size = self.image_widget_size.clone();
         let last_auto_scrolled_selected = self.last_auto_scrolled_selected.clone();
         let ui_state = self.ui_state.clone();
+        let color_editor_state = self.color_editor_state.clone();
         let action_queue = self.action_queue.clone();
         let annotation_tool = self.annotation_tool.clone();
         let editor_state = self.editor_state.clone();
+        let close_requested = self.close_requested.clone();
         let mut builder = egui::ViewportBuilder::default()
             .with_title("zv controls")
             .with_inner_size(egui::vec2(CONTROLS_WIDTH, CONTROLS_HEIGHT))
@@ -200,7 +254,13 @@ impl ControlsWindow {
             }
         }
 
-        ctx.show_viewport_deferred(self.viewport_id, builder, move |ctx, _class| {
+        ctx.show_viewport_deferred(self.viewport_id, builder, move |ctx, class| {
+            if class == egui::ViewportClass::Deferred && ctx.input(|input| input.viewport().close_requested()) {
+                ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+                close_requested.store(true, Ordering::Release);
+                ctx.request_repaint_of(egui::ViewportId::ROOT);
+            }
+
             apply_controls_visuals(ctx);
             let new_actions = collect_shortcuts(ctx, ShortcutViewport::Controls);
             if !new_actions.is_empty() {
@@ -295,6 +355,12 @@ impl ControlsWindow {
                         }
                     });
                     ui.menu_button("Tools", |ui| {
+                        if ui.add(egui::Button::new("Color Editor").shortcut_text("e")).clicked() {
+                            push_action(&action_queue, AppAction::ShowColorEditor);
+                            ctx.request_repaint_of(egui::ViewportId::ROOT);
+                            ui.close();
+                        }
+                        ui.separator();
                         let mode = annotation_tool
                             .lock()
                             .ok()
@@ -409,7 +475,9 @@ impl ControlsWindow {
                     ControlsTab::Modifiers => {
                         render_annotation_tools_tab(ui, &image_list, &annotation_tool, &ui_state, &action_queue, ctx)
                     }
-                    ControlsTab::ColorEditor => render_empty_tab(ui, "Color Editor"),
+                    ControlsTab::ColorEditor => {
+                        render_color_editor_tab(ui, ctx, &image_list, &color_editor_state, &action_queue);
+                    }
                 }
             });
         });
@@ -427,20 +495,21 @@ fn apply_controls_visuals(ctx: &egui::Context) {
 
 fn render_tabs(ui: &mut egui::Ui, ui_state: &Arc<Mutex<ControlsUiState>>) -> ControlsTab {
     if let Ok(mut state) = ui_state.lock() {
+        let previous_tab = state.active_tab;
         ui.horizontal(|ui| {
             ui.selectable_value(&mut state.active_tab, ControlsTab::ImageList, "Image List");
             ui.selectable_value(&mut state.active_tab, ControlsTab::Modifiers, "Modifiers");
             ui.selectable_value(&mut state.active_tab, ControlsTab::ColorEditor, "Color Editor");
         });
+        if state.active_tab != previous_tab {
+            // Leaving or entering the color editor tab turns its pending preview off
+            // or back on, which only the main image viewport can repaint.
+            ui.ctx().request_repaint_of(egui::ViewportId::ROOT);
+        }
         state.active_tab
     } else {
         ControlsTab::ImageList
     }
-}
-
-fn render_empty_tab(ui: &mut egui::Ui, label: &str) {
-    ui.add_space(12.0);
-    ui.label(egui::RichText::new(label).color(egui::Color32::from_gray(190)));
 }
 
 fn render_annotation_tools_tab(
@@ -1234,9 +1303,16 @@ fn render_cursor_zoom_patch(ui: &mut egui::Ui, cursor: &CursorPixelInfo, rect: e
     );
     let uv_min = cursor.uv - half_uv;
     let uv_max = cursor.uv + half_uv;
+    // CursorPixelInfo, including the sRGB/Lab/HSV values and nearest-color names
+    // beside this patch, is sampled on the CPU from the stored image. The color
+    // editor preview exists only in the main image's fragment shader, so letting
+    // this callback follow it would change the magnified pixels without changing
+    // any of those readouts. Keep the entire cursor overlay internally consistent
+    // by deliberately bypassing the preview here.
     let callback = egui_wgpu::Callback::new_paint_callback(
         rect,
-        WgpuImageCallback::new(cursor.image_data.clone(), [uv_min.x, uv_min.y], [uv_max.x, uv_max.y]),
+        WgpuImageCallback::new(cursor.image_data.clone(), [uv_min.x, uv_min.y], [uv_max.x, uv_max.y])
+            .without_color_preview(),
     );
     ui.painter().add(callback);
 
@@ -1527,4 +1603,74 @@ fn size_text_edit(ui: &mut egui::Ui, text: &mut String) -> egui::Response {
         )
     })
     .inner
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::color_editor::LevelsAdjustment;
+
+    fn controls_window() -> ControlsWindow {
+        ControlsWindow::new(
+            Arc::new(Mutex::new(ImageList::new(Vec::new()))),
+            Arc::new(Mutex::new(None)),
+            Arc::new(Mutex::new(None)),
+            Arc::new(Mutex::new(Vec::new())),
+            Arc::new(Mutex::new(AnnotationTool::default())),
+            Arc::new(Mutex::new(ImageEditorState::default())),
+        )
+    }
+
+    fn set_pending_levels(window: &ControlsWindow) -> ColorPreview {
+        let mut levels = LevelsAdjustment::default();
+        levels.luma.input_black = 10;
+        window.color_editor_state.lock().unwrap().set_levels_for_test(levels);
+        ColorPreview::Levels(levels)
+    }
+
+    #[test]
+    fn pending_preview_is_reported_only_while_the_color_editor_tab_is_on_screen() {
+        let mut window = controls_window();
+        let pending = set_pending_levels(&window);
+
+        // The tab has never been opened, so the preview must not reach the image.
+        assert_eq!(window.color_preview(), ColorPreview::None);
+
+        window.show_color_editor();
+        assert_eq!(window.color_preview(), pending);
+
+        window.ui_state.lock().unwrap().active_tab = ControlsTab::ImageList;
+        assert_eq!(window.color_preview(), ColorPreview::None);
+
+        window.ui_state.lock().unwrap().active_tab = ControlsTab::ColorEditor;
+        assert_eq!(window.color_preview(), pending);
+
+        // Closing the window must drop the preview without discarding the pending
+        // edit, so reopening shows the same adjustment and its Apply/Reset buttons.
+        window.toggle();
+        assert!(!window.is_enabled());
+        assert_eq!(window.color_preview(), ColorPreview::None);
+        window.toggle();
+        assert_eq!(window.color_preview(), pending);
+    }
+
+    #[test]
+    fn native_close_request_hides_controls_and_suppresses_pending_preview() {
+        let mut window = controls_window();
+        let pending = set_pending_levels(&window);
+        window.show_color_editor();
+        assert_eq!(window.color_preview(), pending);
+
+        window.close_requested.store(true, Ordering::Release);
+        window.consume_close_request();
+
+        assert!(!window.is_enabled());
+        assert_eq!(window.color_preview(), ColorPreview::None);
+
+        window.toggle();
+        assert_eq!(window.color_preview(), pending);
+
+        window.consume_close_request();
+        assert!(window.is_enabled());
+    }
 }

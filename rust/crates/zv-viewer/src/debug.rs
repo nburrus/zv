@@ -106,6 +106,10 @@ enum DebugAction {
         target: DebugTarget,
         at: [f32; 2],
     },
+    Click {
+        viewport: DebugViewport,
+        at: [f32; 2],
+    },
     PointerDown {
         target: DebugTarget,
         at: [f32; 2],
@@ -164,6 +168,7 @@ enum DebugViewport {
 enum DebugKey {
     Delete,
     Escape,
+    E,
     ShiftL,
     ShiftA,
     ShiftR,
@@ -353,7 +358,14 @@ impl RuntimeDebug {
                 let pos = resolve_target_pos(target, at, state);
                 // Debug "root" input targets the main image viewport/window.
                 let viewport_id = egui::ViewportId::ROOT;
-                self.queue_right_click(viewport_id, pos);
+                self.queue_click(viewport_id, pos, egui::PointerButton::Secondary);
+                request_repaint_after_scripted_input(ctx, state, viewport_id);
+                self.advance_action();
+                false
+            }
+            DebugAction::Click { viewport, at } => {
+                let viewport_id = resolve_viewport(viewport, state);
+                self.queue_click(viewport_id, egui::pos2(at[0], at[1]), egui::PointerButton::Primary);
                 request_repaint_after_scripted_input(ctx, state, viewport_id);
                 self.advance_action();
                 false
@@ -490,20 +502,20 @@ impl RuntimeDebug {
         self.queue_events(viewport_id, events);
     }
 
-    fn queue_right_click(&mut self, viewport_id: egui::ViewportId, pos: egui::Pos2) {
+    fn queue_click(&mut self, viewport_id: egui::ViewportId, pos: egui::Pos2, button: egui::PointerButton) {
         self.queue_events(
             viewport_id,
             [
                 egui::Event::PointerMoved(pos),
                 egui::Event::PointerButton {
                     pos,
-                    button: egui::PointerButton::Secondary,
+                    button,
                     pressed: true,
                     modifiers: egui::Modifiers::NONE,
                 },
                 egui::Event::PointerButton {
                     pos,
-                    button: egui::PointerButton::Secondary,
+                    button,
                     pressed: false,
                     modifiers: egui::Modifiers::NONE,
                 },
@@ -563,6 +575,7 @@ impl RuntimeDebug {
         let (key, modifiers) = match key {
             DebugKey::Delete => (egui::Key::Delete, egui::Modifiers::NONE),
             DebugKey::Escape => (egui::Key::Escape, egui::Modifiers::NONE),
+            DebugKey::E => (egui::Key::E, egui::Modifiers::NONE),
             DebugKey::ShiftL => (
                 egui::Key::L,
                 egui::Modifiers {

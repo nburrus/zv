@@ -1,6 +1,8 @@
 mod annotation_tool;
 mod annotations;
 mod app;
+mod color_editor;
+mod color_editor_ui;
 mod color_image;
 mod controls_window;
 mod debug;
