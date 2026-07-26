@@ -26,11 +26,6 @@ const SHORTCUTS: &[(egui::Key, ShortcutScope, AppAction)] = &[
         AppAction::NextImage,
     ),
     (
-        egui::Key::Space,
-        ShortcutScope::GlobalWhenNotTyping,
-        AppAction::NextImage,
-    ),
-    (
         egui::Key::ArrowUp,
         ShortcutScope::GlobalWhenNotTyping,
         AppAction::PreviousImage,
@@ -63,8 +58,38 @@ pub fn collect_shortcuts(ctx: &egui::Context, viewport: ShortcutViewport) -> Vec
         push_resize_text_shortcuts(input, viewport, typing_text, &mut actions);
         push_layout_shortcuts(input, viewport, typing_text, &mut actions);
         push_annotation_shortcuts(input, viewport, typing_text, &mut actions);
+        push_image_selection_shortcuts(input, viewport, typing_text, &mut actions);
     });
     actions
+}
+
+fn push_image_selection_shortcuts(
+    input: &egui::InputState,
+    viewport: ShortcutViewport,
+    typing_text: bool,
+    out_actions: &mut Vec<AppAction>,
+) {
+    if !scope_allows(ShortcutScope::GlobalWhenNotTyping, viewport, typing_text) {
+        return;
+    }
+    let command = input.modifiers.ctrl || input.modifiers.command || input.modifiers.mac_cmd;
+    if input.key_pressed(egui::Key::X) && !input.modifiers.alt && !input.modifiers.shift && !command {
+        out_actions.push(AppAction::ToggleCurrentImageSelection);
+    }
+    if input.key_pressed(egui::Key::Space) {
+        if command {
+            out_actions.push(AppAction::ToggleCurrentImageSelection);
+        } else if !input.modifiers.alt && !input.modifiers.shift {
+            out_actions.push(AppAction::NextImage);
+        }
+    }
+    if input.key_pressed(egui::Key::A) && command {
+        if input.modifiers.shift {
+            out_actions.push(AppAction::ClearImageSelection);
+        } else {
+            out_actions.push(AppAction::SelectAllImages);
+        }
+    }
 }
 
 fn push_annotation_shortcuts(
@@ -79,7 +104,8 @@ fn push_annotation_shortcuts(
     if input.key_pressed(egui::Key::L) && input.modifiers.shift {
         out_actions.push(AppAction::SetAnnotationMode(AnnotationMode::AddLine));
     }
-    if input.key_pressed(egui::Key::A) && input.modifiers.shift {
+    let command = input.modifiers.ctrl || input.modifiers.command || input.modifiers.mac_cmd;
+    if input.key_pressed(egui::Key::A) && input.modifiers.shift && !command {
         out_actions.push(AppAction::SetAnnotationMode(AnnotationMode::AddArrow));
     }
     if input.key_pressed(egui::Key::R) && input.modifiers.shift {
@@ -104,14 +130,13 @@ fn push_annotation_shortcuts(
     if input.key_pressed(egui::Key::Z) && (input.modifiers.ctrl || input.modifiers.command || input.modifiers.mac_cmd) {
         out_actions.push(AppAction::UndoImageEdit);
     }
-    let cmd = input.modifiers.ctrl || input.modifiers.command || input.modifiers.mac_cmd;
-    if input.key_pressed(egui::Key::O) && cmd {
+    if input.key_pressed(egui::Key::O) && command {
         out_actions.push(AppAction::OpenImage);
     }
-    if input.key_pressed(egui::Key::W) && cmd {
+    if input.key_pressed(egui::Key::W) && command {
         out_actions.push(AppAction::CloseImage);
     }
-    if input.key_pressed(egui::Key::S) && cmd && !input.modifiers.shift {
+    if input.key_pressed(egui::Key::S) && command && !input.modifiers.shift {
         out_actions.push(AppAction::SaveImageEdits);
     }
 }

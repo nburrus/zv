@@ -2,6 +2,7 @@ use std::sync::{Arc, Mutex};
 
 use eframe::egui;
 use eframe::egui_wgpu;
+use egui_phosphor::regular as ph;
 
 use crate::annotation_tool::AnnotationTool;
 use crate::annotations::WidgetToTextureTransform;
@@ -84,6 +85,7 @@ pub struct ImageWindow {
 pub struct ImageWindowOutput {
     pub image_rect: Option<egui::Rect>,
     pub secondary_clicked: bool,
+    pub toggle_marked_index: Option<usize>,
     // The cursor pixel info and annotation selection are shared with the
     // controls window, which lives in a separate viewport and stays idle
     // unless explicitly repainted when they change.
@@ -102,6 +104,7 @@ impl ImageWindow {
         let mut output = ImageWindowOutput {
             image_rect: None,
             secondary_clicked: false,
+            toggle_marked_index: None,
             shared_state_changed: false,
         };
 
@@ -129,12 +132,27 @@ impl ImageWindow {
                     .position(|image| image.as_ref().and_then(|image| image.data.as_ref()).is_some());
 
                 for (index, cell_rect) in cell_rects.iter().copied().enumerate() {
-                    let response = ui.allocate_rect(cell_rect, egui::Sense::click_and_drag());
+                    let image = images.get(index).and_then(Option::as_ref);
+                    let mark_rect = image.map(|_| image_mark_rect(cell_rect));
+                    let pointer_over_mark = mark_rect.is_some_and(|rect| {
+                        ui.input(|input| {
+                            input
+                                .pointer
+                                .hover_pos()
+                                .is_some_and(|position| rect.contains(position))
+                        })
+                    });
+                    let sense = if pointer_over_mark {
+                        egui::Sense::hover()
+                    } else {
+                        egui::Sense::click_and_drag()
+                    };
+                    let response = ui.allocate_rect(cell_rect, sense);
                     if response.secondary_clicked() {
                         output.secondary_clicked = true;
                     }
 
-                    let Some(Some(image)) = images.get(index) else {
+                    let Some(image) = image else {
                         continue;
                     };
 
@@ -153,6 +171,20 @@ impl ImageWindow {
                         WgpuImageCallback::new(image_data.clone(), [uv_min.x, uv_min.y], [uv_max.x, uv_max.y]),
                     );
                     ui.painter().add(callback);
+
+                    if image.marked {
+                        ui.painter().rect_stroke(
+                            cell_rect.shrink(2.0),
+                            0.0,
+                            egui::Stroke::new(3.0, egui::Color32::from_rgb(90, 165, 255)),
+                            egui::StrokeKind::Inside,
+                        );
+                    }
+                    let mark_response = paint_image_mark(ui, image, mark_rect.expect("image has mark rect"));
+                    if mark_response.clicked() {
+                        output.toggle_marked_index = Some(image.index);
+                        output.shared_state_changed = true;
+                    }
 
                     if let Ok(mut tool) = annotation_tool.lock() {
                         let image_size = image_data
@@ -242,6 +274,54 @@ impl ImageWindow {
 
         output
     }
+}
+
+fn image_mark_rect(cell_rect: egui::Rect) -> egui::Rect {
+    egui::Rect::from_min_size(cell_rect.min + egui::vec2(8.0, 8.0), egui::vec2(24.0, 24.0))
+}
+
+fn paint_image_mark(ui: &mut egui::Ui, image: &SelectedImageView, rect: egui::Rect) -> egui::Response {
+    if image.marked {
+        ui.painter().rect_stroke(
+            rect.expand(4.0),
+            4.0,
+            egui::Stroke::new(2.0, egui::Color32::from_rgb(90, 165, 255)),
+            egui::StrokeKind::Outside,
+        );
+    }
+    let response = ui.interact(
+        rect,
+        ui.make_persistent_id(("image_mark", image.id)),
+        egui::Sense::click(),
+    );
+    let fill = if image.marked {
+        egui::Color32::from_rgb(55, 125, 220)
+    } else if response.hovered() {
+        egui::Color32::from_black_alpha(180)
+    } else {
+        egui::Color32::from_black_alpha(110)
+    };
+    ui.painter().rect_filled(rect, 4.0, fill);
+    ui.painter().rect_stroke(
+        rect,
+        4.0,
+        egui::Stroke::new(1.0, egui::Color32::WHITE),
+        egui::StrokeKind::Inside,
+    );
+    if image.marked {
+        ui.painter().text(
+            rect.center(),
+            egui::Align2::CENTER_CENTER,
+            ph::CHECK,
+            egui::FontId::proportional(18.0),
+            egui::Color32::WHITE,
+        );
+    }
+    response.on_hover_text(if image.marked {
+        "Remove image from selection"
+    } else {
+        "Add image to selection"
+    })
 }
 
 #[derive(Clone)]

@@ -43,6 +43,14 @@ fn command_shortcut(key: char) -> String {
     format!("{modifier}+{key}")
 }
 
+fn command_shift_shortcut(key: char) -> String {
+    format!("{}+Shift+{key}", command_shortcut_modifier())
+}
+
+fn command_shortcut_modifier() -> &'static str {
+    if cfg!(target_os = "macos") { "Cmd" } else { "Ctrl" }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ControlsTab {
     ImageList,
@@ -215,6 +223,7 @@ impl ControlsWindow {
 
             egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
                 let ed = editor_state.lock().map(|g| g.clone()).unwrap_or_default();
+                let marked_count = image_list.lock().ok().map(|images| images.marked_count()).unwrap_or(0);
                 egui::MenuBar::new().ui(ui, |ui| {
                     ui.menu_button("File", |ui| {
                         if ui
@@ -246,8 +255,13 @@ impl ControlsWindow {
                             ctx.request_repaint_of(egui::ViewportId::ROOT);
                             ui.close();
                         }
+                        let delete_label = if marked_count > 0 {
+                            format!("Delete {marked_count} Selected Image(s) on Disk")
+                        } else {
+                            "Delete Current Image on Disk".to_owned()
+                        };
                         if ui
-                            .add(egui::Button::new("Delete Image on Disk").shortcut_text("Shift+Del"))
+                            .add(egui::Button::new(delete_label).shortcut_text("Shift+Del"))
                             .clicked()
                         {
                             push_action(&action_queue, AppAction::DeleteImageOnDisk);
@@ -262,6 +276,34 @@ impl ControlsWindow {
                         }
                     });
                     ui.menu_button("Edit", |ui| {
+                        if ui
+                            .add(egui::Button::new("Toggle Current Image Selection").shortcut_text("x"))
+                            .clicked()
+                        {
+                            push_action(&action_queue, AppAction::ToggleCurrentImageSelection);
+                            ctx.request_repaint_of(egui::ViewportId::ROOT);
+                            ui.close();
+                        }
+                        if ui
+                            .add(egui::Button::new("Select All Images").shortcut_text(command_shortcut('A')))
+                            .clicked()
+                        {
+                            push_action(&action_queue, AppAction::SelectAllImages);
+                            ctx.request_repaint_of(egui::ViewportId::ROOT);
+                            ui.close();
+                        }
+                        if ui
+                            .add_enabled(
+                                marked_count > 0,
+                                egui::Button::new("Clear Image Selection").shortcut_text(command_shift_shortcut('A')),
+                            )
+                            .clicked()
+                        {
+                            push_action(&action_queue, AppAction::ClearImageSelection);
+                            ctx.request_repaint_of(egui::ViewportId::ROOT);
+                            ui.close();
+                        }
+                        ui.separator();
                         if ui
                             .add_enabled(
                                 ed.can_undo,
@@ -978,6 +1020,7 @@ fn render_filter_row(ui: &mut egui::Ui, image_list: &Arc<Mutex<ImageList>>, ctx:
 struct CollectedRow {
     index: usize,
     selected: bool,
+    marked: bool,
     name: String,
     hover_text: Option<String>,
     size_text: String,
@@ -1008,6 +1051,7 @@ fn render_image_list(
         .map(|row| CollectedRow {
             index: row.index,
             selected: row.selected,
+            marked: row.marked,
             name: row.name.to_owned(),
             hover_text: row.source_path.map(|p| p.display().to_string()),
             size_text: row
@@ -1019,6 +1063,7 @@ fn render_image_list(
         .collect();
 
     let mut pending_select: Option<usize> = None;
+    let mut pending_toggle_mark: Option<usize> = None;
     let mut pending_move: Option<(usize, usize)> = None;
 
     // Capture these before TableBuilder takes &mut ui.
@@ -1047,6 +1092,7 @@ fn render_image_list(
         .resizable(false)
         .auto_shrink([false, true])
         .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
+        .column(Column::exact(28.0))
         .column(Column::remainder().clip(true).at_least(name_col_min_width))
         .column(Column::exact(size_col_width))
         .min_scrolled_height(0.0)
@@ -1056,6 +1102,9 @@ fn render_image_list(
     }
     table
         .header(header_height, |mut header| {
+            header.col(|ui| {
+                ui.strong("✓");
+            });
             header.col(|ui| {
                 ui.strong("Name");
             });
@@ -1072,6 +1121,12 @@ fn render_image_list(
                 let row_data = &rows[row.index()];
                 row.set_selected(row_data.selected);
 
+                row.col(|ui| {
+                    let mut marked = row_data.marked;
+                    if ui.checkbox(&mut marked, "").changed() {
+                        pending_toggle_mark = Some(row_data.index);
+                    }
+                });
                 row.col(|ui| {
                     let avail = ui.available_width();
                     let (display_name, text_color) = if row_data.has_changes {
@@ -1140,6 +1195,9 @@ fn render_image_list(
 
     if let Some((from, to)) = pending_move {
         image_list.move_item(from, to);
+        ctx.request_repaint_of(egui::ViewportId::ROOT);
+    } else if let Some(index) = pending_toggle_mark {
+        image_list.toggle_marked_at(index);
         ctx.request_repaint_of(egui::ViewportId::ROOT);
     } else if let Some(index) = pending_select {
         image_list.select_index(index);

@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap, VecDeque};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, TryRecvError};
@@ -16,6 +16,7 @@ pub struct ImageId(u64);
 pub struct ImageListRow<'a> {
     pub index: usize,
     pub selected: bool,
+    pub marked: bool,
     pub name: &'a str,
     pub source_path: Option<&'a Path>,
     pub size: Option<(u32, u32)>,
@@ -24,8 +25,10 @@ pub struct ImageListRow<'a> {
 
 #[derive(Clone)]
 pub struct SelectedImageView {
+    pub index: usize,
     pub id: ImageId,
     pub name: String,
+    pub marked: bool,
     pub data: Option<Arc<Mutex<ModifiedImage>>>,
     pub error: Option<String>,
 }
@@ -47,6 +50,7 @@ pub struct ImageList {
     items: Vec<ImageItem>,
     selection_start: usize,
     selection_count: usize,
+    marked: HashSet<ImageId>,
     filter_text: String,
     cache: ImageItemCache,
     pending_preloads: HashMap<ImageId, Receiver<PreloadResult>>,
@@ -163,6 +167,7 @@ impl ImageList {
             items,
             selection_start: 0,
             selection_count: 1,
+            marked: HashSet::new(),
             filter_text: String::new(),
             cache: ImageItemCache::new(16),
             pending_preloads: HashMap::new(),
@@ -188,6 +193,7 @@ impl ImageList {
             self.item_enabled(index).then_some(ImageListRow {
                 index,
                 selected: selected_indices.contains(&Some(index)),
+                marked: self.marked.contains(&item.id),
                 name: &item.pretty_name,
                 source_path: item.source_image_path.as_deref(),
                 size: item.metadata,
@@ -202,6 +208,7 @@ impl ImageList {
         }
         let id = self.items[index].id;
         self.items.remove(index);
+        self.marked.remove(&id);
         self.pending_preloads.remove(&id);
         self.cache.remove(id);
         // Keep the viewer usable after removing the final image, matching the C++ viewer's fallback.
@@ -287,6 +294,36 @@ impl ImageList {
         self.selection_count
     }
 
+    pub fn marked_count(&self) -> usize {
+        self.marked.len()
+    }
+
+    pub fn toggle_marked_at(&mut self, index: usize) {
+        let Some(item) = self.items.get(index) else {
+            return;
+        };
+        if !self.marked.remove(&item.id) {
+            self.marked.insert(item.id);
+        }
+    }
+
+    pub fn mark_all_enabled(&mut self) {
+        self.marked
+            .extend(self.enabled_indices().into_iter().map(|index| self.items[index].id));
+    }
+
+    pub fn clear_marked(&mut self) {
+        self.marked.clear();
+    }
+
+    pub fn marked_indices(&self) -> Vec<usize> {
+        self.items
+            .iter()
+            .enumerate()
+            .filter_map(|(index, item)| self.marked.contains(&item.id).then_some(index))
+            .collect()
+    }
+
     pub fn set_selection_count(&mut self, count: usize) {
         self.selection_count = count.max(1);
         let enabled_count = self.enabled_indices().len();
@@ -347,10 +384,13 @@ impl ImageList {
         self.selected_indices()
             .into_iter()
             .map(|index| {
-                let item = self.items.get(index?)?;
+                let index = index?;
+                let item = self.items.get(index)?;
                 Some(SelectedImageView {
+                    index,
                     id: item.id,
                     name: item.pretty_name.clone(),
+                    marked: self.marked.contains(&item.id),
                     data: self.cache.get_cached(item.id),
                     error: item.error.clone(),
                 })
@@ -856,6 +896,37 @@ mod tests {
         assert!(range[1].is_some());
         assert!(range[2].is_none());
         assert!(range[3].is_none());
+    }
+
+    #[test]
+    fn marks_images_independently_from_display_selection() {
+        let mut images = list(&["a.png", "b.png", "c.png"]);
+        images.toggle_marked_at(0);
+        images.select_index(2);
+
+        assert_eq!(images.marked_indices(), [0]);
+        assert_eq!(images.selected_index(), Some(2));
+        assert!(images.visible_rows().next().unwrap().marked);
+    }
+
+    #[test]
+    fn select_all_marks_only_filter_enabled_images() {
+        let mut images = list(&["cat.png", "dog.png", "catalog.jpg"]);
+        images.set_filter("cat".to_owned());
+        images.mark_all_enabled();
+
+        assert_eq!(images.marked_indices(), [0, 2]);
+    }
+
+    #[test]
+    fn marks_follow_items_when_reordered_and_clear_when_removed() {
+        let mut images = list(&["a.png", "b.png", "c.png"]);
+        images.toggle_marked_at(1);
+        images.move_item(1, 3);
+        assert_eq!(images.marked_indices(), [2]);
+
+        images.remove_at(2);
+        assert_eq!(images.marked_count(), 0);
     }
 
     #[test]
