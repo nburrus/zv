@@ -6,6 +6,7 @@ publish = false
 
 [dependencies]
 anyhow = "1"
+arboard = "3.6"
 bytemuck = { version = "1", features = ["derive"] }
 clap = { version = "4", features = ["derive"] }
 eframe = { version = "0.33", features = ["default_fonts", "wgpu", "x11", "wayland"] }

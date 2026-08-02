@@ -285,6 +285,7 @@ Progress so far:
 - Image viewport resize state, generic viewport geometry, and controls-window placement now live in separate Rust modules.
 - Pixel hover reporting is implemented in both the controls viewport and a compact image overlay.
 - A JSON debug runner can inject input and write state/screenshot artifacts.
+- Image copy and New from Clipboard (`Cmd/Ctrl+N`) through the system clipboard are implemented.
 
 Likely deferred:
 
@@ -295,7 +296,6 @@ Likely deferred:
 - Editing pipeline.
 - Annotations.
 - Color editor.
-- Clipboard image support.
 - Saving modified images.
 
 ## Porting Difficulty Guess

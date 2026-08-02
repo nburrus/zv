@@ -38,6 +38,8 @@ pub enum AppAction {
     UndoImageEdit,
     DiscardImageEdits,
     SaveImageEdits,
+    CopyImageToClipboard,
+    PasteImageFromClipboard,
     OpenImage,
     CloseImage,
     DeleteImageOnDisk,
@@ -393,6 +395,8 @@ impl Viewer {
                     self.save_pending_images_with_dialog(images);
                     self.clear_missing_annotation_selection();
                 }
+                AppAction::CopyImageToClipboard => self.copy_image_to_clipboard(ctx, render_state),
+                AppAction::PasteImageFromClipboard => self.paste_image_from_clipboard(),
                 AppAction::OpenImage => self.open_image(),
                 AppAction::CloseImage => {
                     let index = self
@@ -868,6 +872,37 @@ impl Viewer {
                 image_list.add_image_paths(paths);
             }
         }
+    }
+
+    fn copy_image_to_clipboard(&self, ctx: &egui::Context, render_state: Option<&egui_wgpu::RenderState>) {
+        let images = self.visible_modified_images();
+        self.update_modified_images_annotations(&images, render_state);
+        let Some(image) = images.into_iter().find_map(|image| {
+            let image = image.lock().ok()?;
+            Some(image.final_data().cpu_data().clone())
+        }) else {
+            tracing::debug!("no loaded image available to copy");
+            return;
+        };
+        crate::clipboard::copy_image(ctx, &image);
+    }
+
+    fn paste_image_from_clipboard(&self) {
+        let image = match crate::clipboard::read_image() {
+            Ok(image) => image,
+            Err(error) => {
+                tracing::warn!(%error, "failed to paste image from clipboard");
+                return;
+            }
+        };
+        self.paste_image(image);
+    }
+
+    pub fn paste_image(&self, image: crate::color_image::ImageSRGBA) {
+        if let Ok(mut image_list) = self.image_list.lock() {
+            image_list.add_pasted_image_data(image);
+        }
+        self.clear_missing_annotation_selection();
     }
 
     fn save_pending_images_with_dialog(&self, images: Vec<PendingImageChange>) -> bool {

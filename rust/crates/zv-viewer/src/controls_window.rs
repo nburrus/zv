@@ -281,8 +281,7 @@ impl ControlsWindow {
                             .add(egui::Button::new("Open Image…").shortcut_text(command_shortcut('O')))
                             .clicked()
                         {
-                            push_action(&action_queue, AppAction::OpenImage);
-                            ctx.request_repaint_of(egui::ViewportId::ROOT);
+                            push_root_action(ctx, &action_queue, AppAction::OpenImage);
                             ui.close();
                         }
                         ui.separator();
@@ -293,8 +292,7 @@ impl ControlsWindow {
                             )
                             .clicked()
                         {
-                            push_action(&action_queue, AppAction::SaveImageEdits);
-                            ctx.request_repaint_of(egui::ViewportId::ROOT);
+                            push_root_action(ctx, &action_queue, AppAction::SaveImageEdits);
                             ui.close();
                         }
                         ui.separator();
@@ -302,22 +300,19 @@ impl ControlsWindow {
                             .add(egui::Button::new("Close Image").shortcut_text(command_shortcut('W')))
                             .clicked()
                         {
-                            push_action(&action_queue, AppAction::CloseImage);
-                            ctx.request_repaint_of(egui::ViewportId::ROOT);
+                            push_root_action(ctx, &action_queue, AppAction::CloseImage);
                             ui.close();
                         }
                         if ui
                             .add(egui::Button::new("Delete Image on Disk").shortcut_text("Shift+Del"))
                             .clicked()
                         {
-                            push_action(&action_queue, AppAction::DeleteImageOnDisk);
-                            ctx.request_repaint_of(egui::ViewportId::ROOT);
+                            push_root_action(ctx, &action_queue, AppAction::DeleteImageOnDisk);
                             ui.close();
                         }
                         ui.separator();
                         if ui.add(egui::Button::new("Close").shortcut_text("q")).clicked() {
-                            push_action(&action_queue, AppAction::Quit);
-                            ctx.request_repaint_of(egui::ViewportId::ROOT);
+                            push_root_action(ctx, &action_queue, AppAction::Quit);
                             ui.close();
                         }
                     });
@@ -329,16 +324,29 @@ impl ControlsWindow {
                             )
                             .clicked()
                         {
-                            push_action(&action_queue, AppAction::UndoImageEdit);
-                            ctx.request_repaint_of(egui::ViewportId::ROOT);
+                            push_root_action(ctx, &action_queue, AppAction::UndoImageEdit);
                             ui.close();
                         }
                         if ui
                             .add_enabled(ed.has_changes, egui::Button::new("Revert to Original"))
                             .clicked()
                         {
-                            push_action(&action_queue, AppAction::DiscardImageEdits);
-                            ctx.request_repaint_of(egui::ViewportId::ROOT);
+                            push_root_action(ctx, &action_queue, AppAction::DiscardImageEdits);
+                            ui.close();
+                        }
+                        ui.separator();
+                        if ui
+                            .add(egui::Button::new("Copy to Clipboard").shortcut_text(command_shortcut('C')))
+                            .clicked()
+                        {
+                            push_root_action(ctx, &action_queue, AppAction::CopyImageToClipboard);
+                            ui.close();
+                        }
+                        if ui
+                            .add(egui::Button::new("New from Clipboard").shortcut_text(command_shortcut('N')))
+                            .clicked()
+                        {
+                            push_root_action(ctx, &action_queue, AppAction::PasteImageFromClipboard);
                             ui.close();
                         }
                         ui.separator();
@@ -349,15 +357,13 @@ impl ControlsWindow {
                             )
                             .clicked()
                         {
-                            push_action(&action_queue, AppAction::DeleteSelectedAnnotation);
-                            ctx.request_repaint_of(egui::ViewportId::ROOT);
+                            push_root_action(ctx, &action_queue, AppAction::DeleteSelectedAnnotation);
                             ui.close();
                         }
                     });
                     ui.menu_button("Tools", |ui| {
                         if ui.add(egui::Button::new("Color Editor").shortcut_text("e")).clicked() {
-                            push_action(&action_queue, AppAction::ShowColorEditor);
-                            ctx.request_repaint_of(egui::ViewportId::ROOT);
+                            push_root_action(ctx, &action_queue, AppAction::ShowColorEditor);
                             ui.close();
                         }
                         ui.separator();
@@ -375,8 +381,11 @@ impl ControlsWindow {
                                 )
                                 .clicked()
                             {
-                                push_action(&action_queue, AppAction::SetAnnotationMode(AnnotationMode::AddLine));
-                                ctx.request_repaint_of(egui::ViewportId::ROOT);
+                                push_root_action(
+                                    ctx,
+                                    &action_queue,
+                                    AppAction::SetAnnotationMode(AnnotationMode::AddLine),
+                                );
                                 ui.close();
                             }
                             if ui
@@ -387,8 +396,11 @@ impl ControlsWindow {
                                 )
                                 .clicked()
                             {
-                                push_action(&action_queue, AppAction::SetAnnotationMode(AnnotationMode::AddText));
-                                ctx.request_repaint_of(egui::ViewportId::ROOT);
+                                push_root_action(
+                                    ctx,
+                                    &action_queue,
+                                    AppAction::SetAnnotationMode(AnnotationMode::AddText),
+                                );
                                 ui.close();
                             }
                             if ui
@@ -399,11 +411,11 @@ impl ControlsWindow {
                                 )
                                 .clicked()
                             {
-                                push_action(
+                                push_root_action(
+                                    ctx,
                                     &action_queue,
                                     AppAction::SetAnnotationMode(AnnotationMode::AddRectangle),
                                 );
-                                ctx.request_repaint_of(egui::ViewportId::ROOT);
                                 ui.close();
                             }
                             if ui
@@ -414,8 +426,11 @@ impl ControlsWindow {
                                 )
                                 .clicked()
                             {
-                                push_action(&action_queue, AppAction::SetAnnotationMode(AnnotationMode::AddEllipse));
-                                ctx.request_repaint_of(egui::ViewportId::ROOT);
+                                push_root_action(
+                                    ctx,
+                                    &action_queue,
+                                    AppAction::SetAnnotationMode(AnnotationMode::AddEllipse),
+                                );
                                 ui.close();
                             }
                             if ui
@@ -426,8 +441,11 @@ impl ControlsWindow {
                                 )
                                 .clicked()
                             {
-                                push_action(&action_queue, AppAction::SetAnnotationMode(AnnotationMode::AddArrow));
-                                ctx.request_repaint_of(egui::ViewportId::ROOT);
+                                push_root_action(
+                                    ctx,
+                                    &action_queue,
+                                    AppAction::SetAnnotationMode(AnnotationMode::AddArrow),
+                                );
                                 ui.close();
                             }
                         });
@@ -438,8 +456,7 @@ impl ControlsWindow {
                                 .add(egui::Button::new("Automatic mosaic").shortcut_text("0"))
                                 .clicked()
                             {
-                                push_action(&action_queue, AppAction::AutoLayout);
-                                ctx.request_repaint_of(egui::ViewportId::ROOT);
+                                push_root_action(ctx, &action_queue, AppAction::AutoLayout);
                                 ui.close();
                             }
                             for entry in LAYOUT_MENU_ENTRIES {
@@ -449,8 +466,7 @@ impl ControlsWindow {
                                     egui::Button::new(entry.label)
                                 };
                                 if ui.add(button).clicked() {
-                                    push_action(&action_queue, AppAction::SetLayout(entry.config));
-                                    ctx.request_repaint_of(egui::ViewportId::ROOT);
+                                    push_root_action(ctx, &action_queue, AppAction::SetLayout(entry.config));
                                     ui.close();
                                 }
                             }
@@ -533,16 +549,14 @@ fn render_annotation_tools_tab(
             .on_hover_text("Rotate Left (−90°)")
             .clicked()
         {
-            push_action(action_queue, AppAction::RotateLeft);
-            ctx.request_repaint_of(egui::ViewportId::ROOT);
+            push_root_action(ctx, action_queue, AppAction::RotateLeft);
         }
         if ui
             .add(modifier_tool_button(ICON_ROTATE_RIGHT))
             .on_hover_text("Rotate Right (+90°)")
             .clicked()
         {
-            push_action(action_queue, AppAction::RotateRight);
-            ctx.request_repaint_of(egui::ViewportId::ROOT);
+            push_root_action(ctx, action_queue, AppAction::RotateRight);
         }
         ui.separator();
         // Annotation toolbar — one button per implemented type.
@@ -554,8 +568,7 @@ fn render_annotation_tools_tab(
             } else {
                 AnnotationMode::AddLine
             };
-            push_action(action_queue, AppAction::SetAnnotationMode(next_mode));
-            ctx.request_repaint_of(egui::ViewportId::ROOT);
+            push_root_action(ctx, action_queue, AppAction::SetAnnotationMode(next_mode));
         }
         let is_arrow = mode == AnnotationMode::AddArrow;
         if arrow_tool_button(ui, is_arrow)
@@ -567,8 +580,7 @@ fn render_annotation_tools_tab(
             } else {
                 AnnotationMode::AddArrow
             };
-            push_action(action_queue, AppAction::SetAnnotationMode(next_mode));
-            ctx.request_repaint_of(egui::ViewportId::ROOT);
+            push_root_action(ctx, action_queue, AppAction::SetAnnotationMode(next_mode));
         }
         for (annotation_mode, label, tooltip) in [
             (AnnotationMode::AddRectangle, "▭", "Add Rectangle (Shift+R)"),
@@ -585,7 +597,8 @@ fn render_annotation_tools_tab(
                 .on_hover_text(tooltip)
                 .clicked()
             {
-                push_action(
+                push_root_action(
+                    ctx,
                     action_queue,
                     AppAction::SetAnnotationMode(if selected {
                         AnnotationMode::Select
@@ -593,7 +606,6 @@ fn render_annotation_tools_tab(
                         annotation_mode
                     }),
                 );
-                ctx.request_repaint_of(egui::ViewportId::ROOT);
             }
         }
     });
@@ -1512,6 +1524,15 @@ fn push_action(action_queue: &Arc<Mutex<Vec<AppAction>>>, action: AppAction) {
     if let Ok(mut actions) = action_queue.lock() {
         actions.push(action);
     }
+}
+
+fn push_root_action(ctx: &egui::Context, action_queue: &Arc<Mutex<Vec<AppAction>>>, action: AppAction) {
+    push_action(action_queue, action);
+    // Controls run in a separate deferred viewport, while Viewer::update
+    // drains this queue only during a root-viewport pass. Requesting a repaint
+    // schedules that pass even for non-drawing operations such as clipboard
+    // access, file dialogs, or quitting; it is not merely a visual refresh.
+    ctx.request_repaint_of(egui::ViewportId::ROOT);
 }
 
 fn render_size_footer(

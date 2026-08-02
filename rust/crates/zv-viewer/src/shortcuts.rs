@@ -63,6 +63,7 @@ pub fn collect_shortcuts(ctx: &egui::Context, viewport: ShortcutViewport) -> Vec
         push_resize_text_shortcuts(input, viewport, typing_text, &mut actions);
         push_layout_shortcuts(input, viewport, typing_text, &mut actions);
         push_annotation_shortcuts(input, viewport, typing_text, &mut actions);
+        push_clipboard_shortcuts(input, viewport, typing_text, &mut actions);
         push_color_editor_shortcut(input, viewport, typing_text, &mut actions);
     });
     actions
@@ -128,6 +129,30 @@ fn push_annotation_shortcuts(
     }
     if input.key_pressed(egui::Key::S) && cmd && !input.modifiers.shift {
         out_actions.push(AppAction::SaveImageEdits);
+    }
+}
+
+fn push_clipboard_shortcuts(
+    input: &egui::InputState,
+    viewport: ShortcutViewport,
+    typing_text: bool,
+    out_actions: &mut Vec<AppAction>,
+) {
+    if !scope_allows(ShortcutScope::GlobalWhenNotTyping, viewport, typing_text) {
+        return;
+    }
+
+    // egui-winit consumes native Cmd/Ctrl+C and exposes this semantic event.
+    let copy_requested = input.events.iter().any(|event| matches!(event, egui::Event::Copy));
+    // egui's paste event is text-only, so image import follows Preview's
+    // "New from Clipboard" convention instead of taking over text paste.
+    let new_from_clipboard_requested = input.modifiers.command && input.key_pressed(egui::Key::N);
+
+    if copy_requested {
+        out_actions.push(AppAction::CopyImageToClipboard);
+    }
+    if new_from_clipboard_requested {
+        out_actions.push(AppAction::PasteImageFromClipboard);
     }
 }
 
@@ -236,5 +261,54 @@ fn scope_allows(scope: ShortcutScope, viewport: ShortcutViewport, typing_text: b
         ShortcutScope::GlobalAlways => true,
         ShortcutScope::GlobalWhenNotTyping => !typing_text,
         ShortcutScope::ViewportOnly(shortcut_viewport) => shortcut_viewport == viewport,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn clipboard_actions(viewport: ShortcutViewport, events: Vec<egui::Event>) -> Vec<AppAction> {
+        let ctx = egui::Context::default();
+        let mut actions = Vec::new();
+        let _ = ctx.run(
+            egui::RawInput {
+                events,
+                modifiers: egui::Modifiers::COMMAND,
+                ..Default::default()
+            },
+            |ctx| actions = collect_shortcuts(ctx, viewport),
+        );
+        actions
+    }
+
+    #[test]
+    fn clipboard_shortcuts_are_global_across_viewports() {
+        for viewport in [ShortcutViewport::MainImage, ShortcutViewport::Controls] {
+            let actions = clipboard_actions(
+                viewport,
+                vec![
+                    egui::Event::Copy,
+                    egui::Event::Key {
+                        key: egui::Key::N,
+                        physical_key: None,
+                        pressed: true,
+                        repeat: false,
+                        modifiers: egui::Modifiers::COMMAND,
+                    },
+                ],
+            );
+            assert!(actions.contains(&AppAction::CopyImageToClipboard));
+            assert!(actions.contains(&AppAction::PasteImageFromClipboard));
+        }
+    }
+
+    #[test]
+    fn clipboard_shortcuts_are_suppressed_while_typing() {
+        assert!(!scope_allows(
+            ShortcutScope::GlobalWhenNotTyping,
+            ShortcutViewport::MainImage,
+            true
+        ));
     }
 }

@@ -62,6 +62,12 @@ impl ModifiedImage {
         }
     }
 
+    pub fn new_unsaved(original_data: ImageItemData) -> Self {
+        let mut image = Self::new(original_data, None);
+        image.base_dirty = true;
+        image
+    }
+
     pub fn final_data(&self) -> &ImageItemData {
         self.annotated_data.as_ref().unwrap_or(&self.original_data)
     }
@@ -559,6 +565,19 @@ mod tests {
         assert_eq!(modified.display_revision(), revision);
         assert!(modified.annotations().is_empty());
         assert!(!modified.can_undo());
+    }
+
+    #[test]
+    fn unsaved_image_requires_save_and_can_be_written() {
+        let output = std::env::temp_dir().join(format!("zv-unsaved-image-{}.png", std::process::id()));
+        let mut modified = ModifiedImage::new_unsaved(image());
+
+        assert!(modified.has_pending_changes());
+        modified.save_changes(Some(&output)).unwrap();
+
+        assert!(output.is_file());
+        assert!(!modified.has_pending_changes());
+        let _ = std::fs::remove_file(output);
     }
 
     #[test]

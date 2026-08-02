@@ -48,6 +48,7 @@ pub struct ImageList {
     selection_start: usize,
     selection_count: usize,
     filter_text: String,
+    next_pasted_image_number: u64,
     cache: ImageItemCache,
     pending_preloads: HashMap<ImageId, Receiver<PreloadResult>>,
 }
@@ -164,6 +165,7 @@ impl ImageList {
             selection_start: 0,
             selection_count: 1,
             filter_text: String::new(),
+            next_pasted_image_number: 1,
             cache: ImageItemCache::new(16),
             pending_preloads: HashMap::new(),
         }
@@ -229,6 +231,38 @@ impl ImageList {
         if !enabled.is_empty() {
             self.selection_start = enabled.len() - 1;
         }
+    }
+
+    pub fn add_image_data(&mut self, image: ImageSRGBA, name: impl Into<String>, insert_position: usize) -> ImageId {
+        if self.items.len() == 1 && self.items[0].is_default() {
+            let default_id = self.items.remove(0).id;
+            self.cache.remove(default_id);
+        }
+
+        let id = next_image_id();
+        let metadata = Some((image.width(), image.height()));
+        let item = ImageItem {
+            id,
+            source_image_path: None,
+            pretty_name: name.into(),
+            metadata,
+            error: None,
+        };
+        let position = insert_position.min(self.items.len());
+        self.items.insert(position, item);
+        self.cache.put(
+            id,
+            Arc::new(Mutex::new(ModifiedImage::new_unsaved(ImageItemData::new(image)))),
+        );
+        refresh_pretty_names(&mut self.items);
+        self.select_closest_enabled_index(position);
+        id
+    }
+
+    pub fn add_pasted_image_data(&mut self, image: ImageSRGBA) -> ImageId {
+        let number = self.next_pasted_image_number;
+        self.next_pasted_image_number = number.checked_add(1).expect("pasted image counter overflow");
+        self.add_image_data(image, format!("(pasted image {number})"), 0)
     }
 
     pub fn set_filter(&mut self, filter_text: String) {
@@ -535,6 +569,10 @@ impl ImageList {
 }
 
 impl ImageItem {
+    fn is_default(&self) -> bool {
+        self.source_image_path.is_none() && self.pretty_name == "<<default>>"
+    }
+
     fn from_path(id: ImageId, path: PathBuf) -> Self {
         let metadata = ::image::image_dimensions(&path).ok();
         Self {
@@ -808,6 +846,49 @@ mod tests {
         assert_eq!(rows[0].name, "<<default>>");
         assert_eq!(rows[0].source_path, None);
         assert!(rows[0].selected);
+    }
+
+    #[test]
+    fn adding_image_data_replaces_default_and_caches_selected_pixels() {
+        let mut images = ImageList::new(Vec::new());
+        let image = ImageSRGBA::from_tightly_packed_bytes(1, 1, &[1, 2, 3, 4]);
+
+        let id = images.add_image_data(image, "(pasted)", 0);
+
+        let rows = images.visible_rows().collect::<Vec<_>>();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].name, "(pasted)");
+        assert_eq!(rows[0].source_path, None);
+        assert_eq!(rows[0].size, Some((1, 1)));
+        assert!(rows[0].selected);
+        let pasted = images.cache.get_cached(id).unwrap();
+        let pasted = pasted.lock().unwrap();
+        assert_eq!(pasted.final_data().pixel_rgba(0, 0), Some([1, 2, 3, 4]));
+        assert!(pasted.has_pending_changes());
+    }
+
+    #[test]
+    fn adding_image_data_inserts_at_requested_position_and_selects_it() {
+        let mut images = list(&["a.png", "b.png"]);
+        let image = ImageSRGBA::from_tightly_packed_bytes(1, 1, &[1, 2, 3, 255]);
+
+        images.add_image_data(image, "(pasted)", 0);
+
+        assert_eq!(visible_names(&images), ["(pasted)", "a.png", "b.png"]);
+        assert_eq!(selected_visible_index(&images), Some(0));
+    }
+
+    #[test]
+    fn pasted_images_receive_distinct_monotonic_names() {
+        let mut images = list(&["a.png"]);
+
+        images.add_pasted_image_data(ImageSRGBA::from_tightly_packed_bytes(1, 1, &[1, 2, 3, 255]));
+        images.add_pasted_image_data(ImageSRGBA::from_tightly_packed_bytes(1, 1, &[4, 5, 6, 255]));
+
+        assert_eq!(
+            visible_names(&images),
+            ["(pasted image 2)", "(pasted image 1)", "a.png"]
+        );
     }
 
     #[test]

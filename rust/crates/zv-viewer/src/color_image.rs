@@ -1,7 +1,7 @@
 use std::marker::PhantomData;
 use std::sync::OnceLock;
 
-use eframe::egui_wgpu::wgpu;
+use eframe::{egui, egui_wgpu::wgpu};
 
 #[allow(dead_code)]
 pub trait PixelFormat: Copy + 'static {
@@ -379,6 +379,23 @@ impl<F: PixelFormat> Image<F> {
         image
     }
 
+    /// Validate external tightly packed pixel data and copy it into an aligned image.
+    pub fn try_from_tightly_packed_bytes(width: usize, height: usize, input: &[u8]) -> anyhow::Result<Self> {
+        anyhow::ensure!(width > 0 && height > 0, "image dimensions must be non-zero");
+        let expected_len = width
+            .checked_mul(height)
+            .and_then(|pixels| pixels.checked_mul(F::BYTES_PER_PIXEL))
+            .ok_or_else(|| anyhow::anyhow!("image dimensions overflow"))?;
+        anyhow::ensure!(
+            input.len() == expected_len,
+            "image has {} bytes, expected {expected_len}",
+            input.len()
+        );
+        let width = u32::try_from(width).map_err(|_| anyhow::anyhow!("image width is too large"))?;
+        let height = u32::try_from(height).map_err(|_| anyhow::anyhow!("image height is too large"))?;
+        Ok(Self::from_tightly_packed_bytes(width, height, input))
+    }
+
     pub fn width(&self) -> u32 {
         self.width
     }
@@ -398,6 +415,21 @@ impl<F: PixelFormat> Image<F> {
 
     pub fn bytes(&self) -> &[u8] {
         &self.bytes
+    }
+
+    /// Return the image bytes without per-row alignment padding.
+    pub fn to_tightly_packed_bytes(&self) -> Vec<u8> {
+        let tight_bytes_per_row = self.width as usize * F::BYTES_PER_PIXEL;
+        if self.bytes_per_row == tight_bytes_per_row {
+            return self.bytes.clone();
+        }
+
+        let mut tight = Vec::with_capacity(tight_bytes_per_row * self.height as usize);
+        for row in 0..self.height {
+            let row = self.row_bytes(row).expect("row is within image bounds");
+            tight.extend_from_slice(&row[..tight_bytes_per_row]);
+        }
+        tight
     }
 
     pub fn row_bytes(&self, row: u32) -> Option<&[u8]> {
@@ -433,6 +465,17 @@ impl<F: PixelFormat> Image<F> {
 
     pub fn pixel(&self, x: u32, y: u32) -> Option<F::Pixel> {
         self.row(y)?.get(x as usize).copied()
+    }
+}
+
+impl ImageSRGBA {
+    /// Convert to egui's tightly packed RGBA image representation.
+    pub fn to_egui_color_image(&self) -> egui::ColorImage {
+        let rgba = self.to_tightly_packed_bytes();
+        // `egui-winit` forwards the raw Color32 bytes to clipboard backends.
+        // Constructing this as premultiplied preserves ZV's straight RGBA
+        // bytes, including RGB values beneath translucent pixels.
+        egui::ColorImage::from_rgba_premultiplied([self.width as usize, self.height as usize], &rgba)
     }
 }
 
@@ -543,6 +586,42 @@ fn avg4_packed_rgba(a: u32, b: u32, c: u32, d: u32) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tightly_packed_bytes_exclude_row_alignment_padding() {
+        let mut image = ImageSRGBA::new(2, 2);
+        image.row_mut(0).unwrap()[0] = PixelSRGBA::from_array([1, 2, 3, 4]);
+        image.row_mut(0).unwrap()[1] = PixelSRGBA::from_array([5, 6, 7, 8]);
+        image.row_mut(1).unwrap()[0] = PixelSRGBA::from_array([9, 10, 11, 12]);
+        image.row_mut(1).unwrap()[1] = PixelSRGBA::from_array([13, 14, 15, 16]);
+
+        assert!(image.bytes_per_row() > 8);
+        assert_eq!(
+            image.to_tightly_packed_bytes(),
+            [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+        );
+    }
+
+    #[test]
+    fn validated_tightly_packed_bytes_reject_invalid_external_data() {
+        let image = ImageSRGBA::try_from_tightly_packed_bytes(2, 1, &[1, 2, 3, 4, 5, 6, 7, 8]).unwrap();
+        assert_eq!(image.pixel(0, 0).unwrap().as_array(), [1, 2, 3, 4]);
+        assert_eq!(image.pixel(1, 0).unwrap().as_array(), [5, 6, 7, 8]);
+
+        assert!(ImageSRGBA::try_from_tightly_packed_bytes(0, 1, &[]).is_err());
+        assert!(ImageSRGBA::try_from_tightly_packed_bytes(2, 1, &[0; 4]).is_err());
+        assert!(ImageSRGBA::try_from_tightly_packed_bytes(usize::MAX, 2, &[]).is_err());
+    }
+
+    #[test]
+    fn egui_conversion_removes_padding_and_preserves_rgba_bytes() {
+        let image =
+            ImageSRGBA::try_from_tightly_packed_bytes(2, 2, &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16])
+                .unwrap();
+        let converted = image.to_egui_color_image();
+        assert_eq!(converted.size, [2, 2]);
+        assert_eq!(converted.pixels[3].to_array(), [13, 14, 15, 16]);
+    }
 
     #[test]
     fn converts_srgba_to_hsv_display_values() {
