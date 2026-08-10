@@ -290,8 +290,10 @@ impl ImageList {
             return;
         }
 
-        let count = enabled.len() as isize;
-        self.selection_start = (self.selection_start as isize + offset).rem_euclid(count) as usize;
+        self.selection_start = self
+            .selection_start
+            .saturating_add_signed(offset)
+            .min(enabled.len() - 1);
     }
 
     pub fn move_item(&mut self, from: usize, to: usize) {
@@ -906,13 +908,16 @@ mod tests {
     }
 
     #[test]
-    fn navigates_over_all_rows() {
+    fn navigation_stops_at_first_and_last_rows() {
         let mut images = list(&["a.png", "b.png", "c.png"]);
-        images.select_relative(1);
-        assert_eq!(images.selected_index(), Some(1));
+
         images.select_relative(-1);
         assert_eq!(images.selected_index(), Some(0));
-        images.select_relative(-1);
+        images.select_relative(1);
+        assert_eq!(images.selected_index(), Some(1));
+        images.select_relative(10);
+        assert_eq!(images.selected_index(), Some(2));
+        images.select_relative(1);
         assert_eq!(images.selected_index(), Some(2));
     }
 
@@ -950,6 +955,14 @@ mod tests {
 
         images.select_relative(-step);
         assert_eq!(selected_visible_indices(&images), [0, 1]);
+
+        images.select_relative(-step);
+        assert_eq!(selected_visible_indices(&images), [0, 1]);
+
+        images.select_relative(10);
+        assert_eq!(selected_visible_indices(&images), [4]);
+        images.select_relative(step);
+        assert_eq!(selected_visible_indices(&images), [4]);
     }
 
     #[test]
@@ -991,6 +1004,8 @@ mod tests {
     fn navigation_skips_filtered_rows() {
         let mut images = list(&["a.png", "b.png", "aa.png"]);
         images.set_filter("a".to_owned());
+        images.select_relative(1);
+        assert_eq!(images.selected_index(), Some(2));
         images.select_relative(1);
         assert_eq!(images.selected_index(), Some(2));
     }
