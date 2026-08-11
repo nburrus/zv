@@ -85,6 +85,7 @@ pub struct Viewer {
     annotation_tool: Arc<Mutex<AnnotationTool>>,
     editor_state: Arc<Mutex<ImageEditorState>>,
     image_window_geometry: ImageWindowGeometryState,
+    current_monitor_work_area: Option<egui::Rect>,
     layout: LayoutConfig,
     last_displayed_signature: Option<(ImageId, LayoutConfig)>,
     logged_first_image_load: bool,
@@ -119,6 +120,7 @@ impl Viewer {
             annotation_tool,
             editor_state,
             image_window_geometry: ImageWindowGeometryState::default(),
+            current_monitor_work_area: None,
             layout: LayoutConfig::default(),
             last_displayed_signature: None,
             logged_first_image_load: false,
@@ -128,7 +130,18 @@ impl Viewer {
         }
     }
 
-    pub fn update(&mut self, ctx: &egui::Context, render_state: Option<&egui_wgpu::RenderState>) -> ViewerDebugState {
+    pub fn update(
+        &mut self,
+        ctx: &egui::Context,
+        render_state: Option<&egui_wgpu::RenderState>,
+        current_monitor_work_area: Option<egui::Rect>,
+    ) -> ViewerDebugState {
+        // A native query may briefly fail while the window moves between
+        // displays. Keep the last known area until another concrete display
+        // replaces it; unsupported platforms remain `None` from startup.
+        if current_monitor_work_area.is_some() {
+            self.current_monitor_work_area = current_monitor_work_area;
+        }
         self.handle_root_close_request(ctx);
         self.controls_window.consume_close_request();
         self.observe_root_viewport_geometry(ctx);
@@ -324,6 +337,7 @@ impl Viewer {
 
         if let Some(command) = self.image_window_geometry.observe_viewport(ViewportGeometry {
             monitor_size,
+            work_area: self.current_monitor_work_area,
             outer_rect,
             inner_rect,
         }) {
@@ -980,6 +994,7 @@ impl Viewer {
 
         let viewport = ViewportGeometry {
             monitor_size,
+            work_area: self.current_monitor_work_area,
             outer_rect,
             inner_rect,
         };
@@ -1016,6 +1031,7 @@ impl Viewer {
         if let Some(command) = self.image_window_geometry.apply_resize_action(
             ViewportGeometry {
                 monitor_size,
+                work_area: self.current_monitor_work_area,
                 outer_rect,
                 inner_rect,
             },

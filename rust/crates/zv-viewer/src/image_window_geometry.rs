@@ -34,14 +34,17 @@ pub struct ImageWindowGeometryState {
     initial_geometry_applied: bool,
     normal_size: Option<egui::Vec2>,
     aspect_ratio_source_size: Option<egui::Vec2>,
+    last_observed_inner_size: Option<egui::Vec2>,
     last_requested_inner_size: Option<egui::Vec2>,
     last_requested_action: Option<WindowResizeAction>,
     // eframe/winit expose full monitor size, but not a portable work area.
     // Even GLFW cannot always report work area on Wayland, so keep this
     // fallback even if some platforms later get native work-area queries.
-    // When the OS clamps a maxspect request, remember the granted inner size
-    // and use it as the effective platform maximum until it is invalidated.
+    // When the OS clamps a maxspect request, infer per-axis platform limits
+    // from the granted size and use them until the display is invalidated.
     platform_max_inner_size: Option<egui::Vec2>,
+    last_work_area: Option<egui::Rect>,
+    last_monitor_size: Option<egui::Vec2>,
     last_geometry_mode: WindowGeometryMode,
 }
 
@@ -51,9 +54,12 @@ impl Default for ImageWindowGeometryState {
             initial_geometry_applied: false,
             normal_size: None,
             aspect_ratio_source_size: None,
+            last_observed_inner_size: None,
             last_requested_inner_size: None,
             last_requested_action: None,
             platform_max_inner_size: None,
+            last_work_area: None,
+            last_monitor_size: None,
             last_geometry_mode: WindowGeometryMode::Normal,
         }
     }
@@ -114,6 +120,7 @@ impl ImageWindowGeometryState {
     ) -> Option<ViewportResizeCommand> {
         let normal_size = self.normal_size?;
         let current_size = viewport.inner_rect.map(|rect| rect.size()).unwrap_or(normal_size);
+        self.observe_display(viewport);
         self.observe_current_inner_size(current_size, InnerArea::from_viewport(viewport));
         let inner_area = InnerArea::from_viewport(viewport);
 
@@ -124,7 +131,9 @@ impl ImageWindowGeometryState {
                 let max_inner_size = self.max_inner_size(inner_area);
                 let target_size = aspect_fit_size(normal_size, normal_size, max_inner_size, true);
                 if target_size.x < normal_size.x || target_size.y < normal_size.y {
-                    target_origin = Some(inner_area.outer_position_for_centered_inner_size(target_size));
+                    target_origin = inner_area
+                        .outer_position_for_centered_inner_size(target_size)
+                        .or(target_origin);
                 }
                 self.last_geometry_mode = WindowGeometryMode::Normal;
                 self.platform_max_inner_size = None;
@@ -178,7 +187,9 @@ impl ImageWindowGeometryState {
             WindowResizeAction::Maxspect => {
                 let max_inner_size = self.max_inner_size(inner_area);
                 let target_size = aspect_fit_size(max_inner_size * 2.0, normal_size, max_inner_size, true);
-                target_origin = Some(inner_area.outer_position_for_centered_inner_size(target_size));
+                target_origin = inner_area
+                    .outer_position_for_centered_inner_size(target_size)
+                    .or(target_origin);
                 self.last_geometry_mode = WindowGeometryMode::Maxspect;
                 target_size
             }
@@ -208,7 +219,36 @@ impl ImageWindowGeometryState {
 
     pub fn observe_viewport(&mut self, viewport: ViewportGeometry) -> Option<ViewportResizeCommand> {
         let current_size = viewport.inner_rect.map(|rect| rect.size())?;
+        self.observe_display(viewport);
         self.observe_current_inner_size(current_size, InnerArea::from_viewport(viewport))
+    }
+
+    fn observe_display(&mut self, viewport: ViewportGeometry) {
+        let display_changed = match (self.last_work_area, viewport.work_area) {
+            (Some(previous), Some(current)) => previous != current,
+            // Without native monitor identity/origin, a size change is the only
+            // portable signal that the window moved to a different display.
+            // Equal-sized displays remain indistinguishable in this fallback.
+            (None, None) => self
+                .last_monitor_size
+                .is_some_and(|previous| !sizes_nearly_equal(previous, viewport.monitor_size)),
+            (None, Some(_)) => self
+                .last_monitor_size
+                .is_some_and(|previous| !sizes_nearly_equal(previous, viewport.monitor_size)),
+            // A native work-area query can be temporarily unavailable while a
+            // window is moving or off-screen. Absence is not evidence that the
+            // display changed, so retain the last known area and in-flight state.
+            (Some(_), None) => false,
+        };
+        if display_changed {
+            self.platform_max_inner_size = None;
+            self.last_requested_inner_size = None;
+            self.last_requested_action = None;
+        }
+        if viewport.work_area.is_some() {
+            self.last_work_area = viewport.work_area;
+        }
+        self.last_monitor_size = Some(viewport.monitor_size);
     }
 
     fn record_programmatic_resize(&mut self, inner_size: egui::Vec2, action: Option<WindowResizeAction>) {
@@ -221,11 +261,18 @@ impl ImageWindowGeometryState {
         current_size: egui::Vec2,
         inner_area: InnerArea,
     ) -> Option<ViewportResizeCommand> {
+        let previous_observed_size = self.last_observed_inner_size.replace(current_size);
         let Some(requested_size) = self.last_requested_inner_size else {
+            if previous_observed_size.is_some_and(|previous| !sizes_nearly_equal(previous, current_size)) {
+                self.mark_user_defined_resize();
+            }
             return None;
         };
 
-        if !sizes_nearly_equal(current_size, requested_size) {
+        if sizes_nearly_equal(current_size, requested_size) {
+            self.last_requested_inner_size = None;
+            self.last_requested_action = None;
+        } else {
             // This is the one deliberately heuristic path. C++ computes maxspect
             // from GLFW's monitor work area where available, but work-area data is
             // not portable, notably on Wayland. If a programmatic aspect-preserving
@@ -237,16 +284,35 @@ impl ImageWindowGeometryState {
             ) && current_size.x <= requested_size.x + 1.0
                 && current_size.y <= requested_size.y + 1.0
             {
-                self.platform_max_inner_size = Some(current_size);
+                // A granted aspect-fitted window size is not itself a work-area
+                // size. Preserve the full limit on axes the OS did not clamp;
+                // otherwise changing to a wider/taller image layout would reuse
+                // an artificially small maximum from the previous aspect ratio.
+                self.platform_max_inner_size = Some(egui::vec2(
+                    if current_size.x + 1.0 < requested_size.x {
+                        current_size.x
+                    } else {
+                        inner_area.size.x
+                    },
+                    if current_size.y + 1.0 < requested_size.y {
+                        current_size.y
+                    } else {
+                        inner_area.size.y
+                    },
+                ));
                 return self.correct_clamped_aspect_resize(current_size, inner_area);
             }
-            self.platform_max_inner_size = None;
-            self.aspect_ratio_source_size = None;
-            self.last_geometry_mode = WindowGeometryMode::UserDefined;
-            self.last_requested_inner_size = None;
-            self.last_requested_action = None;
+            self.mark_user_defined_resize();
         }
         None
+    }
+
+    fn mark_user_defined_resize(&mut self) {
+        self.platform_max_inner_size = None;
+        self.aspect_ratio_source_size = None;
+        self.last_geometry_mode = WindowGeometryMode::UserDefined;
+        self.last_requested_inner_size = None;
+        self.last_requested_action = None;
     }
 
     fn correct_clamped_aspect_resize(
@@ -270,7 +336,7 @@ impl ImageWindowGeometryState {
         };
         self.aspect_ratio_source_size = None;
         Some(ViewportResizeCommand {
-            outer_position: Some(inner_area.outer_position_for_centered_inner_size(target_size)),
+            outer_position: inner_area.outer_position_for_centered_inner_size(target_size),
             inner_size: Some(target_size),
         })
     }
@@ -299,6 +365,11 @@ impl ImageWindowGeometryState {
     }
 
     fn max_inner_size(&self, inner_area: InnerArea) -> egui::Vec2 {
+        // Native work areas normally make `inner_area.size` exact. The cached
+        // limit is the portable fallback learned when the window manager grants
+        // less than a Normal/Maxspect request (for example because of a taskbar
+        // or desktop panel). Clamp each axis independently so an aspect-fitted
+        // size from one image layout does not constrain a different layout.
         if let Some(platform_max) = self.platform_max_inner_size {
             egui::vec2(
                 inner_area.size.x.min(platform_max.x),
@@ -319,15 +390,12 @@ fn initial_image_window_geometry_for_viewport(
     let max_inner_size = inner_area.size;
     let clamped_to_screen = image_size.x > max_inner_size.x || image_size.y > max_inner_size.y;
     let mut geometry = WindowGeometry {
-        origin: egui::pos2(
-            viewport.monitor_size.x * (0.10 + 0.15 * viewer_index as f32),
-            viewport.monitor_size.y * 0.10,
-        ),
+        origin: inner_area.outer_position_for_initial_window(viewer_index),
         size: aspect_fit_size(image_size, image_size, max_inner_size, true),
     };
 
-    if clamped_to_screen {
-        geometry.origin = inner_area.outer_position_for_centered_inner_size(geometry.size);
+    if clamped_to_screen && let Some(origin) = inner_area.outer_position_for_centered_inner_size(geometry.size) {
+        geometry.origin = origin;
     }
 
     (geometry, clamped_to_screen)
@@ -366,17 +434,7 @@ fn move_window_if_needed(
     target_size: egui::Vec2,
     inner_area: InnerArea,
 ) -> Option<egui::Pos2> {
-    let mut origin = origin?;
-    let target_outer_size = target_size + inner_area.outer_extra_size;
-    let overflow_x = origin.x + target_outer_size.x - (inner_area.origin.x + inner_area.size.x);
-    if overflow_x > 0.0 {
-        origin.x -= overflow_x;
-    }
-    let overflow_y = origin.y + target_outer_size.y - (inner_area.origin.y + inner_area.size.y);
-    if overflow_y > 0.0 {
-        origin.y -= overflow_y;
-    }
-    Some(origin)
+    origin.map(|origin| inner_area.clamp_outer_position(origin, target_size))
 }
 
 #[cfg(test)]
@@ -632,6 +690,233 @@ mod tests {
         assert_size_near(correction.inner_size.unwrap(), egui::vec2(930.0, 930.0));
     }
 
+    #[test]
+    fn aspect_specific_clamp_does_not_cap_a_wider_layout() {
+        let monitor_size = egui::vec2(1600.0, 1000.0);
+        let mut state = ImageWindowGeometryState::default();
+        state.normal_size = Some(egui::vec2(800.0, 600.0));
+
+        let requested = state
+            .apply_resize_action(
+                decorated_viewport(monitor_size, egui::pos2(100.0, 100.0), egui::vec2(800.0, 600.0), 0.0),
+                WindowResizeAction::Maxspect,
+            )
+            .expect("maxspect should apply");
+        assert_size_near(requested.inner_size.unwrap(), egui::vec2(1333.0, 1000.0));
+
+        let correction = state
+            .observe_viewport(decorated_viewport(
+                monitor_size,
+                egui::pos2(100.0, 0.0),
+                egui::vec2(1333.0, 900.0),
+                0.0,
+            ))
+            .expect("height clamp should be corrected");
+        assert_size_near(correction.inner_size.unwrap(), egui::vec2(1200.0, 900.0));
+        assert!(
+            state
+                .observe_viewport(decorated_viewport(
+                    monitor_size,
+                    egui::pos2(100.0, 0.0),
+                    egui::vec2(1200.0, 900.0),
+                    0.0,
+                ))
+                .is_none()
+        );
+
+        let wider_layout = state
+            .on_image_changed(
+                egui::vec2(1601.0, 600.0),
+                decorated_viewport(monitor_size, egui::pos2(100.0, 0.0), egui::vec2(1200.0, 900.0), 0.0),
+            )
+            .expect("maxspect should be reapplied for the new layout");
+        assert_size_near(wider_layout.inner_size.unwrap(), egui::vec2(1600.0, 600.0));
+    }
+
+    #[test]
+    fn maxspect_uses_current_work_area_origin_and_decorations() {
+        let work_area = egui::Rect::from_min_size(egui::pos2(-1440.0, 25.0), egui::vec2(1440.0, 875.0));
+        let mut state = ImageWindowGeometryState::default();
+        state.normal_size = Some(egui::vec2(1600.0, 900.0));
+
+        let command = state
+            .apply_resize_action(
+                viewport_with_work_area(work_area, egui::pos2(-1200.0, 100.0), egui::vec2(800.0, 450.0), 25.0),
+                WindowResizeAction::Maxspect,
+            )
+            .expect("maxspect should apply");
+
+        assert_size_near(command.inner_size.unwrap(), egui::vec2(1440.0, 810.0));
+        assert_eq!(command.outer_position, Some(egui::pos2(-1440.0, 45.0)));
+    }
+
+    #[test]
+    fn changing_work_areas_invalidates_a_stale_platform_clamp() {
+        let first_area = egui::Rect::from_min_size(egui::pos2(0.0, 25.0), egui::vec2(1200.0, 775.0));
+        let second_area = egui::Rect::from_min_size(egui::pos2(1200.0, 0.0), egui::vec2(1800.0, 1100.0));
+        let mut state = ImageWindowGeometryState::default();
+        state.normal_size = Some(egui::vec2(1600.0, 900.0));
+        state.platform_max_inner_size = Some(egui::vec2(900.0, 700.0));
+        state.last_work_area = Some(first_area);
+        state.last_monitor_size = Some(first_area.size());
+
+        let command = state
+            .apply_resize_action(
+                viewport_with_work_area(second_area, egui::pos2(1300.0, 100.0), egui::vec2(800.0, 450.0), 0.0),
+                WindowResizeAction::Maxspect,
+            )
+            .expect("maxspect should apply on the new display");
+
+        assert_size_near(command.inner_size.unwrap(), egui::vec2(1800.0, 1013.0));
+        assert_eq!(command.outer_position, Some(egui::pos2(1200.0, 43.5)));
+        assert_eq!(state.platform_max_inner_size, None);
+    }
+
+    #[test]
+    fn completed_resize_feedback_is_not_kept_as_a_stale_request() {
+        let monitor_size = egui::vec2(1600.0, 1000.0);
+        let mut state = ImageWindowGeometryState::default();
+        state.normal_size = Some(egui::vec2(800.0, 600.0));
+        let command = state
+            .apply_resize_action(
+                decorated_viewport(monitor_size, egui::pos2(100.0, 100.0), egui::vec2(500.0, 400.0), 0.0),
+                WindowResizeAction::Increase10Percent,
+            )
+            .expect("increase should apply");
+
+        assert!(
+            state
+                .observe_viewport(decorated_viewport(
+                    monitor_size,
+                    egui::pos2(100.0, 100.0),
+                    command.inner_size.unwrap(),
+                    0.0,
+                ))
+                .is_none()
+        );
+        assert_eq!(state.last_requested_inner_size, None);
+        assert_eq!(state.last_requested_action, None);
+    }
+
+    #[test]
+    fn manual_resize_after_completed_maxspect_preserves_user_size_on_image_change() {
+        let monitor_size = egui::vec2(1000.0, 800.0);
+        let mut state = ImageWindowGeometryState::default();
+        state.normal_size = Some(egui::vec2(800.0, 600.0));
+        let maxspect = state
+            .apply_resize_action(
+                decorated_viewport(monitor_size, egui::pos2(100.0, 100.0), egui::vec2(600.0, 450.0), 0.0),
+                WindowResizeAction::Maxspect,
+            )
+            .expect("maxspect should apply");
+        let maxspect_size = maxspect.inner_size.unwrap();
+        assert!(
+            state
+                .observe_viewport(decorated_viewport(
+                    monitor_size,
+                    egui::pos2(0.0, 25.0),
+                    maxspect_size,
+                    0.0,
+                ))
+                .is_none()
+        );
+
+        assert!(
+            state
+                .observe_viewport(decorated_viewport(
+                    monitor_size,
+                    egui::pos2(100.0, 100.0),
+                    egui::vec2(700.0, 500.0),
+                    0.0,
+                ))
+                .is_none()
+        );
+        assert!(
+            state
+                .on_image_changed(
+                    egui::vec2(640.0, 480.0),
+                    decorated_viewport(monitor_size, egui::pos2(100.0, 100.0), egui::vec2(700.0, 500.0), 0.0,),
+                )
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn fallback_maxspect_centers_on_primary_monitor() {
+        let monitor_size = egui::vec2(1000.0, 800.0);
+        let mut state = ImageWindowGeometryState::default();
+        state.normal_size = Some(egui::vec2(800.0, 600.0));
+
+        let command = state
+            .apply_resize_action(
+                decorated_viewport(monitor_size, egui::pos2(100.0, 100.0), egui::vec2(600.0, 450.0), 20.0),
+                WindowResizeAction::Maxspect,
+            )
+            .expect("maxspect should apply");
+
+        assert_size_near(command.inner_size.unwrap(), egui::vec2(1000.0, 750.0));
+        assert_eq!(command.outer_position, Some(egui::pos2(0.0, 15.0)));
+    }
+
+    #[test]
+    fn fallback_growth_stays_on_primary_monitor() {
+        let monitor_size = egui::vec2(1000.0, 800.0);
+        let mut state = ImageWindowGeometryState::default();
+        state.normal_size = Some(egui::vec2(800.0, 600.0));
+
+        let command = state
+            .apply_resize_action(
+                decorated_viewport(monitor_size, egui::pos2(190.0, 170.0), egui::vec2(800.0, 600.0), 20.0),
+                WindowResizeAction::Increase10Percent,
+            )
+            .expect("increase should fit");
+
+        assert_size_near(command.inner_size.unwrap(), egui::vec2(880.0, 660.0));
+        assert_eq!(command.outer_position, Some(egui::pos2(120.0, 120.0)));
+    }
+
+    #[test]
+    fn fallback_does_not_move_a_window_assumed_to_be_on_another_monitor() {
+        let monitor_size = egui::vec2(1000.0, 800.0);
+        let outer_position = egui::pos2(1200.0, 100.0);
+        let mut state = ImageWindowGeometryState::default();
+        state.normal_size = Some(egui::vec2(800.0, 600.0));
+
+        let command = state
+            .apply_resize_action(
+                decorated_viewport(monitor_size, outer_position, egui::vec2(600.0, 450.0), 20.0),
+                WindowResizeAction::Maxspect,
+            )
+            .expect("maxspect should apply");
+
+        assert_eq!(command.outer_position, Some(outer_position));
+    }
+
+    #[test]
+    fn missing_work_area_does_not_discard_in_flight_resize() {
+        let work_area = egui::Rect::from_min_size(egui::pos2(-1440.0, 25.0), egui::vec2(1440.0, 875.0));
+        let mut state = ImageWindowGeometryState::default();
+        state.normal_size = Some(egui::vec2(1600.0, 900.0));
+        state
+            .apply_resize_action(
+                viewport_with_work_area(work_area, egui::pos2(-1200.0, 100.0), egui::vec2(800.0, 450.0), 25.0),
+                WindowResizeAction::Maxspect,
+            )
+            .expect("maxspect should apply");
+        let requested_size = state.last_requested_inner_size;
+
+        state.observe_display(decorated_viewport(
+            work_area.size(),
+            egui::pos2(-1200.0, 100.0),
+            egui::vec2(800.0, 450.0),
+            25.0,
+        ));
+
+        assert_eq!(state.last_work_area, Some(work_area));
+        assert_eq!(state.last_requested_inner_size, requested_size);
+        assert_eq!(state.last_requested_action, Some(WindowResizeAction::Maxspect));
+    }
+
     fn decorated_viewport(
         monitor_size: egui::Vec2,
         outer_position: egui::Pos2,
@@ -643,9 +928,21 @@ mod tests {
         let inner_rect = egui::Rect::from_min_size(outer_position + egui::vec2(0.0, decoration_top), inner_size);
         ViewportGeometry {
             monitor_size,
+            work_area: None,
             outer_rect: Some(outer_rect),
             inner_rect: Some(inner_rect),
         }
+    }
+
+    fn viewport_with_work_area(
+        work_area: egui::Rect,
+        outer_position: egui::Pos2,
+        inner_size: egui::Vec2,
+        decoration_top: f32,
+    ) -> ViewportGeometry {
+        let mut viewport = decorated_viewport(work_area.size(), outer_position, inner_size, decoration_top);
+        viewport.work_area = Some(work_area);
+        viewport
     }
 
     fn assert_size_near(a: egui::Vec2, b: egui::Vec2) {

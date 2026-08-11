@@ -5,6 +5,7 @@ use eframe::egui;
 
 use crate::annotations::{AnnotationRenderer, shared_font_definitions};
 use crate::debug::{DebugConfig, RuntimeDebug};
+use crate::platform_window::NativeWorkAreaCache;
 use crate::render::WgpuImageRenderer;
 use crate::viewer::Viewer;
 
@@ -13,6 +14,7 @@ pub struct ZvApp {
     runtime_debug: Option<RuntimeDebug>,
     launched_at: Instant,
     logged_first_frame: bool,
+    native_work_area: NativeWorkAreaCache,
 }
 
 impl ZvApp {
@@ -47,6 +49,7 @@ impl ZvApp {
             runtime_debug,
             launched_at,
             logged_first_frame: false,
+            native_work_area: NativeWorkAreaCache::default(),
         }
     }
 }
@@ -64,7 +67,8 @@ impl eframe::App for ZvApp {
     }
 
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
-        let state = self.viewer.update(ctx, frame.wgpu_render_state());
+        let work_area = self.native_work_area.update(frame, ctx);
+        let state = self.viewer.update(ctx, frame.wgpu_render_state(), work_area);
         if let Some(runtime_debug) = &mut self.runtime_debug {
             runtime_debug.update(ctx, &state, &mut self.viewer);
         }

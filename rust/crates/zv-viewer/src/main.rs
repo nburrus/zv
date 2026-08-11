@@ -14,6 +14,7 @@ mod image_window;
 mod image_window_geometry;
 mod layout;
 mod modified_image;
+mod platform_window;
 mod render;
 mod shortcuts;
 mod viewer;
