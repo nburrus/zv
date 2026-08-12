@@ -1,0 +1,63 @@
+name: Rust CI
+
+on:
+  push:
+    branches: [main, rust]
+  pull_request:
+    branches: [main, rust]
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    name: Format and lint
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install native build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes cmake nasm pkg-config libasound2-dev libgl1-mesa-dev libudev-dev libwayland-dev libxkbcommon-dev libxrandr-dev libxi-dev
+      - run: cargo fmt --check
+      - run: cargo clippy --locked --all-targets
+
+  test-and-build:
+    name: Test and release-small build (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            target: linux-x86_64
+          - os: macos-15
+            target: macos-arm64
+          - os: macos-15-intel
+            target: macos-x86_64
+          - os: windows-latest
+            target: windows-x86_64
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install Linux native build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes cmake nasm pkg-config libasound2-dev libgl1-mesa-dev libudev-dev libwayland-dev libxkbcommon-dev libxrandr-dev libxi-dev
+      - name: Install macOS native build dependencies
+        if: runner.os == 'macOS'
+        run: brew install nasm
+      - name: Install Windows native build dependencies
+        if: runner.os == 'Windows'
+        run: choco install --yes --no-progress nasm
+      - run: cargo test --locked
+      - run: cargo build --locked --profile release-small
+      - name: Smoke test release binary
+        if: runner.os != 'Windows'
+        run: target/release-small/zv --version
+      - name: Smoke test release binary
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: '& .\\target\\release-small\\zv.exe --version'

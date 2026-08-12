@@ -901,7 +901,9 @@ void ControlsWindow::renderFrame ()
         setEnabled (false);
     }
 
-    if (!io.WantCaptureKeyboard)
+    // The controls UI captures the keyboard for navigation while it has focus,
+    // but global shortcuts should still work unless the user is editing text.
+    if (!io.WantTextInput)
     {
         if (ImGui::IsKeyPressed(ImGuiKey_Q))
         {

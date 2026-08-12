@@ -1,112 +1,119 @@
-name: Release Installers
+name: Release Rust ZV
 
 on:
   push:
-    tags:
-      - 'v*'
+    tags: ['v*']
+  workflow_dispatch:
 
 permissions:
-  contents: write
-
-env:
-  BUILD_TYPE: Release
-  DEBIAN_FRONTEND: noninteractive
+  contents: read
 
 jobs:
+  verify-version:
+    name: Verify release version
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Require tag to match Cargo version
+        if: github.ref_type == 'tag'
+        run: |
+          package_version="$(cargo metadata --no-deps --format-version=1 | jq -r '.packages[] | select(.name == "zv").version')"
+          test "${GITHUB_REF_NAME#v}" = "$package_version"
+
   build-release-artifact:
     name: Build ${{ matrix.target }}
+    needs: verify-version
     runs-on: ${{ matrix.os }}
-
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: ubuntu-22.04
             target: linux-x86_64
-            cmake_extra_args: ""
-          - os: macos-14
+            archive: tar.gz
+          - os: macos-15
             target: macos-arm64
-            cmake_extra_args: -DCMAKE_OSX_ARCHITECTURES=arm64
-
+            archive: tar.gz
+          - os: macos-15-intel
+            target: macos-x86_64
+            archive: tar.gz
+          - os: windows-latest
+            target: windows-x86_64
+            archive: zip
     steps:
-    - name: Checkout
-      uses: actions/checkout@v6
-      with:
-        lfs: true
-
-    - name: Install Linux dependencies
-      if: startsWith(matrix.os, 'ubuntu-')
-      run: |
-        sudo --preserve-env=DEBIAN_FRONTEND apt-get update
-        sudo --preserve-env=DEBIAN_FRONTEND apt-get install -y \
-          cmake \
-          libgl-dev \
-          libpng-dev \
-          libx11-dev \
-          libxcb1-dev \
-          libxcursor-dev \
-          libxi-dev \
-          libxinerama-dev \
-          libxrandr-dev \
-          ninja-build \
-          nasm
-
-    - name: Install macOS dependencies
-      if: startsWith(matrix.os, 'macos-')
-      run: brew install nasm ninja
-
-    - name: Configure CMake
-      run: >
-        cmake -G Ninja -B "${{ github.workspace }}/build"
-        -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
-        ${{ matrix.cmake_extra_args }}
-
-    - name: Build release binaries
-      run: |
-        cmake --build "${{ github.workspace }}/build" --config "${{ env.BUILD_TYPE }}" --target glfw-deps clip-deps libjpeg-turbo-deps
-        cmake --build "${{ github.workspace }}/build" --config "${{ env.BUILD_TYPE }}" --target zvbin zv-client
-
-    - name: Stage release files
-      env:
-        TARGET: ${{ matrix.target }}
-        VERSION: ${{ github.ref_name }}
-      run: |
-        mkdir -p "${{ github.workspace }}/dist"
-        cp "${{ github.workspace }}/build/zv/zv" "${{ github.workspace }}/dist/zv"
-        cp "${{ github.workspace }}/build/zv-client/zv-client" "${{ github.workspace }}/dist/zv-client"
-        cp "${{ github.workspace }}/LICENSE" "${{ github.workspace }}/dist/LICENSE"
-        cp "${{ github.workspace }}/docs/release/README-install.txt" "${{ github.workspace }}/dist/README-install.txt"
-        tar -C "${{ github.workspace }}/dist" -czf "${{ github.workspace }}/zv-${VERSION}-${TARGET}.tar.gz" zv zv-client LICENSE README-install.txt
-
-    - name: Upload artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: ${{ matrix.target }}
-        path: ${{ github.workspace }}/zv-${{ github.ref_name }}-${{ matrix.target }}.tar.gz
-        if-no-files-found: error
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install Linux native build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes cmake nasm pkg-config libasound2-dev libgl1-mesa-dev libudev-dev libwayland-dev libxkbcommon-dev libxrandr-dev libxi-dev
+      - name: Install macOS native build dependencies
+        if: runner.os == 'macOS'
+        run: brew install nasm
+      - name: Install Windows native build dependencies
+        if: runner.os == 'Windows'
+        run: choco install --yes --no-progress nasm
+      - name: Build stripped public binary
+        run: cargo build --locked --profile release-small
+      - name: Smoke test release binary
+        if: runner.os != 'Windows'
+        run: target/release-small/zv --version
+      - name: Smoke test release binary
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: '& .\\target\\release-small\\zv.exe --version'
+      - name: Stage Unix archive
+        if: runner.os != 'Windows'
+        env:
+          TARGET: ${{ matrix.target }}
+          VERSION: ${{ github.ref_name }}
+        run: |
+          mkdir dist
+          cp target/release-small/zv dist/zv
+          cp LICENSE dist/LICENSE
+          cp docs/release/README-install.txt dist/README-install.txt
+          tar -C dist -czf "zv-${VERSION}-${TARGET}.tar.gz" zv LICENSE README-install.txt
+      - name: Stage Windows archive
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          TARGET: ${{ matrix.target }}
+          VERSION: ${{ github.ref_name }}
+        run: |
+          New-Item -ItemType Directory -Force -Path dist
+          Copy-Item target/release-small/zv.exe dist/zv.exe
+          Copy-Item LICENSE dist/LICENSE
+          Copy-Item docs/release/README-install.txt dist/README-install.txt
+          Compress-Archive -Path dist/* -DestinationPath "zv-$env:VERSION-$env:TARGET.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          path: zv-${{ github.ref_name }}-${{ matrix.target }}.${{ matrix.archive }}
+          if-no-files-found: error
 
   publish-release:
     name: Publish GitHub release
+    if: github.ref_type == 'tag'
     needs: build-release-artifact
     runs-on: ubuntu-22.04
-
+    permissions:
+      contents: write
     steps:
-    - name: Download build artifacts
-      uses: actions/download-artifact@v4
-      with:
-        path: ${{ github.workspace }}/release-assets
-
-    - name: Collect release files
-      run: |
-        mkdir -p "${{ github.workspace }}/release-upload"
-        find "${{ github.workspace }}/release-assets" -type f -name '*.tar.gz' -exec cp {} "${{ github.workspace }}/release-upload/" \;
-        cd "${{ github.workspace }}/release-upload"
-        sha256sum ./*.tar.gz > SHA256SUMS
-
-    - name: Publish release
-      uses: softprops/action-gh-release@v2
-      with:
-        files: |
-          ${{ github.workspace }}/release-upload/*.tar.gz
-          ${{ github.workspace }}/release-upload/SHA256SUMS
-        generate_release_notes: true
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+      - name: Collect assets and checksums
+        run: |
+          mkdir release-upload
+          find release-assets -type f \( -name '*.tar.gz' -o -name '*.zip' \) -exec cp {} release-upload/ \;
+          cd release-upload
+          sha256sum zv-* > SHA256SUMS
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release-upload/*.tar.gz
+            release-upload/*.zip
+            release-upload/SHA256SUMS
+          generate_release_notes: true
