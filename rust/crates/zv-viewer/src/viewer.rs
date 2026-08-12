@@ -19,6 +19,8 @@ use crate::image_window::{CursorPixelInfo, ImageWindow};
 use crate::image_window_geometry::{ImageWindowGeometryState, WindowResizeAction};
 use crate::layout::{LayoutConfig, best_layout_for_image_count};
 use crate::modified_image::ModifiedImage;
+use crate::networking::RemoteImageRef;
+use crate::protocol::ImageOffer;
 use crate::render::{ColorPreview, WgpuImageRenderer};
 use crate::shortcuts::{ShortcutViewport, collect_shortcuts};
 use crate::viewport_geometry::{ViewportGeometry, ViewportResizeCommand};
@@ -130,6 +132,14 @@ impl Viewer {
         }
     }
 
+    pub fn add_remote_image(&mut self, offer: ImageOffer, remote: RemoteImageRef) {
+        if let Ok(mut image_list) = self.image_list.lock() {
+            image_list.add_remote_image(offer, remote);
+        } else {
+            tracing::warn!("image list lock is poisoned while adding a remote image");
+        }
+    }
+
     pub fn update(
         &mut self,
         ctx: &egui::Context,
@@ -153,7 +163,10 @@ impl Viewer {
         let mut selected_image_debug = None;
         let (image_load_timing, selected_range) = if let Ok(mut image_list) = self.image_list.lock() {
             image_list.poll_preloads();
-            let image_load_timing = image_list.ensure_selected_loaded();
+            let repaint_ctx = ctx.clone();
+            let image_load_timing = image_list.ensure_selected_loaded(move || {
+                repaint_ctx.request_repaint_of(egui::ViewportId::ROOT);
+            });
             // Wake the UI when the preload finishes; without this, navigating to an
             // image mid-preload leaves the main view stuck on "Loading..." until the
             // next user interaction triggers a repaint.
@@ -933,11 +946,23 @@ impl Viewer {
             let Some(path) = choose_save_path(&image.name, suggested_path.as_deref()) else {
                 return false;
             };
-            if let Ok(mut image) = image.data.lock() {
-                if let Err(err) = image.save_changes(Some(&path)) {
-                    tracing::warn!(error = %err, "failed to save image edits");
+            match image.data.lock() {
+                Ok(mut data) => {
+                    if let Err(err) = data.save_changes(Some(&path)) {
+                        tracing::warn!(error = %err, "failed to save image edits");
+                        return false;
+                    }
+                }
+                Err(_) => {
+                    tracing::warn!("image lock is poisoned while saving image edits");
                     return false;
                 }
+            }
+            if let Ok(mut image_list) = self.image_list.lock() {
+                image_list.set_source_path_at(image.index, path);
+            } else {
+                tracing::warn!("image list lock is poisoned after saving image edits");
+                return false;
             }
         }
         self.clear_missing_annotation_selection();

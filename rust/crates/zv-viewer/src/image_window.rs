@@ -1,4 +1,5 @@
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use eframe::egui;
 use eframe::egui_wgpu;
@@ -335,12 +336,30 @@ fn sample_image_at_uv(data: &crate::image_item_data::ImageItemData, uv: egui::Ve
 }
 
 fn paint_loading(ui: &egui::Ui, rect: egui::Rect) {
+    const REPAINT_INTERVAL: Duration = Duration::from_millis(100);
+    const SPINNER_RADIUS: f32 = 9.0;
+    const SPINNER_SEGMENTS: usize = 18;
+
+    ui.ctx().request_repaint_after(REPAINT_INTERVAL);
+
+    let spinner_center = rect.center() - egui::vec2(0.0, 13.0);
+    let start_angle = ui.input(|input| input.time as f32) * std::f32::consts::TAU;
+    let sweep = std::f32::consts::TAU * 0.72;
+    let points = (0..=SPINNER_SEGMENTS)
+        .map(|index| {
+            let angle = start_angle + sweep * index as f32 / SPINNER_SEGMENTS as f32;
+            spinner_center + SPINNER_RADIUS * egui::vec2(angle.cos(), angle.sin())
+        })
+        .collect();
+    ui.painter()
+        .add(egui::Shape::line(points, egui::Stroke::new(2.5, egui::Color32::WHITE)));
+
     ui.painter().text(
-        rect.center(),
+        rect.center() + egui::vec2(0.0, 13.0),
         egui::Align2::CENTER_CENTER,
-        "Loading...",
+        "Loading image…",
         egui::TextStyle::Body.resolve(ui.style()),
-        egui::Color32::WHITE,
+        ui.visuals().weak_text_color(),
     );
 }
 

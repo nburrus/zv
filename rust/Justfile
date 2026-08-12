@@ -27,6 +27,12 @@ clippy:
 run *args:
     cargo run -- {{args}}
 
+run-client *args:
+    cargo run -- --client {{args}}
+    
+run-server *args:
+    cargo run -- --server
+
 run-release *args:
     cargo run --release -- {{args}}
 

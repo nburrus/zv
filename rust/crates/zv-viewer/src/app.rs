@@ -1,10 +1,13 @@
+use std::net::TcpListener;
 use std::path::PathBuf;
+use std::sync::mpsc::{Receiver, TryRecvError};
 use std::time::Instant;
 
 use eframe::egui;
 
 use crate::annotations::{AnnotationRenderer, shared_font_definitions};
 use crate::debug::{DebugConfig, RuntimeDebug};
+use crate::networking::ServerSessionEvent;
 use crate::platform_window::NativeWorkAreaCache;
 use crate::render::WgpuImageRenderer;
 use crate::viewer::Viewer;
@@ -15,6 +18,7 @@ pub struct ZvApp {
     launched_at: Instant,
     logged_first_frame: bool,
     native_work_area: NativeWorkAreaCache,
+    server_session_events: Option<Receiver<ServerSessionEvent>>,
 }
 
 impl ZvApp {
@@ -23,6 +27,7 @@ impl ZvApp {
         image_paths: Vec<PathBuf>,
         launched_at: Instant,
         debug_config: DebugConfig,
+        server_session_listener: Option<TcpListener>,
     ) -> Self {
         tracing::info!("creating zv-viewer app");
         cc.egui_ctx.set_fonts(shared_font_definitions());
@@ -43,6 +48,12 @@ impl ZvApp {
         if runtime_debug.is_some() {
             tracing::info!("runtime debug script enabled");
         }
+        let server_session_events = server_session_listener.map(|listener| {
+            let ctx = cc.egui_ctx.clone();
+            crate::networking::spawn_server_session(listener, move || {
+                ctx.request_repaint_of(egui::ViewportId::ROOT);
+            })
+        });
 
         Self {
             viewer: Viewer::new(image_paths),
@@ -50,6 +61,38 @@ impl ZvApp {
             launched_at,
             logged_first_frame: false,
             native_work_area: NativeWorkAreaCache::default(),
+            server_session_events,
+        }
+    }
+
+    fn poll_server_session(&mut self, ctx: &egui::Context) {
+        if self.server_session_events.is_none() {
+            return;
+        }
+        loop {
+            let event = self.server_session_events.as_ref().expect("checked above").try_recv();
+            match event {
+                Ok(ServerSessionEvent::Connected { capabilities }) => {
+                    tracing::info!(capabilities, "remote client connected");
+                }
+                Ok(ServerSessionEvent::ImageOffered { offer, remote }) => {
+                    tracing::info!(remote_id = offer.id, name = %offer.name, "remote image offered");
+                    self.viewer.add_remote_image(offer, remote);
+                    ctx.request_repaint_of(egui::ViewportId::ROOT);
+                }
+                Ok(ServerSessionEvent::Disconnected { reason }) => {
+                    tracing::info!(%reason, "remote client disconnected");
+                    self.server_session_events = None;
+                    return;
+                }
+                Err(TryRecvError::Empty) => {
+                    return;
+                }
+                Err(TryRecvError::Disconnected) => {
+                    self.server_session_events = None;
+                    return;
+                }
+            }
         }
     }
 }
@@ -67,6 +110,7 @@ impl eframe::App for ZvApp {
     }
 
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+        self.poll_server_session(ctx);
         let work_area = self.native_work_area.update(frame, ctx);
         let state = self.viewer.update(ctx, frame.wgpu_render_state(), work_area);
         if let Some(runtime_debug) = &mut self.runtime_debug {

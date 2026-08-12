@@ -1090,7 +1090,7 @@ fn render_image_list(
             index: row.index,
             selected: row.selected,
             name: row.name.to_owned(),
-            hover_text: row.source_path.map(|p| p.display().to_string()),
+            hover_text: row.display_path.map(|path| path.display().to_string()),
             size_text: row
                 .size
                 .map(|(w, h)| format!("{w}x{h}"))

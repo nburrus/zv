@@ -22,10 +22,32 @@ pub fn load_rgba_image(path: &Path) -> anyhow::Result<ImageSRGBA> {
     load_rgba_image_generic(path)
 }
 
+pub fn load_rgba_image_from_memory(encoded: &[u8], format_hint: Option<&str>) -> anyhow::Result<ImageSRGBA> {
+    if format_hint.is_some_and(|hint| matches!(hint.to_ascii_lowercase().as_str(), "jpg" | "jpeg")) {
+        match load_jpeg_rgba_image_from_memory(encoded) {
+            Ok(image) => return Ok(image),
+            Err(jpeg_err) => {
+                return load_rgba_image_generic_from_memory(encoded).map_err(|fallback_err| {
+                    anyhow::anyhow!(
+                        "failed to decode remote image: TurboJPEG failed ({jpeg_err:#}); fallback image loader failed ({fallback_err:#})"
+                    )
+                });
+            }
+        }
+    }
+
+    load_rgba_image_generic_from_memory(encoded)
+}
+
 fn load_jpeg_rgba_image(path: &Path) -> anyhow::Result<ImageSRGBA> {
     let jpeg_data = std::fs::read(path).with_context(|| format!("failed to read JPEG data '{}'", path.display()))?;
-    let rgba = turbojpeg::decompress(&jpeg_data, turbojpeg::PixelFormat::RGBA)
-        .with_context(|| format!("failed to decode JPEG '{}' with TurboJPEG", path.display()))?;
+    load_jpeg_rgba_image_from_memory(&jpeg_data)
+        .with_context(|| format!("failed to decode JPEG '{}' with TurboJPEG", path.display()))
+}
+
+fn load_jpeg_rgba_image_from_memory(encoded: &[u8]) -> anyhow::Result<ImageSRGBA> {
+    let rgba = turbojpeg::decompress(encoded, turbojpeg::PixelFormat::RGBA)
+        .context("failed to decode JPEG bytes with TurboJPEG")?;
 
     Ok(ImageSRGBA::from_tightly_packed_bytes(
         rgba.width as u32,
@@ -36,8 +58,13 @@ fn load_jpeg_rgba_image(path: &Path) -> anyhow::Result<ImageSRGBA> {
 
 fn load_rgba_image_generic(path: &Path) -> anyhow::Result<ImageSRGBA> {
     let image_data = std::fs::read(path).with_context(|| format!("failed to read image data '{}'", path.display()))?;
-    let dynamic = image::load_from_memory(&image_data)
-        .with_context(|| format!("failed to decode image data '{}'", path.display()))?;
+    load_rgba_image_generic_from_memory(&image_data)
+        .with_context(|| format!("failed to decode image data '{}'", path.display()))
+}
+
+fn load_rgba_image_generic_from_memory(encoded: &[u8]) -> anyhow::Result<ImageSRGBA> {
+    let dynamic =
+        image::load_from_memory(encoded).context("image format was not recognized or the encoded data is invalid")?;
     let rgba = dynamic.into_rgba8();
     let (width, height) = rgba.dimensions();
     Ok(ImageSRGBA::from_tightly_packed_bytes(width, height, rgba.as_raw()))
@@ -143,6 +170,19 @@ mod tests {
             }
         );
 
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn remote_encoded_bytes_decode_from_memory() {
+        let path = temp_image_path("remote-png", "png");
+        write_png(&path);
+        let encoded = std::fs::read(&path).unwrap();
+
+        let image = load_rgba_image_from_memory(&encoded, Some("png")).unwrap();
+
+        assert_eq!((image.width(), image.height()), (2, 2));
+        assert_eq!(image.pixel(1, 0).unwrap().as_array(), [0, 255, 0, 128]);
         let _ = std::fs::remove_file(path);
     }
 

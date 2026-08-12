@@ -14,7 +14,9 @@ mod image_window;
 mod image_window_geometry;
 mod layout;
 mod modified_image;
+mod networking;
 mod platform_window;
+mod protocol;
 mod render;
 mod shortcuts;
 mod viewer;
@@ -27,10 +29,28 @@ use clap::Parser;
 use eframe::egui;
 
 #[derive(Debug, Parser)]
-#[command(name = "zv-viewer", about = "Rust ZV viewer prototype")]
+#[command(name = "zv", about = "Lightweight image viewer for computer vision")]
 struct Cli {
     #[arg(value_name = "IMAGE")]
     images: Vec<PathBuf>,
+
+    /// Listen for remote Rust ZV clients and open one viewer process per client.
+    #[arg(long, conflicts_with_all = ["client", "server_session"])]
+    server: bool,
+
+    /// Send image paths to a Rust ZV server.
+    #[arg(long, conflicts_with_all = ["server", "server_session"])]
+    client: bool,
+
+    #[arg(long, default_value = "127.0.0.1")]
+    host: String,
+
+    #[arg(long, default_value_t = 4207)]
+    port: u16,
+
+    /// Internal one-client viewer mode used by the server supervisor.
+    #[arg(long, hide = true, conflicts_with_all = ["server", "client"])]
+    server_session: bool,
 
     #[arg(long, value_name = "JSON")]
     debug_script_json: Option<PathBuf>,
@@ -45,12 +65,38 @@ struct Cli {
 fn main() -> anyhow::Result<()> {
     let launched_at = Instant::now();
     tracing_subscriber::fmt()
+        .with_writer(std::io::stderr)
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info,zv_viewer=debug".into()),
         )
         .init();
 
     let cli = Cli::parse();
+    if cli.server {
+        if !cli.images.is_empty() {
+            anyhow::bail!("--server does not accept image paths");
+        }
+        return networking::run_supervisor(&cli.host, cli.port);
+    }
+    if cli.client {
+        return networking::run_client(&cli.host, cli.port, cli.images);
+    }
+    if cli.server_session {
+        if !cli.images.is_empty() {
+            anyhow::bail!("--server-session does not accept image paths");
+        }
+        let listener = networking::bind_server_session(&cli.host, cli.port)?;
+        networking::announce_server_session(&listener)?;
+        return run_viewer(cli, launched_at, Some(listener));
+    }
+    run_viewer(cli, launched_at, None)
+}
+
+fn run_viewer(
+    cli: Cli,
+    launched_at: Instant,
+    server_session_listener: Option<std::net::TcpListener>,
+) -> anyhow::Result<()> {
     let initial_viewport = initial_root_viewport(&cli.images);
     let options = eframe::NativeOptions {
         renderer: eframe::Renderer::Wgpu,
@@ -71,6 +117,7 @@ fn main() -> anyhow::Result<()> {
                     cli.debug_artifact_dir.clone(),
                     cli.debug_wait_frames,
                 ),
+                server_session_listener,
             )))
         }),
     )

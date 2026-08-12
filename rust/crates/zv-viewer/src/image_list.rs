@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap, VecDeque};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, TryRecvError};
@@ -6,9 +6,11 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use crate::color_image::{ImageSRGBA, PixelSRGBA};
-use crate::image_io::load_rgba_image;
+use crate::image_io::{load_rgba_image, load_rgba_image_from_memory};
 use crate::image_item_data::ImageItemData;
 use crate::modified_image::ModifiedImage;
+use crate::networking::RemoteImageRef;
+use crate::protocol::ImageOffer;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub struct ImageId(u64);
@@ -17,7 +19,7 @@ pub struct ImageListRow<'a> {
     pub index: usize,
     pub selected: bool,
     pub name: &'a str,
-    pub source_path: Option<&'a Path>,
+    pub display_path: Option<&'a Path>,
     pub size: Option<(u32, u32)>,
     pub has_changes: bool,
 }
@@ -55,10 +57,22 @@ pub struct ImageList {
 
 struct ImageItem {
     id: ImageId,
-    source_image_path: Option<PathBuf>,
+    source: ImageSource,
     pretty_name: String,
     metadata: Option<(u32, u32)>,
     error: Option<String>,
+}
+
+#[derive(Clone)]
+enum ImageSource {
+    LocalPath(PathBuf),
+    Remote {
+        remote: RemoteImageRef,
+        remote_path: String,
+        format_hint: Option<String>,
+    },
+    InMemory,
+    Default,
 }
 
 struct LoadDataResult {
@@ -68,7 +82,8 @@ struct LoadDataResult {
 
 struct PreloadResult {
     id: ImageId,
-    path: PathBuf,
+    source_label: String,
+    local_path: Option<PathBuf>,
     elapsed: Duration,
     result: Result<ImageSRGBA, String>,
 }
@@ -77,6 +92,7 @@ struct ImageItemCache {
     max_size: usize,
     entries: HashMap<ImageId, Arc<Mutex<ModifiedImage>>>,
     lru: VecDeque<ImageId>,
+    protected: HashSet<ImageId>,
 }
 
 impl ImageItemCache {
@@ -85,6 +101,7 @@ impl ImageItemCache {
             max_size,
             entries: HashMap::new(),
             lru: VecDeque::new(),
+            protected: HashSet::new(),
         }
     }
 
@@ -119,6 +136,9 @@ impl ImageItemCache {
     }
 
     fn is_evictable(&self, id: ImageId) -> bool {
+        if self.protected.contains(&id) {
+            return false;
+        }
         // Treat an unreadable entry as dirty so a poisoned/locked mutex never
         // causes us to drop unsaved work.
         self.entries
@@ -130,6 +150,15 @@ impl ImageItemCache {
     fn remove(&mut self, id: ImageId) {
         self.entries.remove(&id);
         self.lru.retain(|&existing| existing != id);
+        self.protected.remove(&id);
+    }
+
+    fn protect(&mut self, id: ImageId) {
+        self.protected.insert(id);
+    }
+
+    fn unprotect(&mut self, id: ImageId) {
+        self.protected.remove(&id);
     }
 
     fn touch(&mut self, id: ImageId) {
@@ -191,7 +220,7 @@ impl ImageList {
                 index,
                 selected: selected_indices.contains(&Some(index)),
                 name: &item.pretty_name,
-                source_path: item.source_image_path.as_deref(),
+                display_path: item.naming_path(),
                 size: item.metadata,
                 has_changes,
             })
@@ -233,7 +262,36 @@ impl ImageList {
         }
     }
 
-    pub fn add_image_data(&mut self, image: ImageSRGBA, name: impl Into<String>, insert_position: usize) -> ImageId {
+    pub fn add_remote_image(&mut self, offer: ImageOffer, remote: RemoteImageRef) {
+        if self.items.len() == 1 && self.items[0].is_default() {
+            let default_id = self.items.remove(0).id;
+            self.cache.remove(default_id);
+        }
+        let metadata = offer.width.zip(offer.height);
+        self.items.push(ImageItem {
+            id: next_image_id(),
+            source: ImageSource::Remote {
+                remote,
+                remote_path: offer.remote_path,
+                format_hint: offer.format_hint,
+            },
+            pretty_name: offer.name,
+            metadata,
+            error: None,
+        });
+        refresh_pretty_names(&mut self.items);
+        let enabled = self.enabled_indices();
+        if enabled.len() == 1 {
+            self.selection_start = 0;
+        }
+    }
+
+    pub fn add_in_memory_image_data(
+        &mut self,
+        image: ImageSRGBA,
+        name: impl Into<String>,
+        insert_position: usize,
+    ) -> ImageId {
         if self.items.len() == 1 && self.items[0].is_default() {
             let default_id = self.items.remove(0).id;
             self.cache.remove(default_id);
@@ -243,13 +301,16 @@ impl ImageList {
         let metadata = Some((image.width(), image.height()));
         let item = ImageItem {
             id,
-            source_image_path: None,
+            source: ImageSource::InMemory,
             pretty_name: name.into(),
             metadata,
             error: None,
         };
         let position = insert_position.min(self.items.len());
         self.items.insert(position, item);
+        // In-memory images have no source to reload after eviction. Keep them
+        // protected until a successful save promotes them to a local path.
+        self.cache.protect(id);
         self.cache.put(
             id,
             Arc::new(Mutex::new(ModifiedImage::new_unsaved(ImageItemData::new(image)))),
@@ -262,7 +323,7 @@ impl ImageList {
     pub fn add_pasted_image_data(&mut self, image: ImageSRGBA) -> ImageId {
         let number = self.next_pasted_image_number;
         self.next_pasted_image_number = number.checked_add(1).expect("pasted image counter overflow");
-        self.add_image_data(image, format!("(pasted image {number})"), 0)
+        self.add_in_memory_image_data(image, format!("(pasted image {number})"), 0)
     }
 
     pub fn set_filter(&mut self, filter_text: String) {
@@ -345,17 +406,27 @@ impl ImageList {
                 Err(TryRecvError::Empty) => {}
                 Err(TryRecvError::Disconnected) => {
                     self.pending_preloads.remove(&id);
+                    if let Some(item) = self.items.iter_mut().find(|item| item.id == id) {
+                        item.error = Some("image load worker stopped unexpectedly".to_owned());
+                    }
                 }
             }
         }
     }
 
-    pub fn ensure_selected_loaded(&mut self) -> Option<ImageLoadTiming> {
+    pub fn ensure_selected_loaded(
+        &mut self,
+        on_done: impl FnOnce() + Send + Clone + 'static,
+    ) -> Option<ImageLoadTiming> {
         self.poll_preloads();
         let indices = self.selected_indices();
         let mut first_timing = None;
         for index in indices.into_iter().flatten() {
             if self.pending_preloads.contains_key(&self.items[index].id) {
+                continue;
+            }
+            if matches!(self.items[index].source, ImageSource::Remote { .. }) {
+                let _ = self.start_preload_for_index(index, on_done.clone());
                 continue;
             }
             if first_timing.is_none() {
@@ -399,7 +470,17 @@ impl ImageList {
     }
 
     pub fn source_path_at(&self, index: usize) -> Option<&Path> {
-        self.items.get(index)?.source_image_path.as_deref()
+        self.items.get(index)?.local_path()
+    }
+
+    pub fn set_source_path_at(&mut self, index: usize, path: PathBuf) {
+        let Some(item) = self.items.get_mut(index) else {
+            return;
+        };
+        item.source = ImageSource::LocalPath(path);
+        item.error = None;
+        self.cache.unprotect(item.id);
+        refresh_pretty_names(&mut self.items);
     }
 
     pub fn modified_image_at(&self, index: usize) -> Option<Arc<Mutex<ModifiedImage>>> {
@@ -512,26 +593,56 @@ impl ImageList {
         {
             return false;
         }
-        let Some(path) = item.source_image_path.clone() else {
-            let data = Arc::new(Mutex::new(ModifiedImage::new(
-                ImageItemData::new(default_image()),
-                None,
-            )));
-            self.cache.put(item.id, data);
-            return true;
-        };
-
         let id = item.id;
+        let source = item.source.clone();
+        if matches!(&source, ImageSource::Default | ImageSource::InMemory) {
+            if matches!(&source, ImageSource::Default) {
+                let data = Arc::new(Mutex::new(ModifiedImage::new(
+                    ImageItemData::new(default_image()),
+                    None,
+                )));
+                self.cache.put(item.id, data);
+                return true;
+            }
+            return false;
+        }
         let (sender, receiver) = mpsc::channel();
         std::thread::spawn(move || {
             let start = Instant::now();
-            let result = load_rgba_image(&path).map_err(|err| format!("{err:#}"));
-            let _ = sender.send(PreloadResult {
-                id,
-                path,
-                elapsed: start.elapsed(),
-                result,
-            });
+            let preload = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| match source {
+                ImageSource::LocalPath(path) => {
+                    let result = load_rgba_image(&path).map_err(|err| format!("{err:#}"));
+                    (path.display().to_string(), Some(path), result)
+                }
+                ImageSource::Remote {
+                    remote,
+                    remote_path,
+                    format_hint,
+                } => {
+                    let result = remote.request_encoded_bytes().and_then(|encoded| {
+                        load_rgba_image_from_memory(&encoded, format_hint.as_deref())
+                            .map_err(|error| format!("{error:#}"))
+                    });
+                    (format!("{} (remote id {})", remote_path, remote.id()), None, result)
+                }
+                ImageSource::InMemory | ImageSource::Default => unreachable!("handled above"),
+            })) {
+                Ok((source_label, local_path, result)) => PreloadResult {
+                    id,
+                    source_label,
+                    local_path,
+                    elapsed: start.elapsed(),
+                    result,
+                },
+                Err(_) => PreloadResult {
+                    id,
+                    source_label: "image load worker".to_owned(),
+                    local_path: None,
+                    elapsed: start.elapsed(),
+                    result: Err("image decoder stopped unexpectedly".to_owned()),
+                },
+            };
+            let _ = sender.send(preload);
             on_done();
         });
         self.pending_preloads.insert(id, receiver);
@@ -549,12 +660,12 @@ impl ImageList {
                     result.id,
                     Arc::new(Mutex::new(ModifiedImage::new(
                         ImageItemData::new(image),
-                        Some(result.path.clone()),
+                        result.local_path.clone(),
                     ))),
                 );
                 tracing::debug!(
                     elapsed_ms = result.elapsed.as_millis(),
-                    image = %result.path.display(),
+                    image = %result.source_label,
                     "preloaded image"
                 );
             }
@@ -562,7 +673,7 @@ impl ImageList {
                 self.items[index].error = Some(error);
                 tracing::debug!(
                     elapsed_ms = result.elapsed.as_millis(),
-                    image = %result.path.display(),
+                    image = %result.source_label,
                     "image preload failed"
                 );
             }
@@ -572,7 +683,22 @@ impl ImageList {
 
 impl ImageItem {
     fn is_default(&self) -> bool {
-        self.source_image_path.is_none() && self.pretty_name == "<<default>>"
+        matches!(self.source, ImageSource::Default)
+    }
+
+    fn local_path(&self) -> Option<&Path> {
+        match &self.source {
+            ImageSource::LocalPath(path) => Some(path),
+            _ => None,
+        }
+    }
+
+    fn naming_path(&self) -> Option<&Path> {
+        match &self.source {
+            ImageSource::LocalPath(path) => Some(path),
+            ImageSource::Remote { remote_path, .. } => Some(Path::new(remote_path)),
+            ImageSource::InMemory | ImageSource::Default => None,
+        }
     }
 
     fn from_path(id: ImageId, path: PathBuf) -> Self {
@@ -580,7 +706,7 @@ impl ImageItem {
         Self {
             id,
             pretty_name: display_name(&path),
-            source_image_path: Some(path),
+            source: ImageSource::LocalPath(path),
             metadata,
             error: None,
         }
@@ -589,7 +715,7 @@ impl ImageItem {
     fn default_image(id: ImageId) -> Self {
         Self {
             id,
-            source_image_path: None,
+            source: ImageSource::Default,
             pretty_name: "<<default>>".to_owned(),
             metadata: Some((256, 256)),
             error: None,
@@ -597,16 +723,19 @@ impl ImageItem {
     }
 
     fn load_data(&mut self) -> Option<LoadDataResult> {
-        let Some(path) = self.source_image_path.as_ref() else {
-            return Some(LoadDataResult {
-                data: Some(Arc::new(Mutex::new(ModifiedImage::new(
-                    ImageItemData::new(default_image()),
-                    None,
-                )))),
-                timing: None,
-            });
+        let path = match &self.source {
+            ImageSource::LocalPath(path) => path,
+            ImageSource::Default => {
+                return Some(LoadDataResult {
+                    data: Some(Arc::new(Mutex::new(ModifiedImage::new(
+                        ImageItemData::new(default_image()),
+                        None,
+                    )))),
+                    timing: None,
+                });
+            }
+            ImageSource::Remote { .. } | ImageSource::InMemory => return None,
         };
-
         let start = Instant::now();
         match load_rgba_image(path) {
             Ok(image) => {
@@ -664,14 +793,14 @@ fn display_name(path: &Path) -> String {
 
 fn refresh_pretty_names(items: &mut [ImageItem]) {
     for item in items.iter_mut() {
-        if let Some(path) = &item.source_image_path {
-            item.pretty_name = display_name(path);
+        if let Some(name) = item.naming_path().map(display_name) {
+            item.pretty_name = name;
         }
     }
 
     let mut grouped_names: BTreeMap<String, Vec<usize>> = BTreeMap::new();
     for (index, item) in items.iter().enumerate() {
-        let Some(path) = &item.source_image_path else {
+        let Some(path) = item.naming_path() else {
             continue;
         };
         grouped_names.entry(display_name(path)).or_default().push(index);
@@ -684,7 +813,7 @@ fn refresh_pretty_names(items: &mut [ImageItem]) {
 
         let path_names = path_indices
             .iter()
-            .filter_map(|&index| items[index].source_image_path.as_ref())
+            .filter_map(|&index| items[index].naming_path())
             .map(|path| path.display().to_string())
             .collect::<Vec<_>>();
         let unique_names = unique_pretty_names(&path_names);
@@ -833,7 +962,7 @@ mod tests {
         let rows = images.visible_rows().collect::<Vec<_>>();
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].name, "<<default>>");
-        assert_eq!(rows[0].source_path, None);
+        assert_eq!(rows[0].display_path, None);
         assert_eq!(rows[0].size, Some((256, 256)));
     }
 
@@ -846,21 +975,21 @@ mod tests {
         let rows = images.visible_rows().collect::<Vec<_>>();
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].name, "<<default>>");
-        assert_eq!(rows[0].source_path, None);
+        assert_eq!(rows[0].display_path, None);
         assert!(rows[0].selected);
     }
 
     #[test]
-    fn adding_image_data_replaces_default_and_caches_selected_pixels() {
+    fn adding_in_memory_image_data_replaces_default_and_caches_selected_pixels() {
         let mut images = ImageList::new(Vec::new());
         let image = ImageSRGBA::from_tightly_packed_bytes(1, 1, &[1, 2, 3, 4]);
 
-        let id = images.add_image_data(image, "(pasted)", 0);
+        let id = images.add_in_memory_image_data(image, "(pasted)", 0);
 
         let rows = images.visible_rows().collect::<Vec<_>>();
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].name, "(pasted)");
-        assert_eq!(rows[0].source_path, None);
+        assert_eq!(rows[0].display_path, None);
         assert_eq!(rows[0].size, Some((1, 1)));
         assert!(rows[0].selected);
         let pasted = images.cache.get_cached(id).unwrap();
@@ -870,11 +999,11 @@ mod tests {
     }
 
     #[test]
-    fn adding_image_data_inserts_at_requested_position_and_selects_it() {
+    fn adding_in_memory_image_data_inserts_at_requested_position_and_selects_it() {
         let mut images = list(&["a.png", "b.png"]);
         let image = ImageSRGBA::from_tightly_packed_bytes(1, 1, &[1, 2, 3, 255]);
 
-        images.add_image_data(image, "(pasted)", 0);
+        images.add_in_memory_image_data(image, "(pasted)", 0);
 
         assert_eq!(visible_names(&images), ["(pasted)", "a.png", "b.png"]);
         assert_eq!(selected_visible_index(&images), Some(0));
@@ -1001,6 +1130,39 @@ mod tests {
     }
 
     #[test]
+    fn remote_duplicate_basenames_use_local_path_disambiguation() {
+        let mut images = ImageList::new(Vec::new());
+        for (id, remote_path) in [
+            (1, "/workspace/tests/books_4k.jpg"),
+            (2, "/workspace/rust/my-copy/books_4k.jpg"),
+        ] {
+            images.add_remote_image(
+                ImageOffer {
+                    id,
+                    name: "books_4k.jpg".to_owned(),
+                    remote_path: remote_path.to_owned(),
+                    width: None,
+                    height: None,
+                    format_hint: Some("jpg".to_owned()),
+                },
+                crate::networking::remote_image_ref_for_test(id),
+            );
+        }
+
+        assert_eq!(
+            visible_names(&images),
+            ["...tests/books_4k.jpg", "...my-copy/books_4k.jpg"]
+        );
+        assert_eq!(
+            images.visible_rows().map(|row| row.display_path).collect::<Vec<_>>(),
+            [
+                Some(Path::new("/workspace/tests/books_4k.jpg")),
+                Some(Path::new("/workspace/rust/my-copy/books_4k.jpg")),
+            ]
+        );
+    }
+
+    #[test]
     fn navigation_skips_filtered_rows() {
         let mut images = list(&["a.png", "b.png", "aa.png"]);
         images.set_filter("a".to_owned());
@@ -1045,7 +1207,7 @@ mod tests {
 
         let id0 = images.items[0].id;
         assert!(images.selected_range_views()[0].as_ref().unwrap().data.is_none());
-        let timing = images.ensure_selected_loaded().expect("load selected");
+        let timing = images.ensure_selected_loaded(|| {}).expect("load selected");
         assert!(timing.succeeded);
 
         let selected = images.selected_range_views()[0].as_ref().unwrap().clone();
@@ -1065,7 +1227,7 @@ mod tests {
         let id0 = images.items[0].id;
         let id1 = images.items[1].id;
         let id2 = images.items[2].id;
-        images.ensure_selected_loaded();
+        images.ensure_selected_loaded(|| {});
         assert!(images.preload_next_from_selection(|| {}));
         for _ in 0..100 {
             images.poll_preloads();
@@ -1081,6 +1243,63 @@ mod tests {
         let _ = fs::remove_file(first);
         let _ = fs::remove_file(second);
         let _ = fs::remove_file(third);
+    }
+
+    #[test]
+    fn disconnected_preload_worker_marks_image_as_failed() {
+        let mut images = list(&["a.png"]);
+        let id = images.items[0].id;
+        let (sender, receiver) = mpsc::channel::<PreloadResult>();
+        images.pending_preloads.insert(id, receiver);
+        drop(sender);
+
+        images.poll_preloads();
+
+        assert!(images.items[0].error.as_deref().unwrap().contains("worker stopped"));
+        assert!(!images.pending_preloads.contains_key(&id));
+    }
+
+    #[test]
+    fn saved_in_memory_image_reloads_after_cache_eviction() {
+        let path = std::env::temp_dir().join(format!("zv-saved-paste-{}.png", std::process::id()));
+        let mut images = ImageList::new(Vec::new());
+        let id = images.add_in_memory_image_data(
+            ImageSRGBA::from_tightly_packed_bytes(1, 1, &[1, 2, 3, 255]),
+            "pasted",
+            0,
+        );
+        images
+            .cache
+            .get_cached(id)
+            .unwrap()
+            .lock()
+            .unwrap()
+            .save_changes(Some(&path))
+            .unwrap();
+        images.set_source_path_at(0, path.clone());
+        images.cache.remove(id);
+
+        let timing = images.ensure_selected_loaded(|| {}).expect("reload saved paste");
+
+        assert!(timing.succeeded);
+        assert!(images.cache.contains(id));
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn in_memory_image_is_protected_until_it_has_a_path() {
+        let mut images = ImageList::new(Vec::new());
+        let id = images.add_in_memory_image_data(
+            ImageSRGBA::from_tightly_packed_bytes(1, 1, &[1, 2, 3, 255]),
+            "pasted",
+            0,
+        );
+        images.cache.get_cached(id).unwrap().lock().unwrap().discard_changes();
+
+        assert!(!images.cache.is_evictable(id));
+
+        images.set_source_path_at(0, PathBuf::from("saved.png"));
+        assert!(images.cache.is_evictable(id));
     }
 
     #[test]

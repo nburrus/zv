@@ -1,6 +1,6 @@
 # Rust Binary Size Findings
 
-This document captures measured `zv-viewer` binary sizes on macOS arm64 while tuning release settings and image format features.
+This document captures measured `zv` binary sizes on macOS arm64 while tuning release settings and image format features.
 
 ## Build Profiles
 
@@ -16,7 +16,7 @@ cargo build --profile release-small
 
 ## Measured Sizes
 
-All sizes below are from `rust/target/.../zv-viewer` using `ls -lh` and section breakdown via `size -m`.
+All sizes below are from `rust/target/.../zv` using `ls -lh` and section breakdown via `size -m`.
 
 | Configuration | Binary Size | Delta vs prior |
 |---|---:|---:|

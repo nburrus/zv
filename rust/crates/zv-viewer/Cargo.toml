@@ -4,6 +4,10 @@ version = "0.1.0"
 edition = "2024"
 publish = false
 
+[[bin]]
+name = "zv"
+path = "src/main.rs"
+
 [dependencies]
 anyhow = "1"
 arboard = "3.6"
@@ -14,7 +18,9 @@ egui = "0.33"
 egui_extras = "0.33"
 egui-phosphor = { version = "0.11", default-features = false, features = ["regular"] }
 image = { version = "0.25", default-features = false, features = ["bmp", "gif", "jpeg", "png", "pnm", "tga", "tiff"] }
+rmp-serde = "1"
 serde = { version = "1", features = ["derive"] }
+serde_bytes = "0.11"
 rfd = "0.15"
 serde_json = "1"
 tracing = "0.1"
