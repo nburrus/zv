@@ -361,7 +361,7 @@ pub fn run_supervisor(host: &str, port: u16) -> anyhow::Result<()> {
                     continue;
                 };
                 if let Err(error) = thread::Builder::new()
-                    .name("zv-client-session".to_owned())
+                    .name("zv-server-session".to_owned())
                     .spawn(move || {
                         let _session_slot = session_slot;
                         if let Err(error) = supervise_client(client) {
@@ -484,10 +484,10 @@ mod tests {
 
     #[test]
     fn client_normalizes_relative_paths_for_remote_metadata() {
-        let path = absolute_client_path(PathBuf::from("../tests/books_4k.jpg"));
+        let path = absolute_client_path(PathBuf::from("attic/zv-cpp/tests/books_4k.jpg"));
 
         assert!(path.is_absolute());
-        assert!(path.ends_with("tests/books_4k.jpg"));
+        assert!(path.ends_with("attic/zv-cpp/tests/books_4k.jpg"));
     }
 
     #[test]

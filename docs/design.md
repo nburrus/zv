@@ -1,31 +1,27 @@
 # Rust ZV Viewer Design
 
-This document describes the current Rust viewer prototype under `rust/`.
-It is a work-in-progress implementation note, not a final architecture decision.
-The C++ design review remains in `docs/zv_cpp_design.md`, and the broader porting notes remain in `docs/zv_rust_porting.md`.
+This document describes the current Rust ZV implementation. It is an
+implementation note, not a stable API specification. The archived C++ design
+review lives in `attic/zv-cpp/docs/zv_cpp_design.md`.
 
 ## Scope
 
-The Rust work currently targets only the image viewer.
-`zv-client`, the Python bindings, and any later crate split are intentionally out of the first implementation step.
+The active Rust project targets the desktop viewer and its built-in client/server
+mode. The former standalone C++ `zv-client` and Python bindings are archived.
 
 The current implementation is one crate:
 
 ```text
-rust/
-  Cargo.toml
-  Justfile
-  crates/
-    zv-viewer/
-      Cargo.toml
-      src/
-  debug-scripts/
-    hover-controls.json
-  docs/
+Cargo.toml
+Justfile
+src/
+debug-scripts/
+  hover-controls.json
+docs/
 ```
 
-The plan is to keep everything in `zv-viewer` until there is real pressure to split.
-Possible later crates are still provisional: viewer core, client app, and Python bindings can be split out when the ownership boundaries become clearer.
+The package and executable are both named `zv`. Future reusable Rust components
+can be split into crates only when clear ownership boundaries emerge.
 
 ## Technology Stack
 
@@ -346,5 +342,5 @@ Open questions for the next milestones:
 - how annotations should be modeled independently from rendering
 - whether annotations should be drawn with egui painters, WGPU passes, or both
 - how to render annotations to a texture for final apply/export
-- when to split `zv-viewer` into smaller crates
+- when to split `zv` into smaller crates
 - how to preserve C++ behavior where it matters while accepting Rust/egui-specific structure

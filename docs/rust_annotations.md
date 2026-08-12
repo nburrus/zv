@@ -17,19 +17,19 @@ This note is the handoff state for the Rust line-annotation work. The goal is to
 
 ## Main Files
 
-- `rust/crates/zv-viewer/src/annotations.rs`
+- `src/annotations.rs`
   - Annotation data model, hit testing, interactive drawing helpers, and final-image egui/wgpu compositor.
-- `rust/crates/zv-viewer/src/annotation_tool.rs`
+- `src/annotation_tool.rs`
   - Select/AddLine tool state, creation drag, edit drag, undo snapshot capture, selected handles, and selection cleanup helpers.
-- `rust/crates/zv-viewer/src/modified_image.rs`
+- `src/modified_image.rs`
   - Original/annotated image state, undo stack, dirty tracking, save/discard, and pre-frame annotation update.
-- `rust/crates/zv-viewer/src/viewer.rs`
+- `src/viewer.rs`
   - Applies actions, runs pre-frame annotation compositing using `frame.wgpu_render_state()`, and exposes debug annotation state.
-- `rust/crates/zv-viewer/src/render.rs`
+- `src/render.rs`
   - Paint callback now only uploads/binds/paints current image data. Annotation compositing no longer happens inside the callback.
-- `rust/crates/zv-viewer/src/image_window.rs`
+- `src/image_window.rs`
   - Renders visible images and routes pointer input into `AnnotationTool`.
-- `rust/crates/zv-viewer/src/debug.rs`
+- `src/debug.rs`
   - JSON debug script runner, screenshots, state snapshots, and synthetic input.
 
 ## Current Behavior
@@ -131,7 +131,7 @@ GUI debug was exercised with repo-local temporary artifacts under `tmp/`. These 
 - ~~Multi-visible-image behavior needs explicit GUI verification.~~ **Verified** (see below).
 - ~~Non-1x zoom behavior needs explicit GUI verification.~~ **Verified** (see below).
 - Debug scripts are ad hoc.
-  - If CI-style regression coverage becomes desirable, add tracked scripts under a dedicated path such as `rust/debug_scripts/` and keep generated artifacts under `tmp/`.
+  - If CI-style regression coverage becomes desirable, add tracked scripts under `debug-scripts/` and keep generated artifacts under `tmp/`.
 - Line and arrow annotations exist in Rust so far.
   - Rectangle/ellipse/text should be added only after line behavior is considered solid.
 - Color editor is intentionally deferred.

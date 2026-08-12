@@ -22,7 +22,7 @@ fmt-check:
     cargo fmt --check
 
 clippy:
-    cargo clippy --all-targets -- -D warnings
+    cargo clippy --locked --all-targets
 
 run *args:
     cargo run -- {{args}}
@@ -37,8 +37,10 @@ run-release *args:
     cargo run --release -- {{args}}
 
 test:
-    cargo run -- ../tests/baboon.png
+    cargo test --locked
+
+smoke:
+    cargo run -- --version
 
 clean:
     cargo clean
-

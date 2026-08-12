@@ -273,48 +273,163 @@ fn srgb_to_linear(x: f64) -> f64 {
 
 fn color_entries() -> &'static [ColorEntry] {
     static ENTRIES: OnceLock<Vec<ColorEntry>> = OnceLock::new();
-    ENTRIES.get_or_init(parse_cpp_color_entries)
-}
-
-fn parse_cpp_color_entries() -> Vec<ColorEntry> {
-    let source = include_str!("../../../../libzv/ColorConversion.cpp");
-    let table = source
-        .split_once("static ColorEntry colorEntries[] = {")
-        .and_then(|(_, rest)| rest.split_once("};"))
-        .map(|(table, _)| table)
-        .expect("C++ color table should be present");
-    let mut entries = Vec::new();
-    for line in table.lines() {
-        let line = line.trim();
-        if !line.starts_with("{\"") {
-            continue;
-        }
-        let mut quoted = line.split('"');
-        let _ = quoted.next();
-        let Some(class_name) = quoted.next() else { continue };
-        let _ = quoted.next();
-        let Some(color_name) = quoted.next() else { continue };
-        let Some(after_name) = quoted.next() else { continue };
-        let nums: Vec<u8> = after_name
-            .trim_start_matches(',')
-            .trim_end_matches(',')
-            .trim_end_matches("},")
-            .trim_end_matches('}')
-            .split(',')
-            .filter_map(|part| part.trim().parse().ok())
-            .collect();
-        if nums.len() == 3 {
-            entries.push(ColorEntry {
+    ENTRIES.get_or_init(|| {
+        COLOR_ENTRIES
+            .iter()
+            .map(|&(class_name, color_name, r, g, b)| ColorEntry {
                 class_name: class_name.to_owned(),
                 color_name: color_name.to_owned(),
-                r: nums[0],
-                g: nums[1],
-                b: nums[2],
-            });
-        }
-    }
-    entries
+                r,
+                g,
+                b,
+            })
+            .collect()
+    })
 }
+
+// CSS color names historically shared with the C++ implementation. Keep this
+// Rust-owned copy so the active crate does not depend on the archived source.
+const COLOR_ENTRIES: &[(&str, &str, u8, u8, u8)] = &[
+    ("Pink", "Pink", 255, 192, 203),
+    ("Pink", "LightPink", 255, 182, 193),
+    ("Pink", "HotPink", 255, 105, 180),
+    ("Pink", "DeepPink", 255, 20, 147),
+    ("Pink", "PaleVioletRed", 219, 112, 147),
+    ("Pink", "MediumVioletRed", 199, 21, 133),
+    ("Red", "LightSalmon", 255, 160, 122),
+    ("Red", "Salmon", 250, 128, 114),
+    ("Red", "DarkSalmon", 233, 150, 122),
+    ("Red", "LightCoral", 240, 128, 128),
+    ("Red", "IndianRed", 205, 92, 92),
+    ("Red", "Crimson", 220, 20, 60),
+    ("Red", "Firebrick", 178, 34, 34),
+    ("Red", "DarkRed", 139, 0, 0),
+    ("Red", "Red", 255, 0, 0),
+    ("Orange", "OrangeRed", 255, 69, 0),
+    ("Orange", "Tomato", 255, 99, 71),
+    ("Orange", "Coral", 255, 127, 80),
+    ("Orange", "DarkOrange", 255, 140, 0),
+    ("Orange", "Orange", 255, 165, 0),
+    ("Yellow", "Yellow", 255, 255, 0),
+    ("Yellow", "LightYellow", 255, 255, 224),
+    ("Yellow", "LemonChiffon", 255, 250, 205),
+    ("Yellow", "LightGoldenrodYellow", 250, 250, 210),
+    ("Yellow", "PapayaWhip", 255, 239, 213),
+    ("Yellow", "Moccasin", 255, 228, 181),
+    ("Yellow", "PeachPuff", 255, 218, 185),
+    ("Yellow", "PaleGoldenrod", 238, 232, 170),
+    ("Yellow", "Khaki", 240, 230, 140),
+    ("Yellow", "DarkKhaki", 189, 183, 107),
+    ("Yellow", "Gold", 255, 215, 0),
+    ("Brown", "Cornsilk", 255, 248, 220),
+    ("Brown", "BlanchedAlmond", 255, 235, 205),
+    ("Brown", "Bisque", 255, 228, 196),
+    ("Brown", "NavajoWhite", 255, 222, 173),
+    ("Brown", "Wheat", 245, 222, 179),
+    ("Brown", "Burlywood", 222, 184, 135),
+    ("Brown", "Tan", 210, 180, 140),
+    ("Brown", "RosyBrown", 188, 143, 143),
+    ("Brown", "SandyBrown", 244, 164, 96),
+    ("Brown", "Goldenrod", 218, 165, 32),
+    ("Brown", "DarkGoldenrod", 184, 134, 11),
+    ("Brown", "Peru", 205, 133, 63),
+    ("Brown", "Chocolate", 210, 105, 30),
+    ("Brown", "SaddleBrown", 139, 69, 19),
+    ("Brown", "Sienna", 160, 82, 45),
+    ("Brown", "Brown", 165, 42, 42),
+    ("Brown", "Maroon", 128, 0, 0),
+    ("Green", "DarkOliveGreen", 85, 107, 47),
+    ("Green", "Olive", 128, 128, 0),
+    ("Green", "OliveDrab", 107, 142, 35),
+    ("Green", "YellowGreen", 154, 205, 50),
+    ("Green", "LimeGreen", 50, 205, 50),
+    ("Green", "Lime", 0, 255, 0),
+    ("Green", "LawnGreen", 124, 252, 0),
+    ("Green", "Chartreuse", 127, 255, 0),
+    ("Green", "GreenYellow", 173, 255, 47),
+    ("Green", "SpringGreen", 0, 255, 127),
+    ("Green", "MediumSpringGreen", 0, 250, 154),
+    ("Green", "LightGreen", 144, 238, 144),
+    ("Green", "PaleGreen", 152, 251, 152),
+    ("Green", "DarkSeaGreen", 143, 188, 143),
+    ("Green", "MediumAquamarine", 102, 205, 170),
+    ("Green", "MediumSeaGreen", 60, 179, 113),
+    ("Green", "SeaGreen", 46, 139, 87),
+    ("Green", "ForestGreen", 34, 139, 34),
+    ("Green", "Green", 0, 128, 0),
+    ("Green", "DarkGreen", 0, 100, 0),
+    ("Cyan", "Aqua", 0, 255, 255),
+    ("Cyan", "Cyan", 0, 255, 255),
+    ("Cyan", "LightCyan", 224, 255, 255),
+    ("Cyan", "PaleTurquoise", 175, 238, 238),
+    ("Cyan", "Aquamarine", 127, 255, 212),
+    ("Cyan", "Turquoise", 64, 224, 208),
+    ("Cyan", "MediumTurquoise", 72, 209, 204),
+    ("Cyan", "DarkTurquoise", 0, 206, 209),
+    ("Cyan", "LightSeaGreen", 32, 178, 170),
+    ("Cyan", "CadetBlue", 95, 158, 160),
+    ("Cyan", "DarkCyan", 0, 139, 139),
+    ("Cyan", "Teal", 0, 128, 128),
+    ("Blue", "LightSteelBlue", 176, 196, 222),
+    ("Blue", "PowderBlue", 176, 224, 230),
+    ("Blue", "LightBlue", 173, 216, 230),
+    ("Blue", "SkyBlue", 135, 206, 235),
+    ("Blue", "LightSkyBlue", 135, 206, 250),
+    ("Blue", "DeepSkyBlue", 0, 191, 255),
+    ("Blue", "DodgerBlue", 30, 144, 255),
+    ("Blue", "CornflowerBlue", 100, 149, 237),
+    ("Blue", "SteelBlue", 70, 130, 180),
+    ("Blue", "RoyalBlue", 65, 105, 225),
+    ("Blue", "Blue", 0, 0, 255),
+    ("Blue", "MediumBlue", 0, 0, 205),
+    ("Blue", "DarkBlue", 0, 0, 139),
+    ("Blue", "Navy", 0, 0, 128),
+    ("Blue", "MidnightBlue", 25, 25, 112),
+    ("Violet", "Lavender", 230, 230, 250),
+    ("Violet", "Thistle", 216, 191, 216),
+    ("Violet", "Plum", 221, 160, 221),
+    ("Violet", "Violet", 238, 130, 238),
+    ("Violet", "Orchid", 218, 112, 214),
+    ("Violet", "Magenta", 255, 0, 255),
+    ("Violet", "MediumOrchid", 186, 85, 211),
+    ("Violet", "MediumPurple", 147, 112, 219),
+    ("Violet", "BlueViolet", 138, 43, 226),
+    ("Violet", "DarkViolet", 148, 0, 211),
+    ("Violet", "DarkOrchid", 153, 50, 204),
+    ("Violet", "DarkMagenta", 139, 0, 139),
+    ("Violet", "Purple", 128, 0, 128),
+    ("Violet", "Indigo", 75, 0, 130),
+    ("Violet", "DarkSlateBlue", 72, 61, 139),
+    ("Violet", "SlateBlue", 106, 90, 205),
+    ("Violet", "MediumSlateBlue", 123, 104, 238),
+    ("White", "White", 255, 255, 255),
+    ("White", "Snow", 255, 250, 250),
+    ("White", "Honeydew", 240, 255, 240),
+    ("White", "MintCream", 245, 255, 250),
+    ("White", "Azure", 240, 255, 255),
+    ("White", "AliceBlue", 240, 248, 255),
+    ("White", "GhostWhite", 248, 248, 255),
+    ("White", "WhiteSmoke", 245, 245, 245),
+    ("White", "Seashell", 255, 245, 238),
+    ("White", "Beige", 245, 245, 220),
+    ("White", "OldLace", 253, 245, 230),
+    ("White", "FloralWhite", 255, 250, 240),
+    ("White", "Ivory", 255, 255, 240),
+    ("White", "AntiqueWhite", 250, 235, 215),
+    ("White", "Linen", 250, 240, 230),
+    ("White", "LavenderBlush", 255, 240, 245),
+    ("White", "MistyRose", 255, 228, 225),
+    ("Gray", "Gainsboro", 220, 220, 220),
+    ("Gray", "LightGray", 211, 211, 211),
+    ("Gray", "Silver", 192, 192, 192),
+    ("Gray", "DarkGray", 169, 169, 169),
+    ("Gray", "Gray", 128, 128, 128),
+    ("Gray", "DimGray", 105, 105, 105),
+    ("Gray", "LightSlateGray", 119, 136, 153),
+    ("Gray", "SlateGray", 112, 128, 144),
+    ("Gray", "DarkSlateGray", 47, 79, 79),
+    ("Gray", "Black", 0, 0, 0),
+];
 
 #[derive(Clone, Copy, Debug)]
 pub enum Srgba8Format {}

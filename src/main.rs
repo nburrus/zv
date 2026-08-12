@@ -29,7 +29,7 @@ use clap::Parser;
 use eframe::egui;
 
 #[derive(Debug, Parser)]
-#[command(name = "zv", about = "Lightweight image viewer for computer vision")]
+#[command(name = "zv", version, about = "Lightweight image viewer for computer vision")]
 struct Cli {
     #[arg(value_name = "IMAGE")]
     images: Vec<PathBuf>,
@@ -67,7 +67,7 @@ fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_writer(std::io::stderr)
         .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info,zv_viewer=debug".into()),
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info,zv=debug".into()),
         )
         .init();
 

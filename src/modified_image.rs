@@ -453,7 +453,7 @@ mod tests {
 
     fn temp_png_path(name: &str) -> PathBuf {
         let stamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
-        std::env::temp_dir().join(format!("zv-viewer-{name}-{}-{stamp}.png", std::process::id()))
+        std::env::temp_dir().join(format!("zv-{name}-{}-{stamp}.png", std::process::id()))
     }
 
     #[test]

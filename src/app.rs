@@ -29,7 +29,7 @@ impl ZvApp {
         debug_config: DebugConfig,
         server_session_listener: Option<TcpListener>,
     ) -> Self {
-        tracing::info!("creating zv-viewer app");
+        tracing::info!("creating zv app");
         cc.egui_ctx.set_fonts(shared_font_definitions());
 
         if let Some(render_state) = &cc.wgpu_render_state {

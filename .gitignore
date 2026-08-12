@@ -34,6 +34,9 @@ build*/
 deps/prebuilt/
 dist/
 tmp/
+/target/
+rust/target/
+attic/zv-cpp/deps/prebuilt/
 
 # imgui generated files
 imgui.ini

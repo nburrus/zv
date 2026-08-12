@@ -1,8 +1,8 @@
 # Rust Client/Server Networking
 
-The Rust networking path is independent from the existing C++ client and server.
-It intentionally uses a Rust-only protocol; both implementations remain available
-until a later compatibility or removal decision.
+Rust networking is independent from the archived C++ client and server. It uses
+a Rust-only protocol and is the supported network interface for current ZV
+releases.
 
 ## Process model decision
 

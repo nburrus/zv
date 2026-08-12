@@ -91,7 +91,7 @@ mod tests {
 
     fn temp_image_path(name: &str, extension: &str) -> PathBuf {
         let stamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
-        let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tmp/image-io-tests");
+        let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tmp/image-io-tests");
         std::fs::create_dir_all(&dir).unwrap();
         dir.join(format!("{name}-{}-{stamp}.{extension}", std::process::id()))
     }

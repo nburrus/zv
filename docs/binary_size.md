@@ -16,7 +16,7 @@ cargo build --profile release-small
 
 ## Measured Sizes
 
-All sizes below are from `rust/target/.../zv` using `ls -lh` and section breakdown via `size -m`.
+All sizes below are from `target/.../zv` using `ls -lh` and section breakdown via `size -m`.
 
 | Configuration | Binary Size | Delta vs prior |
 |---|---:|---:|
