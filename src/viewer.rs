@@ -505,19 +505,20 @@ impl Viewer {
             .unwrap_or((None, 1));
         let original_layout = self.layout;
         self.select_single_image(current_index);
-        self.pending_confirmation = Some(PendingConfirmation::Quit {
-            current_index,
-            original_layout,
-            original_selection_index,
-            original_selection_count,
-        });
-        ctx.request_repaint_of(egui::ViewportId::ROOT);
+        self.set_pending_confirmation(
+            ctx,
+            PendingConfirmation::Quit {
+                current_index,
+                original_layout,
+                original_selection_index,
+                original_selection_count,
+            },
+        );
     }
 
     fn request_close_image_at(&mut self, ctx: &egui::Context, index: usize) {
         if self.image_has_pending_changes(index) {
-            self.pending_confirmation = Some(PendingConfirmation::CloseImageAt { index });
-            ctx.request_repaint_of(egui::ViewportId::ROOT);
+            self.set_pending_confirmation(ctx, PendingConfirmation::CloseImageAt { index });
             return;
         }
         self.close_image_at(index);
@@ -532,7 +533,21 @@ impl Viewer {
         if !has_source_path {
             return;
         }
-        self.pending_confirmation = Some(PendingConfirmation::DeleteImageAt { index });
+        self.set_pending_confirmation(ctx, PendingConfirmation::DeleteImageAt { index });
+    }
+
+    /// Records a confirmation that must block exit/close, and brings the main image
+    /// window to the foreground since that's where the confirmation modal is shown -
+    /// the trigger may have come from the controls window (or elsewhere).
+    fn set_pending_confirmation(&mut self, ctx: &egui::Context, pending: PendingConfirmation) {
+        self.pending_confirmation = Some(pending);
+        // This runs inside the ROOT viewport's own update, so it may already have focus
+        // (e.g. the trigger came from the image window itself). Only request focus when it
+        // doesn't, otherwise re-focusing an already-focused window can disrupt input handling.
+        let root_focused = ctx.input(|input| input.viewport().focused).unwrap_or(false);
+        if !root_focused {
+            ctx.send_viewport_cmd_to(egui::ViewportId::ROOT, egui::ViewportCommand::Focus);
+        }
         ctx.request_repaint_of(egui::ViewportId::ROOT);
     }
 
