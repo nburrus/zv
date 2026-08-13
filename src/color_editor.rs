@@ -276,11 +276,9 @@ pub enum OneShotOperation {
 }
 
 pub fn apply_one_shot(image: &ImageSRGBA, operation: OneShotOperation) -> ImageSRGBA {
-    if matches!(operation, OneShotOperation::LabelColorize(_)) && !is_grayscale_like(image) {
-        return image.clone();
-    }
     let hist_lut =
         matches!(operation, OneShotOperation::HistogramEqualization).then(|| histogram_equalization_lut(image));
+    let label_needs_luma = matches!(operation, OneShotOperation::LabelColorize(_)) && !is_grayscale_like(image);
     map_pixels(image, |p| match operation {
         OneShotOperation::SwapRedBlue => PixelSRGBA {
             r: p.b,
@@ -325,10 +323,11 @@ pub fn apply_one_shot(image: &ImageSRGBA, operation: OneShotOperation) -> ImageS
             }
         }
         OneShotOperation::LabelColorize(params) => {
-            if p.r == params.background_value {
+            let label = if label_needs_luma { luma_srgb(p) } else { p.r };
+            if label == params.background_value {
                 p
             } else {
-                let [r, g, b] = label_color(params.seed, p.r);
+                let [r, g, b] = label_color(params.seed, label);
                 PixelSRGBA { r, g, b, a: p.a }
             }
         }
@@ -524,7 +523,7 @@ mod tests {
         );
     }
     #[test]
-    fn label_colorize_is_deterministic_preserves_background_alpha_and_skips_color() {
+    fn label_colorize_is_deterministic_preserves_background_alpha_and_colorizes_from_luma() {
         let gray = image(&[[0, 0, 0, 7], [5, 5, 5, 8], [5, 5, 5, 9]]);
         let op = OneShotOperation::LabelColorize(LabelColorizeParams {
             seed: 1234,
@@ -536,7 +535,10 @@ mod tests {
         assert_eq!(pixels(&a)[0].as_array(), [0, 0, 0, 7]);
         assert_eq!(&pixels(&a)[1].as_array()[..3], &pixels(&a)[2].as_array()[..3]);
         assert_eq!((pixels(&a)[1].a, pixels(&a)[2].a), (8, 9));
+        // Non-grayscale images are colorized from their luma rather than left untouched.
         let color = image(&[[10, 20, 30, 77]]);
-        assert_eq!(pixels(&apply_one_shot(&color, op)), pixels(&color));
+        let colorized = apply_one_shot(&color, op);
+        assert_ne!(pixels(&colorized), pixels(&color));
+        assert_eq!(pixels(&colorized)[0].a, 77);
     }
 }

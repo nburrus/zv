@@ -273,7 +273,7 @@ pub fn render_color_editor_tab(
     section_separator(ui);
     render_hue_controls(ui, ctx, &mut state, action_queue);
     section_separator(ui);
-    render_one_shot_controls(ui, ctx, &stats, &mut state, action_queue);
+    render_one_shot_controls(ui, ctx, &mut state, action_queue);
     if state.color_preview() != preview_before {
         repaint_both(ctx);
     }
@@ -617,7 +617,6 @@ fn render_hue_controls(
 fn render_one_shot_controls(
     ui: &mut egui::Ui,
     ctx: &egui::Context,
-    stats: &ImageColorStats,
     state: &mut ColorEditorUiState,
     action_queue: &Arc<Mutex<Vec<AppAction>>>,
 ) {
@@ -659,10 +658,9 @@ fn render_one_shot_controls(
                     }
 
                     ui.horizontal_wrapped(|ui| {
-                        let label_button = ui
-                            .add_enabled_ui(stats.is_grayscale_like, |ui| ui.button("Label Colorize"))
-                            .inner;
+                        let label_button = ui.button("Random Colors");
                         if label_button.clicked() {
+                            state.label_colorize_seed = state.label_colorize_seed.saturating_add(1);
                             push_action(
                                 action_queue,
                                 AppAction::ApplyColorOneShot(OneShotOperation::LabelColorize(LabelColorizeParams {
@@ -672,11 +670,11 @@ fn render_one_shot_controls(
                             );
                             repaint_both(ctx);
                         }
-                        label_button.on_disabled_hover_text("Label Colorize applies to grayscale-like label maps.");
+                        label_button.on_hover_text(
+                            "Assigns a random color to each distinct label value (non-grayscale images are \
+                             converted to grayscale first). Click again for a new random palette.",
+                        );
                         ui.add(egui::DragValue::new(&mut state.label_colorize_seed).speed(1.0));
-                        if ui.small_button("+").clicked() {
-                            state.label_colorize_seed = state.label_colorize_seed.saturating_add(1);
-                        }
                         ui.label("Seed");
                     });
                     ui.end_row();
