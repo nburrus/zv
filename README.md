@@ -114,7 +114,8 @@ On macOS, shortcuts shown with `Ctrl` use `Cmd` instead.
 | `m` | Maxpect image size |
 | `>` / `<` | Double / halve image size |
 | `.` / `,` | Grow / shrink image size by 10% |
-| `a` | Restore aspect ratio |
+| `a` | Restore aspect ratio by resizing the window |
+| `s` | Restore aspect ratio by adjusting the zoom/crop |
 | `e` | Open the color editor |
 | `Ctrl+O` / `Cmd+O` | Open image |
 | `Ctrl+W` / `Cmd+W` | Close image |
