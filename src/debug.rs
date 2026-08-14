@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use eframe::egui;
 use serde::{Deserialize, Serialize};
 
+use crate::image_window_geometry::WindowResizeAction;
 use crate::viewer::{AppAction, Viewer};
 
 #[derive(Clone, Debug)]
@@ -137,6 +138,12 @@ enum DebugAction {
         viewport: DebugViewport,
         key: DebugKey,
     },
+    /// Resizes the image window without preserving the image aspect ratio,
+    /// which is how scripts reach the shapes a user gets by dragging a corner.
+    ResizeWindow {
+        width: u32,
+        height: u32,
+    },
     Screenshot {
         name: String,
         viewport: DebugViewport,
@@ -168,7 +175,11 @@ enum DebugViewport {
 enum DebugKey {
     Delete,
     Escape,
+    A,
     E,
+    S,
+    ArrowDown,
+    ArrowUp,
     ShiftL,
     ShiftA,
     ShiftR,
@@ -451,6 +462,18 @@ impl RuntimeDebug {
                 self.advance_action();
                 true
             }
+            DebugAction::ResizeWindow { width, height } => {
+                viewer.queue_action(AppAction::ResizeWindow(WindowResizeAction::Custom {
+                    width,
+                    height,
+                    lock_ratio: false,
+                }));
+                ctx.request_repaint_of(egui::ViewportId::ROOT);
+                self.advance_action();
+                // Yield a frame so the queued resize is applied, and the
+                // window has its new shape, before the next action runs.
+                false
+            }
             DebugAction::DiscardChanges => {
                 viewer.queue_action(AppAction::DiscardImageEdits);
                 ctx.request_repaint_of(egui::ViewportId::ROOT);
@@ -575,7 +598,11 @@ impl RuntimeDebug {
         let (key, modifiers) = match key {
             DebugKey::Delete => (egui::Key::Delete, egui::Modifiers::NONE),
             DebugKey::Escape => (egui::Key::Escape, egui::Modifiers::NONE),
+            DebugKey::A => (egui::Key::A, egui::Modifiers::NONE),
             DebugKey::E => (egui::Key::E, egui::Modifiers::NONE),
+            DebugKey::S => (egui::Key::S, egui::Modifiers::NONE),
+            DebugKey::ArrowDown => (egui::Key::ArrowDown, egui::Modifiers::NONE),
+            DebugKey::ArrowUp => (egui::Key::ArrowUp, egui::Modifiers::NONE),
             DebugKey::ShiftL => (
                 egui::Key::L,
                 egui::Modifiers {

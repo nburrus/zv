@@ -91,7 +91,14 @@ Current behavior:
 
 - Uses a black central panel.
 - Allocates the full available content rectangle for the image.
-- Does not add internal aspect-fit padding; aspect ratio is restored by resizing the OS window.
+- Does not add internal aspect-fit padding; the image always covers its whole cell, and there is never a letterbox.
+- The visible region is defined by a zoom factor, a UV center, and a *region aspect ratio* relative to the image's own:
+  - `1` (the default) is the whole image, so nothing changes unless a command says otherwise.
+  - above `1` keeps the full width and crops the height; below `1` keeps the full height and crops the width.
+  - the half-extent in UV is `0.5 * (min(1, k), min(1, 1/k)) / zoom_factor`.
+- `a` and `s` are duals: both make the visible region match the window pixel for pixel, `a` by reshaping the window to the image, `s` by reshaping the region to the window. `s` is what shows an image far taller or wider than the window undistorted, scrolling whatever no longer fits.
+- Both are one-shot commands, so both go stale when the window is resized afterwards; press them again. `n`, `a` and `m` reset the region aspect to `1`, since they reshape the window around the whole image.
+- Scrolls with the mouse wheel, a middle-button drag, a primary drag the annotation tool did not claim, and the arrow keys.
 - Adds an `egui_wgpu::Callback` over that rectangle.
 - Updates cursor pixel info from hover coordinates.
 - Draws a compact in-image status overlay with image size and hover sRGBA values.
@@ -99,6 +106,12 @@ Current behavior:
 
 The image is not submitted through an egui texture handle.
 Instead, the callback renders a WGPU texture managed by `ImageItemData`.
+
+### `ImageView` and `Minimap`
+
+`image_view.rs` owns the visible region: its zoom factor, UV center and region aspect ratio, the commands acting on them, and the pending ones that need a laid-out cell. It resolves to one `CellView` per grid cell, which is all `ImageWindow` needs in order to paint. It knows nothing about painting.
+
+`minimap.rs` draws a thumbnail of the whole image with the visible region marked on it, whenever a `CellView` hides part of its image. It fades out shortly after the view stops moving, and reports whether it is still animating so the caller can keep frames coming.
 
 ### `ControlsWindow`
 
@@ -212,7 +225,9 @@ Current runtime input:
 
 - `q` quits from either root or controls viewport through the shared shortcut router.
 - right-click on the image toggles controls visibility.
-- arrow/space/backspace navigation works from either viewport through shared app actions.
+- space/backspace navigation works from either viewport through shared app actions.
+- arrow keys scroll the image whenever their axis is scrollable, and navigate the image list only when that axis shows the whole image. A scrollable axis keeps its keys at both ends of its travel, so scrolling to the bottom of a tall image never spills over into the next image.
+- `s` scales the image content to the window, the dual of `a` scaling the window to the image content.
 - `n` restores normal image size.
 - `a` restores the image aspect ratio by resizing the OS window.
 - `m` applies maxspect.
@@ -337,7 +352,6 @@ That run produced:
 
 Open questions for the next milestones:
 
-- how zoom/pan state should be represented
 - where GPU shader parameters should live
 - how annotations should be modeled independently from rendering
 - whether annotations should be drawn with egui painters, WGPU passes, or both

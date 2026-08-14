@@ -8,7 +8,9 @@ use crate::annotation_tool::AnnotationTool;
 use crate::annotations::WidgetToTextureTransform;
 use crate::color_image::PixelSRGBA;
 use crate::image_list::SelectedImageView;
+use crate::image_view::{CellView, ImageView};
 use crate::layout::LayoutConfig;
+use crate::minimap::Minimap;
 use crate::modified_image::ModifiedImage;
 use crate::render::WgpuImageCallback;
 
@@ -46,40 +48,10 @@ impl std::fmt::Debug for CursorPixelInfo {
     }
 }
 
-struct ZoomState {
-    // Integer zoom level: 1 = full image, 2 = 2x zoom, etc.
-    zoom_factor: u32,
-    // Normalized UV coordinate of the zoom center (0..1 each).
-    uv_center: egui::Vec2,
-}
-
-impl Default for ZoomState {
-    fn default() -> Self {
-        Self {
-            zoom_factor: 1,
-            uv_center: egui::vec2(0.5, 0.5),
-        }
-    }
-}
-
-impl ZoomState {
-    // Compute clamped uv_min/uv_max for the visible sub-region.
-    fn uv_region(&self) -> (egui::Vec2, egui::Vec2) {
-        let half = 0.5 / self.zoom_factor as f32;
-        let uv0 = egui::vec2(self.uv_center.x - half, self.uv_center.y - half);
-        let uv1 = egui::vec2(self.uv_center.x + half, self.uv_center.y + half);
-
-        // Clamp so the ROI stays within the image, shifting both edges together.
-        // The two terms are mutually exclusive (only one edge can be out of bounds).
-        let dx = f32::max(0.0, -uv0.x) + f32::min(0.0, 1.0 - uv1.x);
-        let dy = f32::max(0.0, -uv0.y) + f32::min(0.0, 1.0 - uv1.y);
-        (uv0 + egui::vec2(dx, dy), uv1 + egui::vec2(dx, dy))
-    }
-}
-
 #[derive(Default)]
 pub struct ImageWindow {
-    zoom: ZoomState,
+    pub view: ImageView,
+    minimap: Minimap,
 }
 
 pub struct ImageWindowOutput {
@@ -117,7 +89,6 @@ impl ImageWindow {
                     return;
                 }
 
-                let (uv_min, uv_max) = self.zoom.uv_region();
                 let cell_rects = layout_cell_rects(available_rect, layout, 1.0);
                 let ctrl = ui.input(|i| i.modifiers.ctrl || i.modifiers.mac_cmd);
                 let mut hovered: Option<HoveredImage> = None;
@@ -128,6 +99,12 @@ impl ImageWindow {
                 let first_valid_index = images
                     .iter()
                     .position(|image| image.as_ref().and_then(|image| image.data.as_ref()).is_some());
+
+                let image_sizes = images.iter().map(image_size_of).collect::<Vec<_>>();
+                let cell_views = self.view.resolve_cells(&cell_rects, &image_sizes, first_valid_index);
+                // View state is shared by every cell, so the fade is driven by
+                // the first cell showing an image and applies to all of them.
+                let reference_view = first_valid_index.and_then(|index| cell_views.get(index).copied().flatten());
 
                 for (index, cell_rect) in cell_rects.iter().copied().enumerate() {
                     let response = ui.allocate_rect(cell_rect, egui::Sense::click_and_drag());
@@ -149,26 +126,35 @@ impl ImageWindow {
                         continue;
                     };
 
+                    let Some(view) = cell_views.get(index).copied().flatten() else {
+                        continue;
+                    };
+
                     let callback = egui_wgpu::Callback::new_paint_callback(
-                        cell_rect,
-                        WgpuImageCallback::new(image_data.clone(), [uv_min.x, uv_min.y], [uv_max.x, uv_max.y]),
+                        view.paint_rect,
+                        WgpuImageCallback::new(
+                            image_data.clone(),
+                            [view.uv_min.x, view.uv_min.y],
+                            [view.uv_max.x, view.uv_max.y],
+                        ),
                     );
                     ui.painter().add(callback);
 
                     if let Ok(mut tool) = annotation_tool.lock() {
-                        let image_size = image_data
-                            .lock()
-                            .ok()
-                            .map(|image| [image.final_data().width(), image.final_data().height()])
+                        let image_size = image_sizes
+                            .get(index)
+                            .copied()
+                            .flatten()
+                            .map(|size| [size.x as u32, size.y as u32])
                             .unwrap_or([1, 1]);
                         let annotation_output = tool.render_for_image(
                             ui,
                             &response,
                             image_data,
                             WidgetToTextureTransform {
-                                widget_rect: cell_rect,
-                                uv_min,
-                                uv_max,
+                                widget_rect: view.paint_rect,
+                                uv_min: view.uv_min,
+                                uv_max: view.uv_max,
                                 image_size,
                             },
                             first_valid_index == Some(index),
@@ -177,27 +163,30 @@ impl ImageWindow {
                         output.shared_state_changed |= annotation_output.selection_changed;
                     }
 
+                    // Unlike annotation editing, scrolling is a view gesture:
+                    // every cell shares one view, so it is driven by whichever
+                    // cell the pointer is over. The guards are inside.
+                    self.handle_pan_input(ui, &response, &annotation_tool, view);
+
                     let Some(pointer_pos) = response.hover_pos() else {
                         continue;
                     };
 
-                    let Some(sample) = sample_image_at_pointer(image_data, cell_rect, pointer_pos, uv_min, uv_max)
+                    let Some(sample) =
+                        sample_image_at_pointer(image_data, view.paint_rect, pointer_pos, view.uv_min, view.uv_max)
                     else {
                         continue;
                     };
 
                     if ctrl && response.clicked() {
-                        let min_visible = 16.0 / self.zoom.zoom_factor as f32;
-                        if sample.image_width as f32 > min_visible && sample.image_height as f32 > min_visible {
-                            self.zoom.zoom_factor *= 2;
-                            self.zoom.uv_center = sample.uv;
-                        }
+                        self.view.zoom_in_at(
+                            sample.uv,
+                            egui::vec2(sample.image_width as f32, sample.image_height as f32),
+                        );
                     }
 
                     if ctrl && response.secondary_clicked() {
-                        if self.zoom.zoom_factor >= 2 {
-                            self.zoom.zoom_factor /= 2;
-                        }
+                        self.view.zoom_out();
                         output.secondary_clicked = false;
                     }
 
@@ -226,23 +215,71 @@ impl ImageWindow {
                         output.shared_state_changed |= !info.as_ref().is_some_and(|old| old.same_pixel(&new_info));
                         *info = Some(new_info);
                     }
-                    paint_synced_cursor(
-                        ui,
-                        &images,
-                        &cell_rects,
-                        hovered.slot_index,
-                        hovered.sample.uv,
-                        uv_min,
-                        uv_max,
-                    );
+                    paint_synced_cursor(ui, &images, &cell_views, hovered.slot_index, hovered.sample.uv);
                     paint_synced_status_bars(ui, &images, &cell_rects, &hovered);
                 } else if let Ok(mut info) = cursor_info.lock() {
                     output.shared_state_changed |= info.take().is_some();
+                }
+
+                // Painted after every cell so it sits on top, and on each of
+                // them so a comparison layout shows where all the views are.
+                if let Some(reference_view) = reference_view {
+                    let now = ui.input(|input| input.time);
+                    if let Some(opacity) = self.minimap.opacity_for(reference_view, now) {
+                        for (index, view) in cell_views.iter().enumerate() {
+                            let (Some(view), Some(Some(image_size)), Some(Some(image))) =
+                                (view, image_sizes.get(index), images.get(index))
+                            else {
+                                continue;
+                            };
+                            let Some(image_data) = image.data.as_ref() else {
+                                continue;
+                            };
+                            Minimap::paint(ui, *view, image_data, *image_size, opacity);
+                        }
+                        // Nothing else animates, so the fade needs its own
+                        // repaints to run to completion.
+                        ui.ctx().request_repaint();
+                    }
                 }
             });
 
         output
     }
+
+    fn handle_pan_input(
+        &mut self,
+        ui: &egui::Ui,
+        response: &egui::Response,
+        annotation_tool: &Arc<Mutex<AnnotationTool>>,
+        view: CellView,
+    ) {
+        let scroll_delta = ui.input(|input| input.smooth_scroll_delta);
+        if scroll_delta != egui::Vec2::ZERO && response.hovered() {
+            self.view.scroll_by(scroll_delta, view);
+        }
+
+        // The middle button is always a pan. The primary button is only a pan
+        // when the annotation tool did not take the drag for itself, which it
+        // already decided while handling this frame's input.
+        let annotation_busy = annotation_tool
+            .lock()
+            .is_ok_and(|tool| tool.is_creating() || tool.is_editing());
+        let dragged_to_pan = response.dragged_by(egui::PointerButton::Middle)
+            || (!annotation_busy && response.dragged_by(egui::PointerButton::Primary));
+        if dragged_to_pan {
+            self.view.scroll_by(response.drag_delta(), view);
+        }
+    }
+}
+
+fn image_size_of(image: &Option<SelectedImageView>) -> Option<egui::Vec2> {
+    let data = image.as_ref()?.data.as_ref()?.lock().ok()?;
+    let data = data.final_data();
+    if data.width() == 0 || data.height() == 0 {
+        return None;
+    }
+    Some(egui::vec2(data.width() as f32, data.height() as f32))
 }
 
 #[derive(Clone)]
@@ -377,21 +414,21 @@ fn paint_error(ui: &egui::Ui, rect: egui::Rect, image_name: &str, error: &str) {
 fn paint_synced_cursor(
     ui: &egui::Ui,
     images: &[Option<SelectedImageView>],
-    rects: &[egui::Rect],
+    views: &[Option<CellView>],
     hovered_index: usize,
     uv: egui::Vec2,
-    uv_min: egui::Vec2,
-    uv_max: egui::Vec2,
 ) {
-    let uv_window = (uv - uv_min) / (uv_max - uv_min);
     for (index, image) in images.iter().enumerate() {
         if index == hovered_index || image.as_ref().and_then(|image| image.data.as_ref()).is_none() {
             continue;
         }
-        let Some(rect) = rects.get(index).copied() else {
+        // Each cell resolves the shared texture coordinate through its own
+        // visible region: differently sized images crop differently in Fill.
+        let Some(view) = views.get(index).copied().flatten() else {
             continue;
         };
-        let center = rect.min + uv_window * rect.size();
+        let uv_window = (uv - view.uv_min) / (view.uv_max - view.uv_min);
+        let center = view.paint_rect.min + uv_window * view.paint_rect.size();
         ui.painter().circle_stroke(
             center,
             5.0,

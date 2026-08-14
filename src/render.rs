@@ -78,6 +78,9 @@ struct VertexOut {
 struct ZoomUniforms {
     uv_min: vec2<f32>,
     uv_max: vec2<f32>,
+    // Only `.x` is used, as the callback's opacity. The rest is padding: a
+    // vec4 keeps the 16-byte alignment the tail of a uniform struct needs.
+    extra: vec4<f32>,
 };
 
 struct PreviewUniforms {
@@ -211,7 +214,7 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     } else if (preview.kind == 2u) {
         color = hue_shift(color, preview.hue_degrees);
     }
-    return vec4<f32>(color, sampled.a);
+    return vec4<f32>(color, sampled.a * zoom.extra.x);
 }
 "#;
 
@@ -263,7 +266,9 @@ impl WgpuImageRenderer {
                 },
                 wgpu::BindGroupLayoutEntry {
                     binding: 2,
-                    visibility: wgpu::ShaderStages::VERTEX,
+                    // The vertex stage reads the UV region from it, and the
+                    // fragment stage the opacity.
+                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Uniform,
                         has_dynamic_offset: false,
@@ -395,7 +400,7 @@ impl WgpuImageRenderer {
         // render different regions of the same shared texture in one frame.
         let zoom_uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("zv image callback zoom uniform buffer"),
-            size: std::mem::size_of::<[f32; 4]>() as u64,
+            size: std::mem::size_of::<[f32; 8]>() as u64,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -442,8 +447,9 @@ impl WgpuImageRenderer {
         resources: &WgpuImageCallbackResources,
         uv_min: [f32; 2],
         uv_max: [f32; 2],
+        opacity: f32,
     ) {
-        let zoom_data: [f32; 4] = [uv_min[0], uv_min[1], uv_max[0], uv_max[1]];
+        let zoom_data: [f32; 8] = [uv_min[0], uv_min[1], uv_max[0], uv_max[1], opacity, 0.0, 0.0, 0.0];
         queue.write_buffer(&resources.zoom_uniform_buffer, 0, bytemuck::cast_slice(&zoom_data));
     }
 
@@ -472,6 +478,7 @@ pub struct WgpuImageCallback {
     image_data: Arc<Mutex<ModifiedImage>>,
     uv_min: [f32; 2],
     uv_max: [f32; 2],
+    opacity: f32,
     color_preview: CallbackColorPreview,
     resources: Arc<Mutex<Option<WgpuImageCallbackResources>>>,
 }
@@ -482,9 +489,17 @@ impl WgpuImageCallback {
             image_data,
             uv_min,
             uv_max,
+            opacity: 1.0,
             color_preview: CallbackColorPreview::Follow,
             resources: Arc::new(Mutex::new(None)),
         }
+    }
+
+    /// Draws the image translucently. The pipeline already alpha-blends, so
+    /// this only scales the alpha the fragment shader writes.
+    pub fn with_opacity(mut self, opacity: f32) -> Self {
+        self.opacity = opacity.clamp(0.0, 1.0);
+        self
     }
 
     /// Renders the stored pixels even while the shared color-editor preview is
@@ -536,7 +551,7 @@ impl egui_wgpu::CallbackTrait for WgpuImageCallback {
             *resources = Some(new_resources);
         }
         if let Some(resources) = resources.as_ref() {
-            renderer.write_uv_uniform(queue, resources, self.uv_min, self.uv_max);
+            renderer.write_uv_uniform(queue, resources, self.uv_min, self.uv_max, self.opacity);
         }
 
         Vec::new()

@@ -3,7 +3,7 @@ use eframe::egui;
 use crate::annotation_tool::AnnotationMode;
 use crate::image_window_geometry::WindowResizeAction;
 use crate::layout::shortcut_layout_for_image_count;
-use crate::viewer::AppAction;
+use crate::viewer::{AppAction, ArrowKey};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ShortcutViewport {
@@ -21,19 +21,9 @@ enum ShortcutScope {
 
 const SHORTCUTS: &[(egui::Key, ShortcutScope, AppAction)] = &[
     (
-        egui::Key::ArrowDown,
-        ShortcutScope::GlobalWhenNotTyping,
-        AppAction::NextImage,
-    ),
-    (
         egui::Key::Space,
         ShortcutScope::GlobalWhenNotTyping,
         AppAction::NextImage,
-    ),
-    (
-        egui::Key::ArrowUp,
-        ShortcutScope::GlobalWhenNotTyping,
-        AppAction::PreviousImage,
     ),
     (
         egui::Key::Backspace,
@@ -60,11 +50,13 @@ pub fn collect_shortcuts(ctx: &egui::Context, viewport: ShortcutViewport) -> Vec
         for &(key, scope, ref action) in SHORTCUTS {
             push_if_pressed(input, key, scope, viewport, typing_text, action.clone(), &mut actions);
         }
+        push_arrow_shortcuts(input, viewport, typing_text, &mut actions);
         push_resize_text_shortcuts(input, viewport, typing_text, &mut actions);
         push_layout_shortcuts(input, viewport, typing_text, &mut actions);
         push_annotation_shortcuts(input, viewport, typing_text, &mut actions);
         push_clipboard_shortcuts(input, viewport, typing_text, &mut actions);
         push_color_editor_shortcut(input, viewport, typing_text, &mut actions);
+        push_scale_mode_shortcut(input, viewport, typing_text, &mut actions);
     });
     actions
 }
@@ -80,6 +72,47 @@ fn push_color_editor_shortcut(
         && input.key_pressed(egui::Key::E)
     {
         out_actions.push(AppAction::ShowColorEditor);
+    }
+}
+
+/// `s` scales the image to the window, the dual of `a` scaling the window to
+/// the image. Modifier-free only, so it stays clear of the Cmd+S save shortcut.
+fn push_scale_mode_shortcut(
+    input: &egui::InputState,
+    viewport: ShortcutViewport,
+    typing_text: bool,
+    out_actions: &mut Vec<AppAction>,
+) {
+    if scope_allows(ShortcutScope::GlobalWhenNotTyping, viewport, typing_text)
+        && input.modifiers == egui::Modifiers::NONE
+        && input.key_pressed(egui::Key::S)
+    {
+        out_actions.push(AppAction::ScaleImageToWindow);
+    }
+}
+
+/// Arrow keys are reported as-is. Whether one scrolls the view or moves to
+/// the next image depends on how much scroll room is left, which is view
+/// state; `Viewer` resolves that against the image window.
+fn push_arrow_shortcuts(
+    input: &egui::InputState,
+    viewport: ShortcutViewport,
+    typing_text: bool,
+    out_actions: &mut Vec<AppAction>,
+) {
+    if !scope_allows(ShortcutScope::GlobalWhenNotTyping, viewport, typing_text) {
+        return;
+    }
+
+    for (key, arrow) in [
+        (egui::Key::ArrowDown, ArrowKey::Down),
+        (egui::Key::ArrowUp, ArrowKey::Up),
+        (egui::Key::ArrowRight, ArrowKey::Right),
+        (egui::Key::ArrowLeft, ArrowKey::Left),
+    ] {
+        if input.key_pressed(key) {
+            out_actions.push(AppAction::Arrow(arrow));
+        }
     }
 }
 

@@ -33,6 +33,12 @@ pub enum AppAction {
     PreviousImage,
     Quit,
     ResizeWindow(WindowResizeAction),
+    /// Reshape the visible region to the window's aspect ratio, scaling the
+    /// image content to the window instead of the window to the image.
+    ScaleImageToWindow,
+    /// An arrow key was pressed. It scrolls the image when its axis is
+    /// scrollable, and navigates the image list when it is not.
+    Arrow(ArrowKey),
     SetLayout(LayoutConfig),
     AutoLayout,
     SetAnnotationMode(AnnotationMode),
@@ -51,6 +57,14 @@ pub enum AppAction {
     ApplyColorLevels(LevelsAdjustment),
     ApplyColorHue(HueShiftParams),
     ApplyColorOneShot(OneShotOperation),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ArrowKey {
+    Up,
+    Down,
+    Left,
+    Right,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -328,6 +342,34 @@ impl Viewer {
         }
     }
 
+    fn select_next_image(&mut self) {
+        if let Ok(mut image_list) = self.image_list.lock() {
+            let step = image_list.selection_count() as isize;
+            image_list.select_relative(step);
+        }
+    }
+
+    fn select_previous_image(&mut self) {
+        if let Ok(mut image_list) = self.image_list.lock() {
+            let step = image_list.selection_count() as isize;
+            image_list.select_relative(-step);
+        }
+    }
+
+    /// Arrow keys scroll the image whenever their axis is scrollable, and
+    /// navigate the image list only when that axis shows the whole image.
+    /// A scrollable axis keeps its keys even at the end of its travel.
+    fn apply_arrow_key(&mut self, arrow: ArrowKey) {
+        if self.image_window.view.scroll_by_arrow_key(arrow) {
+            return;
+        }
+        match arrow {
+            ArrowKey::Down => self.select_next_image(),
+            ArrowKey::Up => self.select_previous_image(),
+            ArrowKey::Left | ArrowKey::Right => {}
+        }
+    }
+
     fn collect_keyboard_actions(&mut self, ctx: &egui::Context) {
         if self.pending_confirmation.is_some() {
             return;
@@ -376,22 +418,14 @@ impl Viewer {
                 continue;
             }
             match action {
-                AppAction::NextImage => {
-                    if let Ok(mut image_list) = self.image_list.lock() {
-                        let step = image_list.selection_count() as isize;
-                        image_list.select_relative(step);
-                    }
-                }
-                AppAction::PreviousImage => {
-                    if let Ok(mut image_list) = self.image_list.lock() {
-                        let step = image_list.selection_count() as isize;
-                        image_list.select_relative(-step);
-                    }
-                }
+                AppAction::NextImage => self.select_next_image(),
+                AppAction::PreviousImage => self.select_previous_image(),
                 AppAction::Quit => {
                     self.request_quit(ctx);
                 }
                 AppAction::ResizeWindow(action) => self.apply_window_resize_action(ctx, action),
+                AppAction::ScaleImageToWindow => self.image_window.view.match_aspect_to_window(),
+                AppAction::Arrow(arrow) => self.apply_arrow_key(arrow),
                 AppAction::SetLayout(layout) => self.set_layout(layout),
                 AppAction::AutoLayout => {
                     let count = self
@@ -1057,6 +1091,16 @@ impl Viewer {
     }
 
     fn apply_window_resize_action(&mut self, ctx: &egui::Context, action: WindowResizeAction) {
+        // These three reshape the window around the whole image, so a region
+        // cropped by `s` would fight the window they are about to ask for.
+        // The scaling actions only change the window's size, not its shape,
+        // so a cropped region stays just as valid for them.
+        if matches!(
+            action,
+            WindowResizeAction::Normal | WindowResizeAction::RestoreAspectRatio | WindowResizeAction::Maxspect
+        ) {
+            self.image_window.view.reset_aspect();
+        }
         let (monitor_size, outer_rect, inner_rect) = ctx.input(|input| {
             (
                 input.viewport().monitor_size,

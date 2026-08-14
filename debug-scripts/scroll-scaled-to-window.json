@@ -1,0 +1,22 @@
+{
+  "wait_frames_default": 5,
+  "actions": [
+    { "type": "wait_for_image" },
+    { "type": "resize_window", "width": 600, "height": 700 },
+    { "type": "wait_frames", "frames": 10 },
+    { "type": "screenshot", "name": "1_resized_stretched", "viewport": "root" },
+    { "type": "key", "viewport": "root", "key": "s" },
+    { "type": "wait_frames", "frames": 5 },
+    { "type": "screenshot", "name": "2_scaled_to_window", "viewport": "root" },
+    { "type": "key", "viewport": "root", "key": "arrow_down" },
+    { "type": "key", "viewport": "root", "key": "arrow_down" },
+    { "type": "wait_frames", "frames": 5 },
+    { "type": "screenshot", "name": "3_scrolled", "viewport": "root" },
+    { "type": "wait_frames", "frames": 180 },
+    { "type": "screenshot", "name": "4_minimap_faded", "viewport": "root" },
+    { "type": "key", "viewport": "root", "key": "a" },
+    { "type": "wait_frames", "frames": 10 },
+    { "type": "screenshot", "name": "5_after_a", "viewport": "root" },
+    { "type": "key", "viewport": "root", "key": "q" }
+  ]
+}
