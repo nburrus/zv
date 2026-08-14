@@ -2,9 +2,9 @@ name: Rust CI
 
 on:
   push:
-    branches: [main, rust]
+    branches: [main, rust, dev]
   pull_request:
-    branches: [main, rust]
+    branches: [main, rust, dev]
 
 permissions:
   contents: read
