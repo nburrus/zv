@@ -451,7 +451,7 @@ impl ImageList {
         on_done: impl FnOnce() + Send + Clone + 'static,
     ) -> Option<ImageLoadTiming> {
         self.poll_preloads();
-        self.pin_selected_images();
+        self.sync_visible_cache_pins();
         let indices = self.selected_indices();
         let mut first_timing = None;
         for index in indices.into_iter().flatten() {
@@ -585,14 +585,16 @@ impl ImageList {
             .collect()
     }
 
-    fn pin_selected_images(&mut self) {
-        let pinned = self
+    /// Keep every image represented by a visible layout cell resident, and
+    /// release pins for images that left the visible range.
+    fn sync_visible_cache_pins(&mut self) {
+        let visible_ids = self
             .selected_indices()
             .into_iter()
             .flatten()
             .filter_map(|index| self.items.get(index).map(|item| item.id))
             .collect();
-        self.cache.set_pinned(pinned);
+        self.cache.set_pinned(visible_ids);
     }
 
     fn select_closest_enabled_index(&mut self, index: usize) {
@@ -1415,15 +1417,15 @@ mod tests {
     }
 
     #[test]
-    fn visible_mosaic_is_pinned_without_growing_the_normal_cache_permanently() {
-        const MOSAIC_SIZE: usize = 64;
-        let paths = (0..MOSAIC_SIZE)
+    fn visible_range_is_pinned_without_growing_the_normal_cache_permanently() {
+        const VISIBLE_RANGE_SIZE: usize = 64;
+        let paths = (0..VISIBLE_RANGE_SIZE)
             .map(|index| PathBuf::from(format!("image-{index}.png")))
             .collect();
         let mut images = ImageList::new(paths);
-        images.set_selection_count(MOSAIC_SIZE);
+        images.set_selection_count(VISIBLE_RANGE_SIZE);
         let ids = images.items.iter().map(|item| item.id).collect::<Vec<_>>();
-        images.pin_selected_images();
+        images.sync_visible_cache_pins();
 
         for &id in &ids {
             images.cache.put(id, cached_test_image());
@@ -1435,10 +1437,10 @@ mod tests {
                 .into_iter()
                 .all(|view| view.is_some_and(|view| view.data.is_some()))
         );
-        assert_eq!(images.cache.entries.len(), MOSAIC_SIZE);
+        assert_eq!(images.cache.entries.len(), VISIBLE_RANGE_SIZE);
 
         images.set_selection_count(1);
-        images.pin_selected_images();
+        images.sync_visible_cache_pins();
 
         assert!(images.cache.contains(ids[0]));
         assert_eq!(images.cache.entries.len(), images.cache.max_size);
