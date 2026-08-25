@@ -154,7 +154,7 @@ mod tests {
     }
 
     #[test]
-    fn automatic_mosaic_is_capped_at_resident_image_limit() {
+    fn automatic_mosaic_respects_its_image_limit() {
         let layout = best_layout_for_image_count(1_000, MAX_MOSAIC_IMAGES, 4.0 / 3.0);
 
         assert_eq!(layout, LayoutConfig { rows: 8, cols: 8 });
