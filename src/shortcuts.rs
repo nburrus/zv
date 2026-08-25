@@ -30,6 +30,16 @@ const SHORTCUTS: &[(egui::Key, ShortcutScope, AppAction)] = &[
         ShortcutScope::GlobalWhenNotTyping,
         AppAction::PreviousImage,
     ),
+    (
+        egui::Key::PageDown,
+        ShortcutScope::GlobalWhenNotTyping,
+        AppAction::NextImagePage,
+    ),
+    (
+        egui::Key::PageUp,
+        ShortcutScope::GlobalWhenNotTyping,
+        AppAction::PreviousImagePage,
+    ),
     (egui::Key::Q, ShortcutScope::GlobalWhenNotTyping, AppAction::Quit),
     (
         egui::Key::N,

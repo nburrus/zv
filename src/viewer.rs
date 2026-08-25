@@ -38,6 +38,8 @@ const OPEN_IMAGE_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "bmp", "gif", "ti
 pub enum AppAction {
     NextImage,
     PreviousImage,
+    NextImagePage,
+    PreviousImagePage,
     Quit,
     ResizeWindow(WindowResizeAction),
     /// Reshape the visible region to the window's aspect ratio, scaling the
@@ -363,6 +365,13 @@ impl Viewer {
         }
     }
 
+    fn select_image_page(&mut self, forward: bool) {
+        if let Ok(mut image_list) = self.image_list.lock() {
+            let step = image_page_step(image_list.num_enabled_images(), image_list.selection_count());
+            image_list.select_relative(if forward { step } else { -step });
+        }
+    }
+
     /// Arrow keys scroll the image whenever their axis is scrollable, and
     /// navigate the image list only when that axis shows the whole image.
     /// A scrollable axis keeps its keys even at the end of its travel.
@@ -427,6 +436,8 @@ impl Viewer {
             match action {
                 AppAction::NextImage => self.select_next_image(),
                 AppAction::PreviousImage => self.select_previous_image(),
+                AppAction::NextImagePage => self.select_image_page(true),
+                AppAction::PreviousImagePage => self.select_image_page(false),
                 AppAction::Quit => {
                     self.request_quit(ctx);
                 }
@@ -1146,6 +1157,28 @@ impl Viewer {
         if let Ok(mut image_list) = self.image_list.lock() {
             image_list.set_selection_count(layout.image_count());
         }
+    }
+}
+
+/// Match the C++ viewer's Page Up/Down behavior: move roughly 10% of the
+/// enabled list, rounded down to whole visible ranges, with a two-range
+/// minimum. Returning an `isize` keeps the value ready for `select_relative`.
+fn image_page_step(enabled_count: usize, selection_count: usize) -> isize {
+    let selection_count = selection_count.max(1);
+    let ranges = 2usize.saturating_add(enabled_count / selection_count / 10);
+    isize::try_from(selection_count.saturating_mul(ranges)).unwrap_or(isize::MAX)
+}
+
+#[cfg(test)]
+mod navigation_tests {
+    use super::image_page_step;
+
+    #[test]
+    fn image_page_step_is_ten_percent_with_a_two_range_minimum() {
+        assert_eq!(image_page_step(9, 1), 2);
+        assert_eq!(image_page_step(10, 1), 3);
+        assert_eq!(image_page_step(39, 2), 6);
+        assert_eq!(image_page_step(40, 2), 8);
     }
 }
 
