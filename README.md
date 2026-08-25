@@ -84,7 +84,8 @@ rm -f ~/.local/bin/zv
 - Automatic mosaic and fixed multi-image grid layouts.
 - Pixel inspection, synchronized zoom, and cursor information in the controls window.
 - Native image-window sizing commands, including normal size, aspect ratio, and maxspect.
-- BMP, GIF, JPEG, PNG, PNM, TGA, and TIFF loading; JPEG uses libjpeg-turbo when possible.
+- BMP, GIF, JPEG, PNG, PNM, TGA, and TIFF loading; JPEG uses libjpeg-turbo when possible. HEIC and HEIF
+  loading is also supported on macOS through the native ImageIO framework.
 - WGPU rendering with nearest magnification, linear minification, and mipmapped downsampling.
 - Image filtering, reordering, close/delete actions, and clipboard import/export.
 - Line, arrow, rectangle, ellipse, and text annotations with selection, editing, undo, save, and discard.

@@ -27,6 +27,13 @@ use crate::viewport_geometry::{ViewportGeometry, ViewportResizeCommand};
 
 const CONFIRMATION_MIN_INNER_SIZE: egui::Vec2 = egui::vec2(420.0, 180.0);
 
+#[cfg(target_os = "macos")]
+const OPEN_IMAGE_EXTENSIONS: &[&str] = &[
+    "png", "jpg", "jpeg", "bmp", "gif", "tiff", "tif", "pnm", "tga", "heic", "heif",
+];
+#[cfg(not(target_os = "macos"))]
+const OPEN_IMAGE_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "bmp", "gif", "tiff", "tif", "pnm", "tga"];
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum AppAction {
     NextImage,
@@ -938,10 +945,7 @@ impl Viewer {
     fn open_image(&self) {
         let paths = rfd::FileDialog::new()
             .set_title("Open Image")
-            .add_filter(
-                "Images",
-                &["png", "jpg", "jpeg", "bmp", "gif", "tiff", "tif", "pnm", "tga"],
-            )
+            .add_filter("Images", OPEN_IMAGE_EXTENSIONS)
             .pick_files();
         if let Some(paths) = paths {
             if let Ok(mut image_list) = self.image_list.lock() {

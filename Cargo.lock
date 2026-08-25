@@ -4685,6 +4685,7 @@ dependencies = [
  "egui",
  "egui-phosphor",
  "egui_extras",
+ "foreign-types",
  "image",
  "objc2-app-kit 0.2.2",
  "raw-window-handle",

@@ -25,6 +25,7 @@ turbojpeg = "1.5"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 core-graphics = "0.23"
+foreign-types = "0.5"
 objc2-app-kit = { version = "0.2.2", features = ["NSScreen", "NSView", "NSWindow"] }
 raw-window-handle = "0.6"
 

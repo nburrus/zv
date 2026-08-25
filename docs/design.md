@@ -157,6 +157,12 @@ If TurboJPEG rejects the file, loading falls back to the generic `image` crate p
 This preserves compatibility with mislabeled files, such as PNG data stored in a `.jpg` file.
 
 Non-JPEG formats continue to use the `image` crate directly.
+
+On macOS, HEIC and HEIF data that the `image` crate does not recognize is decoded through the system ImageIO and
+CoreGraphics frameworks. The loader selects the HEIF primary image, color-converts it to sRGB RGBA, and applies the
+same path to local files and encoded bytes received from a remote client. Other platforms do not compile or link this
+fallback.
+
 When both the TurboJPEG path and the fallback path fail for a JPEG extension, the returned error includes context from both attempts.
 
 The `turbojpeg` crate defaults enable `pkg-config`, `cmake`, and `require-simd`.

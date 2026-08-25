@@ -73,3 +73,15 @@ The size increase is mostly in `__TEXT.__const`, consistent with embedding the r
 ## Current Result
 
 With `release-small`, image formats `bmp,gif,jpeg,png,pnm,tga,tiff`, and the regular `egui-phosphor` font registered, the binary is currently **9.3M** (`9,785,920` bytes).
+
+## Native macOS HEIC Loading
+
+Measured on macOS arm64 against the same `dev` commit and toolchain:
+
+| Configuration | Binary bytes | Delta |
+|---|---:|---:|
+| `dev` baseline | 10,806,336 | 0 |
+| + native ImageIO HEIC fallback | 10,807,376 | +1,040 |
+
+The HEIC decoder is supplied by macOS and is not embedded in the executable. The resulting binary increase is about
+0.01%.
