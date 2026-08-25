@@ -12,6 +12,10 @@ use crate::modified_image::ModifiedImage;
 use crate::networking::RemoteImageRef;
 use crate::protocol::ImageOffer;
 
+// A large grid should stay responsive without decoding every visible image at
+// once and multiplying peak memory use.
+const MAX_CONCURRENT_IMAGE_LOADS: usize = 4;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub struct ImageId(u64);
 
@@ -75,11 +79,6 @@ enum ImageSource {
     },
     InMemory,
     Default,
-}
-
-struct LoadDataResult {
-    data: Option<Arc<Mutex<ModifiedImage>>>,
-    timing: Option<ImageLoadTiming>,
 }
 
 struct PreloadResult {
@@ -424,7 +423,8 @@ impl ImageList {
         }
     }
 
-    pub fn poll_preloads(&mut self) {
+    pub fn poll_preloads(&mut self) -> Option<ImageLoadTiming> {
+        let mut first_timing = None;
         let pending_ids = self.pending_preloads.keys().copied().collect::<Vec<_>>();
         for id in pending_ids {
             let Some(receiver) = self.pending_preloads.get(&id) else {
@@ -433,7 +433,15 @@ impl ImageList {
             match receiver.try_recv() {
                 Ok(result) => {
                     self.pending_preloads.remove(&id);
+                    let timing = result.local_path.clone().map(|path| ImageLoadTiming {
+                        path,
+                        elapsed: result.elapsed,
+                        succeeded: result.result.is_ok(),
+                    });
                     self.apply_preload_result(result);
+                    if let Some(timing) = timing {
+                        first_timing.get_or_insert(timing);
+                    }
                 }
                 Err(TryRecvError::Empty) => {}
                 Err(TryRecvError::Disconnected) => {
@@ -444,35 +452,40 @@ impl ImageList {
                 }
             }
         }
-    }
-
-    pub fn ensure_selected_loaded(
-        &mut self,
-        on_done: impl FnOnce() + Send + Clone + 'static,
-    ) -> Option<ImageLoadTiming> {
-        self.poll_preloads();
-        self.sync_visible_cache_pins();
-        let indices = self.selected_indices();
-        let mut first_timing = None;
-        for index in indices.into_iter().flatten() {
-            if self.pending_preloads.contains_key(&self.items[index].id) {
-                continue;
-            }
-            if matches!(self.items[index].source, ImageSource::Remote { .. }) {
-                let _ = self.start_preload_for_index(index, on_done.clone());
-                continue;
-            }
-            if first_timing.is_none() {
-                first_timing = self.get_data_for_index(index).and_then(|result| result.timing);
-            } else {
-                let _ = self.get_data_for_index(index);
-            }
-        }
         first_timing
     }
 
+    pub fn ensure_selected_loaded(&mut self, on_done: impl FnOnce() + Send + Clone + 'static) {
+        self.sync_visible_cache_pins();
+        self.drop_obsolete_preloads();
+        for index in self.selected_indices().into_iter().flatten() {
+            let id = self.items[index].id;
+            if self.cache.get(id).is_some() {
+                continue;
+            }
+            let _ = self.start_preload_for_index(index, on_done.clone());
+        }
+    }
+
+    /// A finished decode for an old selection must not consume a slot needed
+    /// by the current selection. Dropping its receiver also discards its result.
+    /// The worker already decoding may run to completion.
+    fn drop_obsolete_preloads(&mut self) {
+        let enabled = self.enabled_indices();
+        let mut needed: HashSet<_> = self
+            .selected_indices()
+            .into_iter()
+            .flatten()
+            .map(|index| self.items[index].id)
+            .collect();
+        if enabled.len() >= 2 && needed.len() < self.cache.max_size {
+            let next = (self.selection_start + self.selection_count) % enabled.len();
+            needed.insert(self.items[enabled[next]].id);
+        }
+        self.pending_preloads.retain(|id, _| needed.contains(id));
+    }
+
     pub fn preload_next_from_selection(&mut self, on_done: impl FnOnce() + Send + 'static) -> bool {
-        self.poll_preloads();
         let enabled = self.enabled_indices();
         let visible_count = self.selected_indices().into_iter().flatten().count();
         if enabled.len() < 2 || visible_count >= self.cache.max_size {
@@ -625,25 +638,6 @@ impl ImageList {
         filter.is_empty() || item.pretty_name.to_lowercase().contains(&filter.to_lowercase())
     }
 
-    fn get_data_for_index(&mut self, index: usize) -> Option<LoadDataResult> {
-        let item = self.items.get_mut(index)?;
-        if let Some(data) = self.cache.get(item.id) {
-            return Some(LoadDataResult {
-                data: Some(data),
-                timing: None,
-            });
-        }
-        if item.error.is_some() {
-            return None;
-        }
-
-        let loaded = item.load_data()?;
-        if let Some(data) = loaded.data.as_ref() {
-            self.cache.put(item.id, data.clone());
-        }
-        Some(loaded)
-    }
-
     fn start_preload_for_index(&mut self, index: usize, on_done: impl FnOnce() + Send + 'static) -> bool {
         let Some(item) = self.items.get(index) else {
             return false;
@@ -665,6 +659,9 @@ impl ImageList {
                 self.cache.put(item.id, data);
                 return true;
             }
+            return false;
+        }
+        if self.pending_preloads.len() >= MAX_CONCURRENT_IMAGE_LOADS {
             return false;
         }
         let (sender, receiver) = mpsc::channel();
@@ -781,48 +778,6 @@ impl ImageItem {
             metadata: Some((256, 256)),
             error: None,
         }
-    }
-
-    fn load_data(&mut self) -> Option<LoadDataResult> {
-        let path = match &self.source {
-            ImageSource::LocalPath(path) => path,
-            ImageSource::Default => {
-                return Some(LoadDataResult {
-                    data: Some(Arc::new(Mutex::new(ModifiedImage::new(
-                        ImageItemData::new(default_image()),
-                        None,
-                    )))),
-                    timing: None,
-                });
-            }
-            ImageSource::Remote { .. } | ImageSource::InMemory => return None,
-        };
-        let start = Instant::now();
-        match load_rgba_image(path) {
-            Ok(image) => {
-                self.metadata = Some((image.width(), image.height()));
-                return Some(LoadDataResult {
-                    data: Some(Arc::new(Mutex::new(ModifiedImage::new(
-                        ImageItemData::new(image),
-                        Some(path.clone()),
-                    )))),
-                    timing: Some(ImageLoadTiming {
-                        path: path.clone(),
-                        elapsed: start.elapsed(),
-                        succeeded: true,
-                    }),
-                });
-            }
-            Err(err) => self.error = Some(format!("{err:#}")),
-        }
-        Some(LoadDataResult {
-            data: None,
-            timing: Some(ImageLoadTiming {
-                path: path.clone(),
-                elapsed: start.elapsed(),
-                succeeded: false,
-            }),
-        })
     }
 }
 
@@ -1262,20 +1217,57 @@ mod tests {
     }
 
     #[test]
-    fn selected_image_loads_through_cache() {
+    fn selected_image_loads_asynchronously_through_cache() {
         let path = write_test_png("selected", [1, 2, 3, 255]);
         let mut images = ImageList::new(vec![path.clone()]);
 
         let id0 = images.items[0].id;
         assert!(images.selected_range_views()[0].as_ref().unwrap().data.is_none());
-        let timing = images.ensure_selected_loaded(|| {}).expect("load selected");
-        assert!(timing.succeeded);
+        images.ensure_selected_loaded(|| {});
+        assert!(images.pending_preloads.contains_key(&id0));
+        assert!(images.selected_range_views()[0].as_ref().unwrap().data.is_none());
+
+        for _ in 0..100 {
+            images.poll_preloads();
+            if images.cache.contains(id0) {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
 
         let selected = images.selected_range_views()[0].as_ref().unwrap().clone();
         assert!(selected.data.is_some());
         assert!(images.cache.contains(id0));
 
         let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn selected_group_starts_loading_without_populating_cache_on_caller() {
+        let paths = [
+            write_test_png("group-a", [1, 0, 0, 255]),
+            write_test_png("group-b", [2, 0, 0, 255]),
+            write_test_png("group-c", [3, 0, 0, 255]),
+        ];
+        let mut images = ImageList::new(paths.to_vec());
+        images.set_selection_count(paths.len());
+        let ids = images.items.iter().map(|item| item.id).collect::<Vec<_>>();
+
+        images.ensure_selected_loaded(|| {});
+
+        assert!(ids.iter().all(|id| images.pending_preloads.contains_key(id)));
+        assert!(ids.iter().all(|id| !images.cache.contains(*id)));
+
+        for _ in 0..100 {
+            images.poll_preloads();
+            if images.pending_preloads.is_empty() {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        for path in paths {
+            let _ = fs::remove_file(path);
+        }
     }
 
     #[test]
@@ -1378,9 +1370,15 @@ mod tests {
         images.set_source_path_at(0, path.clone());
         images.cache.remove(id);
 
-        let timing = images.ensure_selected_loaded(|| {}).expect("reload saved paste");
+        images.ensure_selected_loaded(|| {});
+        for _ in 0..100 {
+            images.poll_preloads();
+            if images.cache.contains(id) {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
 
-        assert!(timing.succeeded);
         assert!(images.cache.contains(id));
         let _ = fs::remove_file(path);
     }

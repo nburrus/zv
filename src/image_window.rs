@@ -101,9 +101,12 @@ impl ImageWindow {
                     .iter()
                     .filter_map(|image| image.as_ref()?.data.clone())
                     .collect::<Vec<_>>();
+                // Cell 0 owns the shared view state even if another cell loads first.
                 let first_valid_index = images
-                    .iter()
-                    .position(|image| image.as_ref().and_then(|image| image.data.as_ref()).is_some());
+                    .first()
+                    .and_then(Option::as_ref)
+                    .and_then(|image| image.data.as_ref())
+                    .map(|_| 0);
 
                 let image_sizes = images.iter().map(image_size_of).collect::<Vec<_>>();
                 let cell_views = self.view.resolve_cells(&cell_rects, &image_sizes, first_valid_index);

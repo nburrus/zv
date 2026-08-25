@@ -218,9 +218,9 @@ impl Viewer {
         let mut image_rect = None;
         let mut selected_image_debug = None;
         let (image_load_timing, selected_range) = if let Ok(mut image_list) = self.image_list.lock() {
-            image_list.poll_preloads();
+            let image_load_timing = image_list.poll_preloads();
             let repaint_ctx = ctx.clone();
-            let image_load_timing = image_list.ensure_selected_loaded(move || {
+            image_list.ensure_selected_loaded(move || {
                 repaint_ctx.request_repaint_of(egui::ViewportId::ROOT);
             });
             // Wake the UI when the preload finishes; without this, navigating to an
@@ -253,8 +253,9 @@ impl Viewer {
         }
 
         if !selected_range.is_empty() {
-            if let Some(selected) = selected_range.iter().flatten().find(|selected| selected.data.is_some()) {
-                let data = selected.data.as_ref().expect("checked above");
+            if let Some(selected) = selected_range.first().and_then(Option::as_ref)
+                && let Some(data) = selected.data.as_ref()
+            {
                 self.apply_image_window_geometry(ctx, selected.id, data, self.layout);
                 if let Ok(data) = data.lock() {
                     let final_data = data.final_data();

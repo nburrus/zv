@@ -360,7 +360,7 @@ impl RuntimeDebug {
     ) -> bool {
         match action {
             DebugAction::WaitForImage { timeout_frames } => {
-                if state.image_rect.is_some() {
+                if state.selected_image.is_some() {
                     self.wait_for_image_started_at_frame = None;
                     self.advance_action();
                     true
