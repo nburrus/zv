@@ -8,7 +8,6 @@ use std::time::{Duration, Instant};
 use crate::color_image::{ImageSRGBA, PixelSRGBA};
 use crate::image_io::{load_rgba_image, load_rgba_image_from_memory};
 use crate::image_item_data::ImageItemData;
-use crate::layout::MAX_MOSAIC_IMAGES;
 use crate::modified_image::ModifiedImage;
 use crate::networking::RemoteImageRef;
 use crate::protocol::ImageOffer;
@@ -94,6 +93,7 @@ struct ImageItemCache {
     entries: HashMap<ImageId, Arc<Mutex<ModifiedImage>>>,
     lru: VecDeque<ImageId>,
     protected: HashSet<ImageId>,
+    pinned: HashSet<ImageId>,
 }
 
 impl ImageItemCache {
@@ -103,6 +103,7 @@ impl ImageItemCache {
             entries: HashMap::new(),
             lru: VecDeque::new(),
             protected: HashSet::new(),
+            pinned: HashSet::new(),
         }
     }
 
@@ -119,16 +120,25 @@ impl ImageItemCache {
     fn put(&mut self, id: ImageId, data: Arc<Mutex<ModifiedImage>>) {
         self.entries.insert(id, data);
         self.touch(id);
+        self.trim_to_max(Some(id));
+    }
+
+    fn set_pinned(&mut self, pinned: HashSet<ImageId>) {
+        self.pinned = pinned;
+        self.trim_to_max(None);
+    }
+
+    fn trim_to_max(&mut self, preserved: Option<ImageId>) {
         while self.entries.len() > self.max_size {
             // Evict the oldest entry that is clean and not the one we just
-            // inserted. A dirty entry holds unsaved edits that live only in
-            // memory, so it must never be evicted — if everything else is
-            // dirty we stop and let the cache exceed max_size.
+            // inserted. Dirty, protected, and currently visible entries must
+            // never be evicted; if nothing else can go, the cache temporarily
+            // exceeds max_size.
             let Some(victim) = self
                 .lru
                 .iter()
                 .copied()
-                .find(|&candidate| candidate != id && self.is_evictable(candidate))
+                .find(|&candidate| Some(candidate) != preserved && self.is_evictable(candidate))
             else {
                 break;
             };
@@ -137,7 +147,7 @@ impl ImageItemCache {
     }
 
     fn is_evictable(&self, id: ImageId) -> bool {
-        if self.protected.contains(&id) {
+        if self.protected.contains(&id) || self.pinned.contains(&id) {
             return false;
         }
         // Treat an unreadable entry as dirty so a poisoned/locked mutex never
@@ -152,6 +162,7 @@ impl ImageItemCache {
         self.entries.remove(&id);
         self.lru.retain(|&existing| existing != id);
         self.protected.remove(&id);
+        self.pinned.remove(&id);
     }
 
     fn protect(&mut self, id: ImageId) {
@@ -196,9 +207,7 @@ impl ImageList {
             selection_count: 1,
             filter_text: String::new(),
             next_pasted_image_number: 1,
-            // Keep a full automatic mosaic resident, plus the existing
-            // one-image lookahead used to make navigation responsive.
-            cache: ImageItemCache::new(MAX_MOSAIC_IMAGES + 1),
+            cache: ImageItemCache::new(16),
             pending_preloads: HashMap::new(),
         }
     }
@@ -422,6 +431,7 @@ impl ImageList {
         on_done: impl FnOnce() + Send + Clone + 'static,
     ) -> Option<ImageLoadTiming> {
         self.poll_preloads();
+        self.pin_selected_images();
         let indices = self.selected_indices();
         let mut first_timing = None;
         for index in indices.into_iter().flatten() {
@@ -444,7 +454,8 @@ impl ImageList {
     pub fn preload_next_from_selection(&mut self, on_done: impl FnOnce() + Send + 'static) -> bool {
         self.poll_preloads();
         let enabled = self.enabled_indices();
-        if enabled.len() < 2 {
+        let visible_count = self.selected_indices().into_iter().flatten().count();
+        if enabled.len() < 2 || visible_count >= self.cache.max_size {
             return false;
         }
 
@@ -537,6 +548,16 @@ impl ImageList {
         (0..self.selection_count)
             .map(|offset| enabled.get(self.selection_start + offset).copied())
             .collect()
+    }
+
+    fn pin_selected_images(&mut self) {
+        let pinned = self
+            .selected_indices()
+            .into_iter()
+            .flatten()
+            .filter_map(|index| self.items.get(index).map(|item| item.id))
+            .collect();
+        self.cache.set_pinned(pinned);
     }
 
     fn select_closest_enabled_index(&mut self, index: usize) {
@@ -1321,13 +1342,15 @@ mod tests {
     }
 
     #[test]
-    fn full_mosaic_and_navigation_lookahead_stay_cached() {
-        let paths = (0..=MAX_MOSAIC_IMAGES)
+    fn visible_mosaic_is_pinned_without_growing_the_normal_cache_permanently() {
+        const MOSAIC_SIZE: usize = 64;
+        let paths = (0..MOSAIC_SIZE)
             .map(|index| PathBuf::from(format!("image-{index}.png")))
             .collect();
         let mut images = ImageList::new(paths);
-        images.set_selection_count(MAX_MOSAIC_IMAGES);
+        images.set_selection_count(MOSAIC_SIZE);
         let ids = images.items.iter().map(|item| item.id).collect::<Vec<_>>();
+        images.pin_selected_images();
 
         for &id in &ids {
             images.cache.put(id, cached_test_image());
@@ -1339,6 +1362,23 @@ mod tests {
                 .into_iter()
                 .all(|view| view.is_some_and(|view| view.data.is_some()))
         );
-        assert!(images.cache.contains(ids[MAX_MOSAIC_IMAGES]));
+        assert_eq!(images.cache.entries.len(), MOSAIC_SIZE);
+
+        images.set_selection_count(1);
+        images.pin_selected_images();
+
+        assert!(images.cache.contains(ids[0]));
+        assert_eq!(images.cache.entries.len(), images.cache.max_size);
+    }
+
+    #[test]
+    fn lookahead_does_not_exceed_a_full_visible_cache_budget() {
+        let mut images = list(&[
+            "0.png", "1.png", "2.png", "3.png", "4.png", "5.png", "6.png", "7.png", "8.png", "9.png", "10.png",
+            "11.png", "12.png", "13.png", "14.png", "15.png", "16.png",
+        ]);
+        images.set_selection_count(images.cache.max_size);
+
+        assert!(!images.preload_next_from_selection(|| {}));
     }
 }
