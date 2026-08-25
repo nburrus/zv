@@ -25,10 +25,12 @@ mod viewer;
 mod viewport_geometry;
 
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Instant;
 
 use clap::Parser;
 use eframe::egui;
+use eframe::egui_wgpu::{WgpuConfiguration, WgpuSetupCreateNew, wgpu};
 
 #[derive(Debug, Parser)]
 #[command(name = "zv", version, about = "Lightweight image viewer for computer vision")]
@@ -103,6 +105,7 @@ fn run_viewer(
     let options = eframe::NativeOptions {
         renderer: eframe::Renderer::Wgpu,
         viewport: initial_viewport,
+        wgpu_options: large_image_wgpu_options(),
         ..Default::default()
     };
 
@@ -124,6 +127,33 @@ fn run_viewer(
         }),
     )
     .map_err(|err| anyhow::anyhow!("failed to run native viewer: {err}"))
+}
+
+fn large_image_wgpu_options() -> WgpuConfiguration {
+    let mut options = WgpuConfiguration::default();
+    let setup = WgpuSetupCreateNew {
+        device_descriptor: Arc::new(|adapter| {
+            let base_limits = if adapter.get_info().backend == wgpu::Backend::Gl {
+                wgpu::Limits::downlevel_webgl2_defaults()
+            } else {
+                wgpu::Limits::default()
+            };
+            let max_texture_dimension_2d = adapter.limits().max_texture_dimension_2d;
+
+            tracing::info!(max_texture_dimension_2d, "requesting adapter texture-size limit");
+            wgpu::DeviceDescriptor {
+                label: Some("zv wgpu device"),
+                required_limits: wgpu::Limits {
+                    max_texture_dimension_2d,
+                    ..base_limits
+                },
+                ..Default::default()
+            }
+        }),
+        ..Default::default()
+    };
+    options.wgpu_setup = setup.into();
+    options
 }
 
 fn initial_root_viewport(images: &[PathBuf]) -> egui::ViewportBuilder {
