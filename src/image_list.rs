@@ -8,6 +8,7 @@ use std::time::{Duration, Instant};
 use crate::color_image::{ImageSRGBA, PixelSRGBA};
 use crate::image_io::{load_rgba_image, load_rgba_image_from_memory};
 use crate::image_item_data::ImageItemData;
+use crate::layout::MAX_MOSAIC_IMAGES;
 use crate::modified_image::ModifiedImage;
 use crate::networking::RemoteImageRef;
 use crate::protocol::ImageOffer;
@@ -195,7 +196,9 @@ impl ImageList {
             selection_count: 1,
             filter_text: String::new(),
             next_pasted_image_number: 1,
-            cache: ImageItemCache::new(16),
+            // Keep a full automatic mosaic resident, plus the existing
+            // one-image lookahead used to make navigation responsive.
+            cache: ImageItemCache::new(MAX_MOSAIC_IMAGES + 1),
             pending_preloads: HashMap::new(),
         }
     }
@@ -1315,5 +1318,27 @@ mod tests {
 
         assert!(cache.contains(dirty_id));
         assert!(cache.contains(clean_id));
+    }
+
+    #[test]
+    fn full_mosaic_and_navigation_lookahead_stay_cached() {
+        let paths = (0..=MAX_MOSAIC_IMAGES)
+            .map(|index| PathBuf::from(format!("image-{index}.png")))
+            .collect();
+        let mut images = ImageList::new(paths);
+        images.set_selection_count(MAX_MOSAIC_IMAGES);
+        let ids = images.items.iter().map(|item| item.id).collect::<Vec<_>>();
+
+        for &id in &ids {
+            images.cache.put(id, cached_test_image());
+        }
+
+        assert!(
+            images
+                .selected_range_views()
+                .into_iter()
+                .all(|view| view.is_some_and(|view| view.data.is_some()))
+        );
+        assert!(images.cache.contains(ids[MAX_MOSAIC_IMAGES]));
     }
 }

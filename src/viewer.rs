@@ -17,7 +17,7 @@ use crate::debug::{
 use crate::image_list::{ImageId, ImageList, PendingImageChange};
 use crate::image_window::{CursorPixelInfo, ImageWindow};
 use crate::image_window_geometry::{ImageWindowGeometryState, WindowResizeAction};
-use crate::layout::{LayoutConfig, best_layout_for_image_count};
+use crate::layout::{LayoutConfig, MAX_MOSAIC_IMAGES, best_layout_for_image_count};
 use crate::modified_image::ModifiedImage;
 use crate::networking::RemoteImageRef;
 use crate::protocol::ImageOffer;
@@ -452,7 +452,7 @@ impl Viewer {
                         .ok()
                         .map(|image_list| image_list.num_enabled_images())
                         .unwrap_or(1);
-                    self.set_layout(best_layout_for_image_count(count, 128, 4.0 / 3.0));
+                    self.set_layout(best_layout_for_image_count(count, MAX_MOSAIC_IMAGES, 4.0 / 3.0));
                 }
                 AppAction::SetAnnotationMode(mode) => {
                     if let Ok(mut tool) = self.annotation_tool.lock() {

@@ -4,6 +4,9 @@ pub struct LayoutConfig {
     pub cols: usize,
 }
 
+/// Maximum number of images shown by the automatic mosaic.
+pub const MAX_MOSAIC_IMAGES: usize = 64;
+
 impl LayoutConfig {
     pub const fn image_count(self) -> usize {
         self.rows * self.cols
@@ -148,6 +151,14 @@ mod tests {
             best_layout_for_image_count(6, 128, 4.0 / 3.0),
             LayoutConfig { rows: 2, cols: 3 }
         );
+    }
+
+    #[test]
+    fn automatic_mosaic_is_capped_at_resident_image_limit() {
+        let layout = best_layout_for_image_count(1_000, MAX_MOSAIC_IMAGES, 4.0 / 3.0);
+
+        assert_eq!(layout, LayoutConfig { rows: 8, cols: 8 });
+        assert_eq!(layout.image_count(), MAX_MOSAIC_IMAGES);
     }
 
     #[test]
