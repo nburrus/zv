@@ -185,9 +185,9 @@ impl Viewer {
         let mut image_rect = None;
         let mut selected_image_debug = None;
         let (image_load_timing, selected_range) = if let Ok(mut image_list) = self.image_list.lock() {
-            image_list.poll_preloads();
+            let image_load_timing = image_list.poll_preloads();
             let repaint_ctx = ctx.clone();
-            let image_load_timing = image_list.ensure_selected_loaded(move || {
+            image_list.ensure_selected_loaded(move || {
                 repaint_ctx.request_repaint_of(egui::ViewportId::ROOT);
             });
             // Wake the UI when the preload finishes; without this, navigating to an
