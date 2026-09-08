@@ -367,10 +367,12 @@ Open questions for the next milestones:
 
 ## Image resizing
 
-Edit → Resize Image to Window (also in Modifiers) changes the pixels of every
+Tools → Resize → Resize Image to Window changes the pixels of every
 loaded visible image to the image-window dimensions shown in the controls footer.
-Set those dimensions with the existing width/height fields or by resizing the
-window, then apply the operation. As in C++, the target is the entire image widget,
+Tools → Resize → Resize… opens the Resize modifier, also available through its
+Modifiers toolbar icon. Width and height start at the current window size; edit
+them and press Apply to resize. Opening the modifier again refreshes the defaults.
+The immediate menu command uses the window dimensions without opening the tool. As in C++, the target is the entire image widget,
 including in a multi-image layout; zoom and pan do not crop the source pixels.
 
 Resampling uses Catmull–Rom filtering in linear-light, premultiplied RGBA through

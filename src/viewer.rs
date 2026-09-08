@@ -61,6 +61,11 @@ pub enum AppAction {
     CloseImage,
     DeleteImageOnDisk,
     ResizeImageToWindow,
+    ShowResize,
+    ResizeImage {
+        width: u32,
+        height: u32,
+    },
     RotateLeft,
     RotateRight,
     ShowColorEditor,
@@ -456,6 +461,7 @@ impl Viewer {
                     self.set_layout(best_layout_for_image_count(count, 128, 4.0 / 3.0));
                 }
                 AppAction::SetAnnotationMode(mode) => {
+                    self.controls_window.close_resize();
                     if let Ok(mut tool) = self.annotation_tool.lock() {
                         tool.set_mode(mode);
                     }
@@ -497,6 +503,17 @@ impl Viewer {
                     if let Some(index) = index {
                         self.request_delete_image_at(ctx, index);
                     }
+                }
+                AppAction::ShowResize => {
+                    if let Ok(mut tool) = self.annotation_tool.lock() {
+                        tool.set_mode(AnnotationMode::Select);
+                    }
+                    self.controls_window.show_resize();
+                }
+                AppAction::ResizeImage { width, height } => {
+                    self.apply_to_visible_images(|image| {
+                        image.resize(width, height);
+                    });
                 }
                 AppAction::ResizeImageToWindow => {
                     let size = self.image_widget_size.lock().ok().and_then(|size| *size);

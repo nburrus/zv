@@ -76,6 +76,7 @@ struct ControlsUiState {
     size_texts: [String; 2],
     size_being_edited: [bool; 2],
     lock_ratio: bool,
+    resize_size: Option<[u32; 2]>,
     annotation_style_edit: Option<AnnotationStyleEditState>,
 }
 
@@ -86,6 +87,7 @@ impl Default for ControlsUiState {
             size_texts: [String::new(), String::new()],
             size_being_edited: [false, false],
             lock_ratio: true,
+            resize_size: None,
             annotation_style_edit: None,
         }
     }
@@ -145,6 +147,29 @@ impl ControlsWindow {
             self.apply_initial_position_on_show = !self.has_ever_been_shown;
             self.has_ever_been_shown = true;
             self.focus_on_show = true;
+        }
+    }
+
+    pub fn show_resize(&mut self) {
+        let Some((width, height)) = self.image_widget_size.lock().ok().and_then(|size| *size) else {
+            return;
+        };
+        if let Ok(mut state) = self.ui_state.lock() {
+            flush_annotation_style_edit(&self.image_list, &mut state);
+            state.active_tab = ControlsTab::Modifiers;
+            state.resize_size = Some([width.max(1), height.max(1)]);
+        }
+        if !self.enabled {
+            self.enabled = true;
+            self.apply_initial_position_on_show = !self.has_ever_been_shown;
+            self.has_ever_been_shown = true;
+        }
+        self.focus_on_show = true;
+    }
+
+    pub fn close_resize(&mut self) {
+        if let Ok(mut state) = self.ui_state.lock() {
+            state.resize_size = None;
         }
     }
 
@@ -319,17 +344,6 @@ impl ControlsWindow {
                     ui.menu_button("Edit", |ui| {
                         if ui
                             .add_enabled(
-                                image_widget_size.lock().ok().and_then(|size| *size).is_some(),
-                                egui::Button::new("Resize Image to Window"),
-                            )
-                            .clicked()
-                        {
-                            push_root_action(ctx, &action_queue, AppAction::ResizeImageToWindow);
-                            ui.close();
-                        }
-                        ui.separator();
-                        if ui
-                            .add_enabled(
                                 ed.can_undo,
                                 egui::Button::new("Undo").shortcut_text(command_shortcut('Z')),
                             )
@@ -373,6 +387,16 @@ impl ControlsWindow {
                         }
                     });
                     ui.menu_button("Tools", |ui| {
+                        ui.menu_button("Resize", |ui| {
+                            if ui.button("Resize Image to Window").clicked() {
+                                push_root_action(ctx, &action_queue, AppAction::ResizeImageToWindow);
+                                ui.close();
+                            }
+                            if ui.button("Resize…").clicked() {
+                                push_root_action(ctx, &action_queue, AppAction::ShowResize);
+                                ui.close();
+                            }
+                        });
                         if ui.add(egui::Button::new("Color Editor").shortcut_text("e")).clicked() {
                             push_root_action(ctx, &action_queue, AppAction::ShowColorEditor);
                             ui.close();
@@ -553,18 +577,16 @@ fn render_annotation_tools_tab(
     };
     let mode = tool.mode();
 
-    if ui
-        .button("Resize Image to Window")
-        .on_hover_text(
-            "Resize all visible images to the window dimensions shown below. Changes can be undone and saved.",
-        )
-        .clicked()
-    {
-        push_root_action(ctx, action_queue, AppAction::ResizeImageToWindow);
-    }
-
+    let resizing = ui_state.lock().is_ok_and(|state| state.resize_size.is_some());
     // Transform toolbar.
     ui.horizontal(|ui| {
+        if ui
+            .add(modifier_tool_button(ph::ARROWS_OUT).selected(resizing))
+            .on_hover_text("Resize…")
+            .clicked()
+        {
+            push_root_action(ctx, action_queue, AppAction::ShowResize);
+        }
         if ui
             .add(modifier_tool_button(ICON_ROTATE_LEFT))
             .on_hover_text("Rotate Left (−90°)")
@@ -634,6 +656,30 @@ fn render_annotation_tools_tab(
     ui.separator();
 
     let mut ui_state = ui_state.lock().ok();
+    if let Some(state) = ui_state.as_deref_mut()
+        && let Some(size) = state.resize_size.as_mut()
+    {
+        ui.label("Resize");
+        ui.horizontal(|ui| {
+            ui.label("Width");
+            ui.add(egui::DragValue::new(&mut size[0]).range(1..=16384).suffix(" px"));
+            ui.label("Height");
+            ui.add(egui::DragValue::new(&mut size[1]).range(1..=16384).suffix(" px"));
+        });
+        ui.label("Applies to all visible images.");
+        if ui.button("Apply").clicked() {
+            push_root_action(
+                ctx,
+                action_queue,
+                AppAction::ResizeImage {
+                    width: size[0],
+                    height: size[1],
+                },
+            );
+        }
+        return;
+    }
+
     let selected_id = tool.selected_id();
     let selected_element = selected_element_data(image_list, selected_id);
     let selected_kind = selected_element.as_ref().map(AnnotationElement::kind);
