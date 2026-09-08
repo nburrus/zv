@@ -372,7 +372,9 @@ loaded visible image to the image-window dimensions shown in the controls footer
 Tools → Resize → Resize… opens the Resize modifier, also available through its
 Modifiers toolbar icon. Width and height start at the current window size; edit
 them and press Apply to resize. Opening the modifier again refreshes the defaults.
-The immediate menu command uses the window dimensions without opening the tool. As in C++, the target is the entire image widget,
+The panel’s Resize to Window button immediately applies the current window size
+and refreshes both fields. The immediate menu command uses the window dimensions
+without opening the tool. As in C++, the target is the entire image widget,
 including in a multi-image layout; zoom and pan do not crop the source pixels.
 
 Resampling uses Catmull–Rom filtering in linear-light, premultiplied RGBA through

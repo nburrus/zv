@@ -76,7 +76,7 @@ struct ControlsUiState {
     size_texts: [String; 2],
     size_being_edited: [bool; 2],
     lock_ratio: bool,
-    resize_size: Option<[u32; 2]>,
+    resize_size: Option<[String; 2]>,
     annotation_style_edit: Option<AnnotationStyleEditState>,
 }
 
@@ -157,7 +157,7 @@ impl ControlsWindow {
         if let Ok(mut state) = self.ui_state.lock() {
             flush_annotation_style_edit(&self.image_list, &mut state);
             state.active_tab = ControlsTab::Modifiers;
-            state.resize_size = Some([width.max(1), height.max(1)]);
+            state.resize_size = Some([width.max(1).to_string(), height.max(1).to_string()]);
         }
         if !self.enabled {
             self.enabled = true;
@@ -659,24 +659,7 @@ fn render_annotation_tools_tab(
     if let Some(state) = ui_state.as_deref_mut()
         && let Some(size) = state.resize_size.as_mut()
     {
-        ui.label("Resize");
-        ui.horizontal(|ui| {
-            ui.label("Width");
-            ui.add(egui::DragValue::new(&mut size[0]).range(1..=16384).suffix(" px"));
-            ui.label("Height");
-            ui.add(egui::DragValue::new(&mut size[1]).range(1..=16384).suffix(" px"));
-        });
-        ui.label("Applies to all visible images.");
-        if ui.button("Apply").clicked() {
-            push_root_action(
-                ctx,
-                action_queue,
-                AppAction::ResizeImage {
-                    width: size[0],
-                    height: size[1],
-                },
-            );
-        }
+        render_resize_controls(ui, size, action_queue, ctx);
         return;
     }
 
@@ -811,6 +794,66 @@ fn arrow_tool_button(ui: &mut egui::Ui, selected: bool) -> egui::Response {
         egui::Stroke::NONE,
     ));
     response
+}
+
+fn render_resize_controls(
+    ui: &mut egui::Ui,
+    size: &mut [String; 2],
+    action_queue: &Arc<Mutex<Vec<AppAction>>>,
+    ctx: &egui::Context,
+) {
+    ui.label(egui::RichText::new("Resize image").color(ui.visuals().weak_text_color()));
+    egui::Grid::new("resize_image_size_grid").num_columns(2).show(ui, |ui| {
+        for (label, value) in ["Width", "Height"].into_iter().zip(size.iter_mut()) {
+            render_style_row(ui, label, |ui, width| {
+                ui.add(
+                    egui::TextEdit::singleline(value)
+                        .desired_width((width - 32.0).max(48.0))
+                        .char_limit(5),
+                );
+                ui.label("px");
+            });
+        }
+    });
+
+    let dimensions = size.each_ref().map(|value| {
+        value
+            .trim()
+            .parse::<u32>()
+            .ok()
+            .filter(|value| (1..=16384).contains(value))
+    });
+    ui.add_space(ui.spacing().item_spacing.y);
+    ui.horizontal_wrapped(|ui| {
+        if ui
+            .add_enabled(dimensions.iter().all(Option::is_some), egui::Button::new("Apply"))
+            .clicked()
+        {
+            push_root_action(
+                ctx,
+                action_queue,
+                AppAction::ResizeImage {
+                    width: dimensions[0].unwrap(),
+                    height: dimensions[1].unwrap(),
+                },
+            );
+        }
+        if ui
+            .button("Resize to Window")
+            .on_hover_text("Resize immediately to the current window size and update the fields above.")
+            .clicked()
+        {
+            push_root_action(ctx, action_queue, AppAction::ResizeImageToWindow);
+            push_root_action(ctx, action_queue, AppAction::ShowResize);
+        }
+    });
+    ui.add_space(ui.spacing().item_spacing.y);
+    let hint = if dimensions.iter().any(Option::is_none) {
+        "Enter dimensions from 1 to 16384 pixels."
+    } else {
+        "Applies to all visible images."
+    };
+    ui.label(egui::RichText::new(hint).color(ui.visuals().weak_text_color()));
 }
 
 fn render_line_controls(
