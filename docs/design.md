@@ -364,3 +364,19 @@ Open questions for the next milestones:
 - how to render annotations to a texture for final apply/export
 - when to split `zv` into smaller crates
 - how to preserve C++ behavior where it matters while accepting Rust/egui-specific structure
+
+## Image resizing
+
+Edit → Resize Image to Window (also in Modifiers) changes the pixels of every
+loaded visible image to the image-window dimensions shown in the controls footer.
+Set those dimensions with the existing width/height fields or by resizing the
+window, then apply the operation. As in C++, the target is the entire image widget,
+including in a multi-image layout; zoom and pan do not crop the source pixels.
+
+Resampling uses Catmull–Rom filtering in linear-light, premultiplied RGBA through
+the existing `image` dependency. This preserves the C++ sRGB/alpha-aware behavior,
+though the downsampling kernel differs from stb's default Mitchell filter.
+Annotations retain normalized positions and editable elements; stroke widths and
+text sizes scale with the horizontal image scale, as in the annotation renderer.
+Resize participates in the normal undo, revert, and save workflow. Identical or
+zero dimensions do not create an edit.

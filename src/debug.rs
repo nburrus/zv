@@ -138,6 +138,7 @@ enum DebugAction {
         viewport: DebugViewport,
         key: DebugKey,
     },
+    ResizeImageToWindow,
     /// Resizes the image window without preserving the image aspect ratio,
     /// which is how scripts reach the shapes a user gets by dragging a corner.
     ResizeWindow {
@@ -461,6 +462,12 @@ impl RuntimeDebug {
                 );
                 self.advance_action();
                 true
+            }
+            DebugAction::ResizeImageToWindow => {
+                viewer.queue_action(AppAction::ResizeImageToWindow);
+                ctx.request_repaint_of(egui::ViewportId::ROOT);
+                self.advance_action();
+                false
             }
             DebugAction::ResizeWindow { width, height } => {
                 viewer.queue_action(AppAction::ResizeWindow(WindowResizeAction::Custom {

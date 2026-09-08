@@ -319,6 +319,17 @@ impl ControlsWindow {
                     ui.menu_button("Edit", |ui| {
                         if ui
                             .add_enabled(
+                                image_widget_size.lock().ok().and_then(|size| *size).is_some(),
+                                egui::Button::new("Resize Image to Window"),
+                            )
+                            .clicked()
+                        {
+                            push_root_action(ctx, &action_queue, AppAction::ResizeImageToWindow);
+                            ui.close();
+                        }
+                        ui.separator();
+                        if ui
+                            .add_enabled(
                                 ed.can_undo,
                                 egui::Button::new("Undo").shortcut_text(command_shortcut('Z')),
                             )
@@ -541,6 +552,16 @@ fn render_annotation_tools_tab(
         return;
     };
     let mode = tool.mode();
+
+    if ui
+        .button("Resize Image to Window")
+        .on_hover_text(
+            "Resize all visible images to the window dimensions shown below. Changes can be undone and saved.",
+        )
+        .clicked()
+    {
+        push_root_action(ctx, action_queue, AppAction::ResizeImageToWindow);
+    }
 
     // Transform toolbar.
     ui.horizontal(|ui| {

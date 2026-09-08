@@ -60,6 +60,7 @@ pub enum AppAction {
     OpenImage,
     CloseImage,
     DeleteImageOnDisk,
+    ResizeImageToWindow,
     RotateLeft,
     RotateRight,
     ShowColorEditor,
@@ -495,6 +496,14 @@ impl Viewer {
                         .and_then(|image_list| image_list.first_selected_index());
                     if let Some(index) = index {
                         self.request_delete_image_at(ctx, index);
+                    }
+                }
+                AppAction::ResizeImageToWindow => {
+                    let size = self.image_widget_size.lock().ok().and_then(|size| *size);
+                    if let Some((width, height)) = size {
+                        self.apply_to_visible_images(|image| {
+                            image.resize(width, height);
+                        });
                     }
                 }
                 AppAction::RotateLeft => {
