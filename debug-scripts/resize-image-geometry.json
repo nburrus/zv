@@ -1,0 +1,29 @@
+{
+  "wait_frames_default": 5,
+  "actions": [
+    {"type": "wait_for_image"},
+    {"type": "key", "viewport": "root", "key": "n"},
+    {"type": "wait_frames", "frames": 20},
+    {"type": "resize_image", "width": 300, "height": 100},
+    {"type": "wait_frames", "frames": 20},
+    {"type": "state", "name": "normal"},
+    {"type": "key", "viewport": "root", "key": "ctrl_z"},
+    {"type": "wait_frames", "frames": 20},
+    {"type": "state", "name": "undo"},
+    {"type": "resize_window", "width": 400, "height": 300},
+    {"type": "wait_frames", "frames": 20},
+    {"type": "key", "viewport": "root", "key": "a"},
+    {"type": "wait_frames", "frames": 20},
+    {"type": "resize_image", "width": 100, "height": 200},
+    {"type": "wait_frames", "frames": 20},
+    {"type": "state", "name": "aspect"},
+    {"type": "resize_window", "width": 400, "height": 300},
+    {"type": "wait_frames", "frames": 20},
+    {"type": "resize_image", "width": 200, "height": 100},
+    {"type": "wait_frames", "frames": 20},
+    {"type": "state", "name": "manual"},
+    {"type": "discard_changes"},
+    {"type": "wait_frames", "frames": 20},
+    {"type": "key", "viewport": "root", "key": "q"}
+  ]
+}

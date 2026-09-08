@@ -139,6 +139,10 @@ enum DebugAction {
         key: DebugKey,
     },
     ResizeImageToWindow,
+    ResizeImage {
+        width: u32,
+        height: u32,
+    },
     /// Resizes the image window without preserving the image aspect ratio,
     /// which is how scripts reach the shapes a user gets by dragging a corner.
     ResizeWindow {
@@ -177,6 +181,7 @@ enum DebugKey {
     Delete,
     Escape,
     A,
+    N,
     E,
     S,
     ArrowDown,
@@ -463,6 +468,12 @@ impl RuntimeDebug {
                 self.advance_action();
                 true
             }
+            DebugAction::ResizeImage { width, height } => {
+                viewer.queue_action(AppAction::ResizeImage { width, height });
+                ctx.request_repaint_of(egui::ViewportId::ROOT);
+                self.advance_action();
+                false
+            }
             DebugAction::ResizeImageToWindow => {
                 viewer.queue_action(AppAction::ResizeImageToWindow);
                 ctx.request_repaint_of(egui::ViewportId::ROOT);
@@ -605,6 +616,7 @@ impl RuntimeDebug {
         let (key, modifiers) = match key {
             DebugKey::Delete => (egui::Key::Delete, egui::Modifiers::NONE),
             DebugKey::Escape => (egui::Key::Escape, egui::Modifiers::NONE),
+            DebugKey::N => (egui::Key::N, egui::Modifiers::NONE),
             DebugKey::A => (egui::Key::A, egui::Modifiers::NONE),
             DebugKey::E => (egui::Key::E, egui::Modifiers::NONE),
             DebugKey::S => (egui::Key::S, egui::Modifiers::NONE),

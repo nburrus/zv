@@ -118,7 +118,7 @@ pub struct Viewer {
     image_window_geometry: ImageWindowGeometryState,
     current_monitor_work_area: Option<egui::Rect>,
     layout: LayoutConfig,
-    last_displayed_signature: Option<(ImageId, LayoutConfig)>,
+    last_displayed_signature: Option<(ImageId, LayoutConfig, [u32; 2])>,
     logged_first_image_load: bool,
     pending_confirmation: Option<PendingConfirmation>,
     allow_close: bool,
@@ -1089,11 +1089,9 @@ impl Viewer {
             return;
         };
         let final_data = data.final_data();
-        let image_size = layout_widget_size(
-            egui::vec2(final_data.width() as f32, final_data.height() as f32),
-            layout,
-            1.0,
-        );
+        let dimensions = [final_data.width(), final_data.height()];
+        let signature = Some((image_id, layout, dimensions));
+        let image_size = layout_widget_size(egui::vec2(dimensions[0] as f32, dimensions[1] as f32), layout, 1.0);
         drop(data);
 
         let (monitor_size, outer_rect, inner_rect) = ctx.input(|input| {
@@ -1119,12 +1117,14 @@ impl Viewer {
             .prepare_initial_geometry(image_size, viewport, 0)
         {
             send_resize_command(ctx, command);
-            self.last_displayed_signature = Some((image_id, layout));
+            self.last_displayed_signature = signature;
             return;
         }
 
-        if self.last_displayed_signature != Some((image_id, layout)) {
-            self.last_displayed_signature = Some((image_id, layout));
+        // Pixel edits (resize, rotation, undo, revert) can change dimensions
+        // without changing the image identity or layout. Reuse the same mode policy.
+        if self.last_displayed_signature != signature {
+            self.last_displayed_signature = signature;
             if let Some(command) = self.image_window_geometry.on_image_changed(image_size, viewport) {
                 send_resize_command(ctx, command);
             }

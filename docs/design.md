@@ -384,3 +384,7 @@ Annotations retain normalized positions and editable elements; stroke widths and
 text sizes scale with the horizontal image scale, as in the annotation renderer.
 Resize participates in the normal undo, revert, and save workflow. Identical or
 zero dimensions do not create an edit.
+
+Image dimension changes reuse the existing image-change window geometry policy:
+Normal, Aspect Ratio, and Maxspect are reapplied, while manually sized windows
+keep their dimensions. This also covers undo, revert, and rotation.
