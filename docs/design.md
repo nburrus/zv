@@ -95,9 +95,9 @@ unsaved in-memory images are excluded.
 future filesystem-event handler. It drops pending preload receivers so stale
 workers cannot repopulate the cache, and retains image IDs and selection. The
 mtime baseline is captured before decoding and updated after a successful save.
-Unsaved edits are skipped and inaccessible files retain their cached image; the
-viewer reports these cases. Decode errors can be retried with another refresh,
-even if the mtime is unchanged. No filesystem watcher is installed, and content
+Images with unsaved edits are silently skipped. Other inaccessible files retain
+their cached image and are reported by the viewer. Decode errors can be retried
+with another refresh, even if the mtime is unchanged. No filesystem watcher is installed, and content
 changes that preserve the mtime are not detected.
 
 ### `ImageWindow`

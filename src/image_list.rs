@@ -418,14 +418,15 @@ impl ImageList {
         let Some(path) = item.local_path() else {
             return Ok(());
         };
+        // Pending edits are silently excluded, even if the source is unavailable.
+        if self.cache.get_cached(item.id).is_some() && !self.cache.is_evictable(item.id) {
+            return Ok(());
+        }
         let mtime = std::fs::metadata(path)
             .and_then(|metadata| metadata.modified())
             .map_err(|error| format!("{}: {error}", path.display()))?;
         if item.source_mtime == Some(mtime) && item.error.is_none() {
             return Ok(());
-        }
-        if self.cache.get_cached(item.id).is_some() && !self.cache.is_evictable(item.id) {
-            return Err(format!("{}: skipped because it has unsaved edits", path.display()));
         }
         let metadata = ::image::image_dimensions(path).ok();
         // Dropping the receiver prevents an older in-flight decode from restoring
@@ -1310,7 +1311,7 @@ mod tests {
         let original = images.modified_image_at(0).unwrap();
         original.lock().unwrap().rotate_cw();
         change_test_png(&path, images.items[0].source_mtime.unwrap());
-        assert_eq!(images.reload_changed_images().len(), 1);
+        assert!(images.reload_changed_images().is_empty());
         assert!(Arc::ptr_eq(&original, &images.modified_image_at(0).unwrap()));
         original.lock().unwrap().discard_changes();
         assert!(images.reload_changed_images().is_empty());
@@ -1318,6 +1319,9 @@ mod tests {
         let reloaded = images.modified_image_at(0).unwrap();
         fs::remove_file(&path).unwrap();
         assert_eq!(images.reload_changed_images().len(), 1);
+        assert!(Arc::ptr_eq(&reloaded, &images.modified_image_at(0).unwrap()));
+        reloaded.lock().unwrap().rotate_cw();
+        assert!(images.reload_changed_images().is_empty());
         assert!(Arc::ptr_eq(&reloaded, &images.modified_image_at(0).unwrap()));
     }
 
