@@ -65,6 +65,7 @@ pub enum AppAction {
     OpenImage,
     OpenRecentSession(Vec<PathBuf>),
     ClearRecentSessions,
+    ReloadChangedImages,
     CloseImage,
     DeleteImageOnDisk,
     ResizeImageToWindow,
@@ -552,6 +553,21 @@ impl Viewer {
                     self.cancel_crop();
                     self.apply_to_visible_images(|image| image.discard_changes());
                     self.clear_missing_annotation_selection();
+                }
+                AppAction::ReloadChangedImages => {
+                    let issues = self
+                        .image_list
+                        .lock()
+                        .map(|mut images| images.reload_changed_images())
+                        .unwrap_or_else(|_| vec!["Image list is unavailable".to_owned()]);
+                    self.clear_missing_annotation_selection();
+                    ctx.request_repaint();
+                    if !issues.is_empty() {
+                        rfd::MessageDialog::new()
+                            .set_title("Some images could not be refreshed")
+                            .set_description(issues.join("\n"))
+                            .show();
+                    }
                 }
                 AppAction::SaveImageEdits => {
                     self.cancel_crop();

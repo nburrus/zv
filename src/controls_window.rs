@@ -354,6 +354,16 @@ impl ControlsWindow {
                                 }
                             }
                         });
+                        if ui
+                            .button("Reload Changed Images")
+                            .on_hover_text(
+                                "Check all local images for changes on disk. Images with unsaved edits are skipped.",
+                            )
+                            .clicked()
+                        {
+                            push_root_action(ctx, &action_queue, AppAction::ReloadChangedImages);
+                            ui.close();
+                        }
                         ui.separator();
                         if ui
                             .add_enabled(
