@@ -83,6 +83,23 @@ It owns:
 10. Render the controls viewport.
 11. Return a `ViewerDebugState` snapshot for debug automation.
 
+### Refreshing local images
+
+The controls window's **File → Reload Changed Images** action checks modification
+times for every local image, including filtered and uncached entries. Changed
+entries lose their cached pixels and dimensions are refreshed; visible images
+reload on the next viewer update and other images decode on demand. Remote and
+unsaved in-memory images are excluded.
+
+`ImageList::invalidate_changed_image` centralizes invalidation for reuse by a
+future filesystem-event handler. It drops pending preload receivers so stale
+workers cannot repopulate the cache, and retains image IDs and selection. The
+mtime baseline is captured before decoding and updated after a successful save.
+Unsaved edits are skipped and inaccessible files retain their cached image; the
+viewer reports these cases. Decode errors can be retried with another refresh,
+even if the mtime is unchanged. No filesystem watcher is installed, and content
+changes that preserve the mtime are not detected.
+
 ### `ImageWindow`
 
 `ImageWindow` renders the main image viewport.

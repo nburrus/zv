@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 use crate::color_image::{ImageSRGBA, PixelSRGBA};
 use crate::image_io::{load_rgba_image, load_rgba_image_from_memory};
@@ -61,6 +61,7 @@ struct ImageItem {
     pretty_name: String,
     metadata: Option<(u32, u32)>,
     error: Option<String>,
+    source_mtime: Option<SystemTime>,
 }
 
 #[derive(Clone)]
@@ -172,6 +173,10 @@ impl ImageItemCache {
     }
 }
 
+fn file_mtime(path: &Path) -> Option<SystemTime> {
+    std::fs::metadata(path).and_then(|metadata| metadata.modified()).ok()
+}
+
 fn next_image_id() -> ImageId {
     static NEXT: AtomicU64 = AtomicU64::new(1);
     ImageId(NEXT.fetch_add(1, Ordering::Relaxed))
@@ -278,6 +283,7 @@ impl ImageList {
             pretty_name: offer.name,
             metadata,
             error: None,
+            source_mtime: None,
         });
         refresh_pretty_names(&mut self.items);
         let enabled = self.enabled_indices();
@@ -305,6 +311,7 @@ impl ImageList {
             pretty_name: name.into(),
             metadata,
             error: None,
+            source_mtime: None,
         };
         let position = insert_position.min(self.items.len());
         self.items.insert(position, item);
@@ -392,6 +399,45 @@ impl ImageList {
         }
     }
 
+    /// Check every local source, including filtered and uncached images. Decoding
+    /// remains lazy: visible images reload on the next update, others on demand.
+    pub fn reload_changed_images(&mut self) -> Vec<String> {
+        let mut issues = Vec::new();
+        for index in 0..self.items.len() {
+            if let Err(issue) = self.invalidate_changed_image(index) {
+                issues.push(issue);
+            }
+        }
+        issues
+    }
+
+    /// Shared invalidation point for explicit refresh and future file events.
+    /// Never discard unsaved edits, and keep the old image if stat fails.
+    fn invalidate_changed_image(&mut self, index: usize) -> Result<(), String> {
+        let item = &mut self.items[index];
+        let Some(path) = item.local_path() else {
+            return Ok(());
+        };
+        let mtime = std::fs::metadata(path)
+            .and_then(|metadata| metadata.modified())
+            .map_err(|error| format!("{}: {error}", path.display()))?;
+        if item.source_mtime == Some(mtime) && item.error.is_none() {
+            return Ok(());
+        }
+        if self.cache.get_cached(item.id).is_some() && !self.cache.is_evictable(item.id) {
+            return Err(format!("{}: skipped because it has unsaved edits", path.display()));
+        }
+        let metadata = ::image::image_dimensions(path).ok();
+        // Dropping the receiver prevents an older in-flight decode from restoring
+        // stale pixels after invalidation. A new load gets its own receiver.
+        self.pending_preloads.remove(&item.id);
+        self.cache.remove(item.id);
+        item.metadata = metadata;
+        item.error = None;
+        item.source_mtime = Some(mtime);
+        Ok(())
+    }
+
     pub fn poll_preloads(&mut self) {
         let pending_ids = self.pending_preloads.keys().copied().collect::<Vec<_>>();
         for id in pending_ids {
@@ -477,6 +523,7 @@ impl ImageList {
         let Some(item) = self.items.get_mut(index) else {
             return;
         };
+        item.source_mtime = file_mtime(&path);
         item.source = ImageSource::LocalPath(path);
         item.error = None;
         self.cache.unprotect(item.id);
@@ -584,7 +631,7 @@ impl ImageList {
     }
 
     fn start_preload_for_index(&mut self, index: usize, on_done: impl FnOnce() + Send + 'static) -> bool {
-        let Some(item) = self.items.get(index) else {
+        let Some(item) = self.items.get_mut(index) else {
             return false;
         };
         if self.cache.get_cached(item.id).is_some()
@@ -606,6 +653,7 @@ impl ImageList {
             }
             return false;
         }
+        item.source_mtime = item.local_path().and_then(file_mtime);
         let (sender, receiver) = mpsc::channel();
         std::thread::spawn(move || {
             let start = Instant::now();
@@ -702,6 +750,7 @@ impl ImageItem {
     }
 
     fn from_path(id: ImageId, path: PathBuf) -> Self {
+        let source_mtime = file_mtime(&path);
         let metadata = ::image::image_dimensions(&path).ok();
         Self {
             id,
@@ -709,6 +758,7 @@ impl ImageItem {
             source: ImageSource::LocalPath(path),
             metadata,
             error: None,
+            source_mtime,
         }
     }
 
@@ -719,6 +769,7 @@ impl ImageItem {
             pretty_name: "<<default>>".to_owned(),
             metadata: Some((256, 256)),
             error: None,
+            source_mtime: None,
         }
     }
 
@@ -736,6 +787,7 @@ impl ImageItem {
             }
             ImageSource::Remote { .. } | ImageSource::InMemory => return None,
         };
+        self.source_mtime = file_mtime(path);
         let start = Instant::now();
         match load_rgba_image(path) {
             Ok(image) => {
@@ -1198,6 +1250,103 @@ mod tests {
         images.move_item(2, 0);
         assert_eq!(visible_names(&images), ["c.png", "a.png", "b.png"]);
         assert_eq!(selected_visible_index(&images), Some(0));
+    }
+
+    fn change_test_png(path: &Path, original_mtime: SystemTime) {
+        ::image::RgbaImage::from_pixel(3, 2, ::image::Rgba([9, 8, 7, 255]))
+            .save(path)
+            .unwrap();
+        // Use an older timestamp too: changes are inequality, not just increases.
+        fs::File::options()
+            .write(true)
+            .open(path)
+            .unwrap()
+            .set_times(fs::FileTimes::new().set_modified(original_mtime - Duration::from_secs(10)))
+            .unwrap();
+    }
+
+    #[test]
+    fn refresh_invalidates_filtered_images_but_preserves_unchanged_cache_and_selection() {
+        let first = write_test_png("refresh-first", [1, 2, 3, 255]);
+        let second = write_test_png("refresh-second", [4, 5, 6, 255]);
+        let mut images = ImageList::new(vec![first.clone(), second.clone()]);
+        images.set_selection_count(2);
+        images.ensure_selected_loaded(|| {});
+        let unchanged = images.modified_image_at(0).unwrap();
+        let changed = images.modified_image_at(1).unwrap();
+        let id = images.items[1].id;
+        images.set_filter("refresh-first".to_owned());
+        change_test_png(&second, images.items[1].source_mtime.unwrap());
+
+        assert!(images.reload_changed_images().is_empty());
+        assert!(Arc::ptr_eq(&unchanged, &images.modified_image_at(0).unwrap()));
+        assert!(!images.cache.contains(id));
+        assert_eq!(images.items[1].metadata, Some((3, 2)));
+        assert_eq!(images.first_selected_index(), Some(0));
+        images.set_filter(String::new());
+        images.ensure_selected_loaded(|| {});
+        let reloaded = images.modified_image_at(1).unwrap();
+        assert!(!Arc::ptr_eq(&changed, &reloaded));
+        assert_eq!(
+            reloaded.lock().unwrap().final_data().cpu_data().pixel(0, 0),
+            Some(PixelSRGBA {
+                r: 9,
+                g: 8,
+                b: 7,
+                a: 255
+            })
+        );
+        assert!(images.reload_changed_images().is_empty());
+        assert!(Arc::ptr_eq(&reloaded, &images.modified_image_at(1).unwrap()));
+        fs::remove_file(first).unwrap();
+        fs::remove_file(second).unwrap();
+    }
+
+    #[test]
+    fn refresh_preserves_edits_and_missing_files_and_can_retry_after_discard() {
+        let path = write_test_png("refresh-edits", [1, 2, 3, 255]);
+        let mut images = ImageList::new(vec![path.clone()]);
+        images.ensure_selected_loaded(|| {});
+        let original = images.modified_image_at(0).unwrap();
+        original.lock().unwrap().rotate_cw();
+        change_test_png(&path, images.items[0].source_mtime.unwrap());
+        assert_eq!(images.reload_changed_images().len(), 1);
+        assert!(Arc::ptr_eq(&original, &images.modified_image_at(0).unwrap()));
+        original.lock().unwrap().discard_changes();
+        assert!(images.reload_changed_images().is_empty());
+        images.ensure_selected_loaded(|| {});
+        let reloaded = images.modified_image_at(0).unwrap();
+        fs::remove_file(&path).unwrap();
+        assert_eq!(images.reload_changed_images().len(), 1);
+        assert!(Arc::ptr_eq(&reloaded, &images.modified_image_at(0).unwrap()));
+    }
+
+    #[test]
+    fn refresh_cancels_stale_preloads_and_retries_decode_errors_with_same_mtime() {
+        let path = write_test_png("refresh-preload", [1, 2, 3, 255]);
+        let mut images = ImageList::new(vec![path.clone()]);
+        let id = images.items[0].id;
+        let (sender, receiver) = mpsc::channel();
+        images.pending_preloads.insert(id, receiver);
+        change_test_png(&path, images.items[0].source_mtime.unwrap());
+        assert!(images.reload_changed_images().is_empty());
+        assert!(
+            sender
+                .send(PreloadResult {
+                    id,
+                    source_label: String::new(),
+                    local_path: Some(path.clone()),
+                    elapsed: Duration::ZERO,
+                    result: Err("stale error".to_owned()),
+                })
+                .is_err()
+        );
+        images.items[0].error = Some("previous decode error".to_owned());
+        assert!(images.reload_changed_images().is_empty());
+        images.ensure_selected_loaded(|| {});
+        assert!(images.items[0].error.is_none());
+        assert!(images.cache.contains(id));
+        fs::remove_file(path).unwrap();
     }
 
     #[test]
