@@ -8,3 +8,10 @@ Manual install:
   3. Ensure the executable bit is set on Linux or macOS.
 
 The archived C++ zv-client and Python APIs are not included in Rust releases.
+
+macOS Finder integration:
+  After placing zv at its permanent location, run zv --install-app to build
+  /Applications/Zv.app. It launches that installed binary. Apple Command Line
+  Tools and the macOS SDK are required; full Xcode is not. If missing, zv shows
+  xcode-select --install and asks before opening Apple's installer.
+  See docs/macos-app.md in the source repository for permissions and details.

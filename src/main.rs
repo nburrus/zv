@@ -14,6 +14,7 @@ mod image_list;
 mod image_view;
 mod image_window;
 mod image_window_geometry;
+mod install_app;
 mod layout;
 mod minimap;
 mod modified_image;
@@ -38,6 +39,14 @@ use eframe::egui_wgpu::{WgpuConfiguration, WgpuSetupCreateNew, wgpu};
 #[derive(Debug, Parser)]
 #[command(name = "zv", version, about = "Lightweight image viewer for computer vision")]
 struct Cli {
+    /// Build and install /Applications/Zv.app using the macOS Command Line Tools.
+    #[arg(long, exclusive = true)]
+    install_app: bool,
+
+    /// Internal installation of an already built bundle (also used with sudo).
+    #[arg(long, hide = true, exclusive = true)]
+    install_app_staged: Option<PathBuf>,
+
     #[arg(value_name = "IMAGE")]
     images: Vec<PathBuf>,
 
@@ -79,6 +88,12 @@ fn main() -> anyhow::Result<()> {
         .init();
 
     let cli = Cli::parse();
+    if cli.install_app {
+        return install_app::install();
+    }
+    if let Some(bundle) = &cli.install_app_staged {
+        return install_app::install_staged(bundle);
+    }
     if cli.server {
         if !cli.images.is_empty() {
             anyhow::bail!("--server does not accept image paths");

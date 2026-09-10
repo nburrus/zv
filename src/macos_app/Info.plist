@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+    <key>CFBundleIdentifier</key><string>com.nburrus.zv</string>
+    <key>CFBundleName</key><string>Zv</string>
+    <key>CFBundleDisplayName</key><string>Zv</string>
+    <key>CFBundleExecutable</key><string>Zv</string>
+    <key>CFBundlePackageType</key><string>APPL</string>
+    <key>CFBundleIconFile</key><string>Zv.icns</string>
+    <key>CFBundleVersion</key><string>1</string>
+    <key>CFBundleShortVersionString</key><string>@VERSION@</string>
+    <key>LSMinimumSystemVersion</key><string>11.0</string>
+    <key>LSUIElement</key><true/>
+    <key>NSHighResolutionCapable</key><true/>
+    <key>ZvLauncherFormat</key><string>1</string>
+    <key>ZvExecutable</key><string>@EXECUTABLE@</string>
+    <key>CFBundleDocumentTypes</key><array>
+        <dict>
+            <key>CFBundleTypeName</key><string>Images</string>
+            <key>CFBundleTypeRole</key><string>Viewer</string>
+            <key>LSHandlerRank</key><string>Alternate</string>
+            <key>LSItemContentTypes</key><array>
+                <string>public.jpeg</string><string>public.png</string>
+                <string>com.compuserve.gif</string><string>com.microsoft.bmp</string>
+                <string>public.tiff</string><string>public.heic</string><string>public.heif</string>
+                <string>com.truevision.tga-image</string><string>public.pbm</string>
+                <string>com.nburrus.zv.netpbm</string>
+            </array>
+            <key>CFBundleTypeExtensions</key><array>
+                <string>jpg</string><string>jpeg</string><string>jpe</string>
+                <string>png</string><string>gif</string><string>bmp</string>
+                <string>tif</string><string>tiff</string><string>heic</string><string>heif</string>
+                <string>tga</string><string>pnm</string><string>pbm</string>
+                <string>pgm</string><string>ppm</string><string>pam</string>
+            </array>
+        </dict>
+    </array>
+    <key>UTExportedTypeDeclarations</key><array><dict>
+        <key>UTTypeIdentifier</key><string>com.nburrus.zv.netpbm</string>
+        <key>UTTypeDescription</key><string>Netpbm image</string>
+        <key>UTTypeConformsTo</key><array><string>public.image</string></array>
+        <key>UTTypeTagSpecification</key><dict>
+            <key>public.filename-extension</key><array><string>pnm</string><string>pam</string></array>
+        </dict>
+    </dict></array>
+</dict></plist>
