@@ -26,7 +26,10 @@ xcode-select --install
 ```
 
 In an interactive terminal, ZV asks `Run this command? [y/N]` before opening
-Apple's installer. After that installation finishes, rerun `zv --install-app`.
+Apple's installer. ZV stays running and checks for Clang and the macOS SDK every
+two seconds, then automatically continues building and installing Zv.app as soon
+as they are available. Keep the terminal open; no second invocation is needed.
+If you cancel Apple's installer, press Ctrl-C to stop waiting.
 A declined prompt or noninteractive invocation exits with instructions and a
 nonzero status. If the tools are already installed but unavailable, check
 `xcode-select -p` and `xcrun --sdk macosx --show-sdk-path`.
@@ -45,10 +48,10 @@ left intact, retaining its exact launcher signature.
 
 ## Finder and Full Disk Access
 
-Choose **Zv** in Finder's **Open With** menu. To make it the default for a format,
-use Finder's **Get Info > Open with > Change All**. Installation registers the
-app without changing existing defaults. Associations include JPEG, PNG, GIF,
-BMP, TIFF, HEIC/HEIF, TGA and Netpbm extensions.
+The bundle plist declares that Zv can open JPEG, PNG, GIF, BMP, TIFF, HEIC/HEIF,
+TGA and Netpbm images. The installer does not explicitly register the app with
+Launch Services or manage file associations. Choose associations yourself in
+Finder, using **Open With** or **Get Info > Open with > Change All**.
 
 One Finder opening of several files starts one viewer with those files. Later
 openings start additional viewers. Opening the app itself starts an empty
@@ -73,7 +76,8 @@ command-line binary in place.
 
 `cargo test --locked` on macOS includes compilation/signing of a temporary bundle,
 installation/update checks, tampering detection, rollback, unrelated-app and
-symlink rejection, and plist path escaping. It never installs into `/Applications`.
+symlink rejection, plist path escaping, and continuation after asynchronous developer-tools
+installation. It never installs into `/Applications`.
 The icon is the existing 32px ZV icon from the archived application's
 `Icon_xxd.cpp`, repackaged as an ICNS resource.
 

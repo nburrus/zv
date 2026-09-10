@@ -13,5 +13,6 @@ macOS Finder integration:
   After placing zv at its permanent location, run zv --install-app to build
   /Applications/Zv.app. It launches that installed binary. Apple Command Line
   Tools and the macOS SDK are required; full Xcode is not. If missing, zv shows
-  xcode-select --install and asks before opening Apple's installer.
+  xcode-select --install and asks before opening Apple's installer. Keep the
+  terminal open: zv waits for the tools and then continues automatically.
   See docs/macos-app.md in the source repository for permissions and details.

@@ -3,7 +3,7 @@ use std::io::{self, IsTerminal, Write};
 use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, bail, ensure};
 
@@ -26,7 +26,6 @@ pub fn install() -> anyhow::Result<()> {
     // launcher identity, even after replacing the external viewer executable.
     if matches_installation(destination, &plist) {
         println!("{DESTINATION} is already up to date (launches {executable_text}).");
-        register(destination);
         return Ok(());
     }
     ensure_tools()?;
@@ -56,7 +55,6 @@ pub fn install() -> anyhow::Result<()> {
         }
         Err(error) => return Err(error),
     }
-    register(destination);
     println!(
         "Installed {DESTINATION}\nLauncher target: {executable_text}\n\nChoose Zv in Finder’s Open With menu. To grant Full Disk Access, add\n{DESTINATION} in System Settings > Privacy & Security > Full Disk Access.\nRerun zv --install-app if you move the zv binary."
     );
@@ -113,28 +111,54 @@ pub fn install_staged(bundle: &Path) -> anyhow::Result<()> {
     install_bundle(bundle, Path::new(DESTINATION))
 }
 
-fn ensure_tools() -> anyhow::Result<()> {
-    let available = [vec!["--find", "clang"], vec!["--sdk", "macosx", "--show-sdk-path"]]
+fn tools_available() -> bool {
+    [vec!["--find", "clang"], vec!["--sdk", "macosx", "--show-sdk-path"]]
         .iter()
         .all(|args| {
             Command::new("/usr/bin/xcrun")
+                // A previous failed lookup must not hide newly installed tools.
+                .arg("--no-cache")
                 .args(args)
                 .output()
                 .is_ok_and(|out| out.status.success())
-        });
-    if available {
+        })
+}
+
+fn ensure_tools() -> anyhow::Result<()> {
+    if tools_available() {
         return Ok(());
     }
     let proposed = "xcode-select --install";
-    if confirm(&format!(
+    if !confirm(&format!(
         "The macOS Command Line Tools or SDK are missing or unavailable.\nFull Xcode is not required. To open Apple’s installer, run:\n  {proposed}"
     ))? {
-        run(Command::new("/usr/bin/xcode-select").arg("--install"))?;
-        bail!("finish Apple’s Command Line Tools installation, then rerun zv --install-app");
+        bail!(
+            "Command Line Tools installation was not approved; no changes made. If already installed, check `xcode-select -p` and `xcrun --sdk macosx --show-sdk-path`"
+        );
     }
-    bail!(
-        "Command Line Tools are required. Run `{proposed}`, finish installation, then rerun zv --install-app. If already installed, check `xcode-select -p` and `xcrun --sdk macosx --show-sdk-path`"
+    install_tools_and_wait(
+        || run(Command::new("/usr/bin/xcode-select").arg("--install")),
+        tools_available,
+        || std::thread::sleep(Duration::from_secs(2)),
     )
+}
+
+fn install_tools_and_wait(
+    launch_installer: impl FnOnce() -> anyhow::Result<()>,
+    mut available: impl FnMut() -> bool,
+    mut wait: impl FnMut(),
+) -> anyhow::Result<()> {
+    launch_installer()?;
+    // xcode-select only opens Apple's asynchronous installer. Keep this process
+    // alive until both Clang and the SDK are available, then resume installation.
+    println!(
+        "Waiting for Apple’s Command Line Tools installation.\nKeep this terminal open; Zv.app installation will continue automatically.\nPress Ctrl-C to stop waiting if you cancel Apple’s installer."
+    );
+    while !available() {
+        wait();
+    }
+    println!("Command Line Tools and the macOS SDK are ready. Continuing…");
+    Ok(())
 }
 
 fn confirm(message: &str) -> anyhow::Result<bool> {
@@ -276,20 +300,6 @@ fn permission_denied(error: &anyhow::Error) -> bool {
     })
 }
 
-fn register(bundle: &Path) {
-    // Launch Services has no public registration CLI; this is the system tool
-    // used by Finder. Registration is best effort and never changes defaults.
-    let result = Command::new(
-        "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister",
-    )
-    .arg("-f")
-    .arg(bundle)
-    .output();
-    if !result.is_ok_and(|output| output.status.success()) {
-        eprintln!("Could not refresh Launch Services; open {DESTINATION} once in Finder to register it.");
-    }
-}
-
 fn xml_escape(value: &str) -> String {
     value
         .replace('&', "&amp;")
@@ -329,6 +339,43 @@ impl Drop for TemporaryDirectory {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tools_installation_resumes_only_after_clang_and_sdk_are_ready() {
+        use std::cell::Cell;
+
+        let launched = Cell::new(false);
+        let checks = Cell::new(0);
+        let waits = Cell::new(0);
+        install_tools_and_wait(
+            || {
+                launched.set(true);
+                Ok(()) // Apple's UI has opened, but installation is not finished.
+            },
+            || {
+                assert!(launched.get());
+                checks.set(checks.get() + 1);
+                // Simulate neither tool ready, then Clang alone, then both ready.
+                let clang_ready = waits.get() >= 1;
+                let sdk_ready = waits.get() >= 3;
+                clang_ready && sdk_ready
+            },
+            || waits.set(waits.get() + 1),
+        )
+        .unwrap();
+        assert_eq!(waits.get(), 3);
+        assert_eq!(checks.get(), 4);
+    }
+
+    #[test]
+    fn failed_tools_installer_does_not_wait_or_resume() {
+        let result = install_tools_and_wait(
+            || bail!("installer failed"),
+            || panic!("must not resume after failure to start installer"),
+            || panic!("must not wait after failure to start installer"),
+        );
+        assert!(result.unwrap_err().to_string().contains("installer failed"));
+    }
 
     #[test]
     fn signed_bundle_install_update_and_tamper_detection() {
