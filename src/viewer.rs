@@ -41,6 +41,7 @@ pub enum AppAction {
     NextImagePage,
     PreviousImagePage,
     Quit,
+    ToggleStatusBar,
     ResizeWindow(WindowResizeAction),
     /// Reshape the visible region to the window's aspect ratio, scaling the
     /// image content to the window instead of the window to the image.
@@ -443,6 +444,9 @@ impl Viewer {
                 }
                 AppAction::ResizeWindow(action) => self.apply_window_resize_action(ctx, action),
                 AppAction::ScaleImageToWindow => self.image_window.view.match_aspect_to_window(),
+                AppAction::ToggleStatusBar => {
+                    self.image_window.status_bar_hidden = !self.image_window.status_bar_hidden;
+                }
                 AppAction::Arrow(arrow) => self.apply_arrow_key(arrow),
                 AppAction::SetLayout(layout) => self.set_layout(layout),
                 AppAction::AutoLayout => {

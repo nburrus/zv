@@ -51,6 +51,7 @@ impl std::fmt::Debug for CursorPixelInfo {
 #[derive(Default)]
 pub struct ImageWindow {
     pub view: ImageView,
+    pub status_bar_hidden: bool,
     minimap: Minimap,
 }
 
@@ -216,7 +217,9 @@ impl ImageWindow {
                         *info = Some(new_info);
                     }
                     paint_synced_cursor(ui, &images, &cell_views, hovered.slot_index, hovered.sample.uv);
-                    paint_synced_status_bars(ui, &images, &cell_rects, &hovered);
+                    if !self.status_bar_hidden {
+                        paint_synced_status_bars(ui, &images, &cell_rects, &hovered);
+                    }
                 } else if let Ok(mut info) = cursor_info.lock() {
                     output.shared_state_changed |= info.take().is_some();
                 }

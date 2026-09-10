@@ -118,6 +118,7 @@ On macOS, shortcuts shown with `Ctrl` use `Cmd` instead.
 | `a` | Restore aspect ratio by resizing the window |
 | `s` | Restore aspect ratio by adjusting the zoom/crop |
 | `e` | Open the color editor |
+| `v` | Toggle the status bar |
 | `Ctrl+O` / `Cmd+O` | Open image |
 | `Ctrl+W` / `Cmd+W` | Close image |
 | `Ctrl+S` / `Cmd+S` | Save image |

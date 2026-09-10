@@ -67,6 +67,12 @@ pub fn collect_shortcuts(ctx: &egui::Context, viewport: ShortcutViewport) -> Vec
         push_clipboard_shortcuts(input, viewport, typing_text, &mut actions);
         push_color_editor_shortcut(input, viewport, typing_text, &mut actions);
         push_scale_mode_shortcut(input, viewport, typing_text, &mut actions);
+        if scope_allows(ShortcutScope::GlobalWhenNotTyping, viewport, typing_text)
+            && input.modifiers == egui::Modifiers::NONE
+            && input.key_pressed(egui::Key::V)
+        {
+            actions.push(AppAction::ToggleStatusBar);
+        }
     });
     actions
 }

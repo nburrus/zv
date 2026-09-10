@@ -451,6 +451,13 @@ impl ControlsWindow {
                         });
                     });
                     ui.menu_button("Window", |ui| {
+                        if ui
+                            .add(egui::Button::new("Toggle status bar").shortcut_text("V"))
+                            .clicked()
+                        {
+                            push_root_action(ctx, &action_queue, AppAction::ToggleStatusBar);
+                            ui.close();
+                        }
                         ui.menu_button("Layout", |ui| {
                             if ui
                                 .add(egui::Button::new("Automatic mosaic").shortcut_text("0"))
