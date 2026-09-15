@@ -15,11 +15,13 @@ use crate::color_editor_ui::{ColorEditorUiState, render_color_editor_tab};
 use crate::color_image::{
     PixelSRGBA, closest_color_entries, convert_srgba_to_lab, convert_srgba_to_linear_rgb, convert_srgba_to_xyz,
 };
+use crate::crop_tool::CropTool;
 use crate::image_list::ImageList;
 use crate::image_window::CursorPixelInfo;
 use crate::image_window_geometry::WindowResizeAction;
 use crate::layout::LAYOUT_MENU_ENTRIES;
 use crate::modified_image::ModifiedImage;
+use crate::modifier_ui::{control_row as render_style_row, panel_header};
 use crate::render::{ColorPreview, WgpuImageCallback};
 use crate::shortcuts::{ShortcutViewport, collect_shortcuts};
 use crate::viewer::{AppAction, ImageEditorState};
@@ -98,6 +100,7 @@ pub struct ControlsWindow {
     image_widget_size: Arc<Mutex<Option<(u32, u32)>>>,
     action_queue: Arc<Mutex<Vec<AppAction>>>,
     annotation_tool: Arc<Mutex<AnnotationTool>>,
+    crop_tool: Arc<Mutex<CropTool>>,
     editor_state: Arc<Mutex<ImageEditorState>>,
     ui_state: Arc<Mutex<ControlsUiState>>,
     color_editor_state: Arc<Mutex<ColorEditorUiState>>,
@@ -117,6 +120,7 @@ impl ControlsWindow {
         image_widget_size: Arc<Mutex<Option<(u32, u32)>>>,
         action_queue: Arc<Mutex<Vec<AppAction>>>,
         annotation_tool: Arc<Mutex<AnnotationTool>>,
+        crop_tool: Arc<Mutex<CropTool>>,
         editor_state: Arc<Mutex<ImageEditorState>>,
     ) -> Self {
         Self {
@@ -126,6 +130,7 @@ impl ControlsWindow {
             image_widget_size,
             action_queue,
             annotation_tool,
+            crop_tool,
             editor_state,
             ui_state: Arc::new(Mutex::new(ControlsUiState::default())),
             color_editor_state: Arc::new(Mutex::new(ColorEditorUiState::default())),
@@ -238,6 +243,7 @@ impl ControlsWindow {
         let color_editor_state = self.color_editor_state.clone();
         let action_queue = self.action_queue.clone();
         let annotation_tool = self.annotation_tool.clone();
+        let crop_tool = self.crop_tool.clone();
         let editor_state = self.editor_state.clone();
         let close_requested = self.close_requested.clone();
         let mut builder = egui::ViewportBuilder::default()
@@ -362,6 +368,13 @@ impl ControlsWindow {
                         }
                     });
                     ui.menu_button("Tools", |ui| {
+                        if ui
+                            .add(egui::Button::new("Crop Image").shortcut_text("Shift+C"))
+                            .clicked()
+                        {
+                            push_root_action(ctx, &action_queue, AppAction::StartCrop);
+                            ui.close();
+                        }
                         if ui.add(egui::Button::new("Color Editor").shortcut_text("e")).clicked() {
                             push_root_action(ctx, &action_queue, AppAction::ShowColorEditor);
                             ui.close();
@@ -495,10 +508,19 @@ impl ControlsWindow {
                     ControlsTab::ImageList => {
                         render_image_list_tab(ui, ctx, &image_list, &cursor_info, &last_auto_scrolled_selected);
                     }
-                    ControlsTab::Modifiers => {
-                        render_annotation_tools_tab(ui, &image_list, &annotation_tool, &ui_state, &action_queue, ctx)
-                    }
+                    ControlsTab::Modifiers => render_annotation_tools_tab(
+                        ui,
+                        &image_list,
+                        &annotation_tool,
+                        &crop_tool,
+                        &ui_state,
+                        &action_queue,
+                        ctx,
+                    ),
                     ControlsTab::ColorEditor => {
+                        if let Ok(mut crop) = crop_tool.lock() {
+                            crop.cancel();
+                        }
                         render_color_editor_tab(ui, ctx, &image_list, &color_editor_state, &action_queue);
                     }
                 }
@@ -539,6 +561,7 @@ fn render_annotation_tools_tab(
     ui: &mut egui::Ui,
     image_list: &Arc<Mutex<ImageList>>,
     annotation_tool: &Arc<Mutex<AnnotationTool>>,
+    crop_tool: &Arc<Mutex<CropTool>>,
     ui_state: &Arc<Mutex<ControlsUiState>>,
     action_queue: &Arc<Mutex<Vec<AppAction>>>,
     ctx: &egui::Context,
@@ -549,6 +572,7 @@ fn render_annotation_tools_tab(
     };
     let mode = tool.mode();
 
+    let crop_active = crop_tool.lock().is_ok_and(|crop| crop.active());
     // Transform toolbar.
     ui.horizontal(|ui| {
         if ui
@@ -564,6 +588,21 @@ fn render_annotation_tools_tab(
             .clicked()
         {
             push_root_action(ctx, action_queue, AppAction::RotateRight);
+        }
+        if ui
+            .add(modifier_tool_button(ph::CROP).selected(crop_active))
+            .on_hover_text("Crop Image (Shift+C)")
+            .clicked()
+        {
+            push_root_action(
+                ctx,
+                action_queue,
+                if crop_active {
+                    AppAction::SetAnnotationMode(AnnotationMode::Select)
+                } else {
+                    AppAction::StartCrop
+                },
+            );
         }
         ui.separator();
         // Annotation toolbar — one button per implemented type.
@@ -619,6 +658,34 @@ fn render_annotation_tools_tab(
 
     ui.separator();
 
+    if crop_active {
+        if let Ok(mut state) = ui_state.lock() {
+            flush_annotation_style_edit(image_list, &mut state);
+        }
+        if let Ok(mut crop) = crop_tool.lock() {
+            if crop.controls(ui) {
+                ctx.request_repaint_of(egui::ViewportId::ROOT);
+            }
+            ui.add_space(ui.spacing().item_spacing.y);
+            ui.horizontal(|ui| {
+                let label = if crop.target_count() > 1 {
+                    format!("Apply Crop to {} Images", crop.target_count())
+                } else {
+                    "Apply Crop".to_owned()
+                };
+                if ui
+                    .add_enabled(crop.region().is_some() && !crop.is_dragging(), egui::Button::new(label))
+                    .clicked()
+                {
+                    push_root_action(ctx, action_queue, AppAction::ApplyCrop);
+                }
+                if ui.button("Cancel").clicked() {
+                    push_root_action(ctx, action_queue, AppAction::SetAnnotationMode(AnnotationMode::Select));
+                }
+            });
+        }
+        return;
+    }
     let mut ui_state = ui_state.lock().ok();
     let selected_id = tool.selected_id();
     let selected_element = selected_element_data(image_list, selected_id);
@@ -768,7 +835,7 @@ fn render_line_controls(
     } else {
         "New line style"
     };
-    ui.label(egui::RichText::new(header).color(ui.visuals().weak_text_color()));
+    panel_header(ui, header);
 
     render_stroke_controls(ui, "line_stroke_style_grid", &mut style.stroke, &mut output);
     egui::Grid::new("line_endpoint_style_grid")
@@ -800,7 +867,7 @@ fn render_box_annotation_controls(
     } else {
         format!("New {kind_label} style")
     };
-    ui.label(egui::RichText::new(header).color(ui.visuals().weak_text_color()));
+    panel_header(ui, header);
 
     render_stroke_controls(ui, "box_annotation_stroke_style_grid", stroke, &mut output);
     output
@@ -813,7 +880,7 @@ fn render_text_controls(ui: &mut egui::Ui, style: &mut TextStyle, selected: bool
     } else {
         "New text style"
     };
-    ui.label(egui::RichText::new(header).color(ui.visuals().weak_text_color()));
+    panel_header(ui, header);
 
     let text_response = ui.add(
         egui::TextEdit::multiline(&mut style.text)
@@ -895,13 +962,6 @@ fn color_row_controls(ui: &mut egui::Ui, width: f32, color: &mut egui::Color32, 
         output.changed = true;
         output.committed = true;
     }
-}
-
-fn render_style_row(ui: &mut egui::Ui, label: &'static str, add_control: impl FnOnce(&mut egui::Ui, f32)) {
-    ui.label(label);
-    let control_width = ui.available_width();
-    ui.horizontal(|ui| add_control(ui, control_width));
-    ui.end_row();
 }
 
 fn render_disabled_line_style_combo(ui: &mut egui::Ui, label: &'static str, value: &'static str) {
@@ -1645,6 +1705,7 @@ mod tests {
             Arc::new(Mutex::new(None)),
             Arc::new(Mutex::new(Vec::new())),
             Arc::new(Mutex::new(AnnotationTool::default())),
+            Arc::new(Mutex::new(CropTool::default())),
             Arc::new(Mutex::new(ImageEditorState::default())),
         )
     }

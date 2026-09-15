@@ -113,6 +113,28 @@ Instead, the callback renders a WGPU texture managed by `ImageItemData`.
 
 `minimap.rs` draws a thumbnail of the whole image with the visible region marked on it, whenever a `CellView` hides part of its image. It fades out shortly after the view stops moving, and reports whether it is still animating so the caller can keep frames coming.
 
+### `CropTool`
+
+`crop_tool.rs` owns a transient selection and draw/move/resize gestures. Crop and
+annotation input are mutually exclusive. Crop coordinates are normalized for
+multi-image preview, but the reference image's selection snaps to integer pixel
+edges. Each image resolves those edges independently, using exclusive right and
+bottom bounds and a minimum of one pixel. Square constraints are computed in
+reference-image pixels, including when clamping at an image boundary.
+
+The modifier panel and image overlays share the crop state. A crop holds the
+identity and display revision of its target images; changing targets or editing
+the images invalidates it. Pending annotation compositing is completed before
+starting a crop. Enter or Apply replaces base pixels and remaps annotation
+coordinates in one `ReplaceBaseImage` undo action per image. Annotation geometry
+outside the crop is retained and clipped when rendered, preserving partial
+shapes, text layout, and pixel stroke sizes. Crop overlays are never exported.
+
+The debug harness exposes `crop` state (active, dragging, pixel bounds and target
+count), and supports `shift_c` and `enter` key events. `text` and
+`pointer_button` actions target either viewport for testing numeric fields and
+sliders.
+
 ### `ControlsWindow`
 
 `ControlsWindow` is a secondary egui viewport.

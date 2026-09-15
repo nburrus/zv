@@ -183,6 +183,13 @@ impl AnnotationTool {
         }
     }
 
+    pub fn clear_selection(&mut self) {
+        self.finish_edit_drag();
+        self.cancel_current_action();
+        self.mode = AnnotationMode::Select;
+        self.selected_id = AnnotationId::default();
+    }
+
     pub fn cancel_current_action(&mut self) {
         self.create_drag = None;
         self.edit_drag = None;

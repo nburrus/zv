@@ -11,6 +11,7 @@ use crate::color_editor::{
     HueShiftParams, LevelsAdjustment, OneShotOperation, apply_hue_shift, apply_levels, apply_one_shot,
 };
 use crate::controls_window::ControlsWindow;
+use crate::crop_tool::CropTool;
 use crate::debug::{
     AnnotationBoxDebug, AnnotationDebugState, AnnotationLineDebug, SelectedImageDebug, ViewerDebugState,
 };
@@ -52,6 +53,8 @@ pub enum AppAction {
     SetLayout(LayoutConfig),
     AutoLayout,
     SetAnnotationMode(AnnotationMode),
+    StartCrop,
+    ApplyCrop,
     DeleteSelectedAnnotation,
     UndoImageEdit,
     DiscardImageEdits,
@@ -109,11 +112,12 @@ pub struct Viewer {
     cursor_info: Arc<Mutex<Option<CursorPixelInfo>>>,
     image_widget_size: Arc<Mutex<Option<(u32, u32)>>>,
     annotation_tool: Arc<Mutex<AnnotationTool>>,
+    crop_tool: Arc<Mutex<CropTool>>,
     editor_state: Arc<Mutex<ImageEditorState>>,
     image_window_geometry: ImageWindowGeometryState,
     current_monitor_work_area: Option<egui::Rect>,
     layout: LayoutConfig,
-    last_displayed_signature: Option<(ImageId, LayoutConfig)>,
+    last_displayed_signature: Option<(ImageId, LayoutConfig, [u32; 2])>,
     logged_first_image_load: bool,
     pending_confirmation: Option<PendingConfirmation>,
     allow_close: bool,
@@ -127,6 +131,7 @@ impl Viewer {
         let image_widget_size = Arc::new(Mutex::new(None));
         let controls_action_queue = Arc::new(Mutex::new(Vec::new()));
         let annotation_tool = Arc::new(Mutex::new(AnnotationTool::default()));
+        let crop_tool = Arc::new(Mutex::new(CropTool::default()));
         let editor_state = Arc::new(Mutex::new(ImageEditorState::default()));
         Self {
             image_window: ImageWindow::default(),
@@ -136,6 +141,7 @@ impl Viewer {
                 image_widget_size.clone(),
                 controls_action_queue.clone(),
                 annotation_tool.clone(),
+                crop_tool.clone(),
                 editor_state.clone(),
             ),
             image_list,
@@ -144,6 +150,7 @@ impl Viewer {
             cursor_info,
             image_widget_size,
             annotation_tool,
+            crop_tool,
             editor_state,
             image_window_geometry: ImageWindowGeometryState::default(),
             current_monitor_work_area: None,
@@ -204,6 +211,9 @@ impl Viewer {
             tracing::warn!("image list lock is poisoned");
             (None, Vec::new())
         };
+        if self.validate_crop_targets() {
+            ctx.request_repaint_of(self.controls_window.viewport_id());
+        }
         self.update_visible_annotations(render_state);
         if !self.logged_first_image_load {
             if let Some(timing) = image_load_timing {
@@ -238,6 +248,7 @@ impl Viewer {
                 selected_range,
                 self.cursor_info.clone(),
                 self.annotation_tool.clone(),
+                self.crop_tool.clone(),
             );
             if image_output.shared_state_changed && self.controls_window.is_enabled() {
                 ctx.request_repaint_of(self.controls_window.viewport_id());
@@ -273,6 +284,16 @@ impl Viewer {
             controls_target_position: self.controls_window.target_position(),
             cursor_info: self.cursor_info.lock().ok().and_then(|info| info.clone()),
             selected_image: selected_image_debug,
+            crop: self
+                .crop_tool
+                .lock()
+                .map(|crop| crate::debug::CropDebugState {
+                    active: crop.active(),
+                    dragging: crop.is_dragging(),
+                    target_count: crop.target_count(),
+                    pixels: crop.region().and_then(|region| region.pixels(crop.reference_size()?)),
+                })
+                .unwrap_or_default(),
             annotation: self.annotation_debug_state(),
         }
     }
@@ -434,7 +455,27 @@ impl Viewer {
             if self.pending_confirmation.is_some() {
                 continue;
             }
+            self.validate_crop_targets();
             match action {
+                AppAction::StartCrop => {
+                    let images = self.visible_modified_images();
+                    self.update_modified_images_annotations(&images, render_state);
+                    if let Ok(mut tool) = self.annotation_tool.lock() {
+                        tool.clear_selection();
+                    }
+                    if let Ok(mut crop) = self.crop_tool.lock() {
+                        crop.start(&images);
+                    }
+                }
+                AppAction::ApplyCrop => {
+                    let region = self.crop_tool.lock().ok().and_then(|mut crop| crop.take_region());
+                    if let Some(region) = region {
+                        self.apply_to_visible_images(|image| {
+                            image.crop(region);
+                        });
+                        self.image_window.view = Default::default();
+                    }
+                }
                 AppAction::NextImage => self.select_next_image(),
                 AppAction::PreviousImage => self.select_previous_image(),
                 AppAction::NextImagePage => self.select_image_page(true),
@@ -459,20 +500,26 @@ impl Viewer {
                     self.set_layout(best_layout_for_image_count(count, 128, 4.0 / 3.0));
                 }
                 AppAction::SetAnnotationMode(mode) => {
+                    self.cancel_crop();
                     if let Ok(mut tool) = self.annotation_tool.lock() {
                         tool.set_mode(mode);
                     }
                 }
                 AppAction::DeleteSelectedAnnotation => self.delete_selected_annotation(),
                 AppAction::UndoImageEdit => {
+                    if self.cancel_crop() {
+                        continue;
+                    }
                     self.apply_to_visible_images(|image| image.undo_last_change());
                     self.clear_missing_annotation_selection();
                 }
                 AppAction::DiscardImageEdits => {
+                    self.cancel_crop();
                     self.apply_to_visible_images(|image| image.discard_changes());
                     self.clear_missing_annotation_selection();
                 }
                 AppAction::SaveImageEdits => {
+                    self.cancel_crop();
                     let images = self.visible_pending_change_images();
                     self.update_pending_image_annotations(&images, render_state);
                     self.save_pending_images_with_dialog(images);
@@ -502,12 +549,15 @@ impl Viewer {
                     }
                 }
                 AppAction::RotateLeft => {
+                    self.cancel_crop();
                     self.apply_to_visible_images(|image| image.rotate_ccw());
                 }
                 AppAction::RotateRight => {
+                    self.cancel_crop();
                     self.apply_to_visible_images(|image| image.rotate_cw());
                 }
                 AppAction::ShowColorEditor => {
+                    self.cancel_crop();
                     self.controls_window.show_color_editor();
                 }
                 AppAction::ApplyColorLevels(params) => {
@@ -813,6 +863,23 @@ impl Viewer {
         self.pending_confirmation = None;
     }
 
+    fn validate_crop_targets(&self) -> bool {
+        let images = self.visible_modified_images();
+        self.crop_tool.lock().is_ok_and(|mut crop| {
+            let active = crop.active();
+            crop.validate_targets(&images);
+            active != crop.active()
+        })
+    }
+
+    fn cancel_crop(&self) -> bool {
+        self.crop_tool.lock().is_ok_and(|mut crop| {
+            let active = crop.active();
+            crop.cancel();
+            active
+        })
+    }
+
     fn visible_modified_images(&self) -> Vec<Arc<Mutex<ModifiedImage>>> {
         self.image_list
             .lock()
@@ -1031,9 +1098,10 @@ impl Viewer {
         let has_changes = images
             .iter()
             .any(|image| image.lock().is_ok_and(|image| image.has_pending_changes()));
-        let can_undo = images
-            .iter()
-            .any(|image| image.lock().is_ok_and(|image| image.can_undo()));
+        let can_undo = self.crop_tool.lock().is_ok_and(|crop| crop.active())
+            || images
+                .iter()
+                .any(|image| image.lock().is_ok_and(|image| image.can_undo()));
         let has_selection = self
             .annotation_tool
             .lock()
@@ -1056,6 +1124,7 @@ impl Viewer {
             return;
         };
         let final_data = data.final_data();
+        let signature = (image_id, layout, [final_data.width(), final_data.height()]);
         let image_size = layout_widget_size(
             egui::vec2(final_data.width() as f32, final_data.height() as f32),
             layout,
@@ -1086,12 +1155,12 @@ impl Viewer {
             .prepare_initial_geometry(image_size, viewport, 0)
         {
             send_resize_command(ctx, command);
-            self.last_displayed_signature = Some((image_id, layout));
+            self.last_displayed_signature = Some(signature);
             return;
         }
 
-        if self.last_displayed_signature != Some((image_id, layout)) {
-            self.last_displayed_signature = Some((image_id, layout));
+        if self.last_displayed_signature != Some(signature) {
+            self.last_displayed_signature = Some(signature);
             if let Some(command) = self.image_window_geometry.on_image_changed(image_size, viewport) {
                 send_resize_command(ctx, command);
             }
@@ -1273,6 +1342,17 @@ mod tests {
             layout_widget_size(egui::vec2(320.0, 240.0), LayoutConfig { rows: 2, cols: 3 }, 1.0),
             egui::vec2(962.0, 481.0)
         );
+    }
+
+    #[test]
+    fn starting_crop_does_not_open_the_controls_window() {
+        let mut viewer = Viewer::new(Vec::new());
+        assert!(!viewer.controls_window.is_enabled());
+
+        viewer.queue_action(AppAction::StartCrop);
+        viewer.apply_pending_actions(&egui::Context::default(), None);
+
+        assert!(!viewer.controls_window.is_enabled());
     }
 
     #[test]

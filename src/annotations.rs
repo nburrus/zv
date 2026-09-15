@@ -513,7 +513,12 @@ pub struct WidgetToTextureTransform {
 
 impl WidgetToTextureTransform {
     pub fn widget_to_texture(&self, pos: egui::Pos2) -> egui::Vec2 {
-        let widget_pos = (pos + egui::vec2(0.5, 0.5)) - self.widget_rect.min;
+        self.widget_to_texture_edge(pos + egui::vec2(0.5, 0.5))
+    }
+
+    /// Exact inverse of texture_to_widget, for geometry snapped to pixel edges.
+    pub fn widget_to_texture_edge(&self, pos: egui::Pos2) -> egui::Vec2 {
+        let widget_pos = pos - self.widget_rect.min;
         let uv_window = widget_pos / self.widget_rect.size();
         self.uv_min + uv_window * (self.uv_max - self.uv_min)
     }

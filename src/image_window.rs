@@ -7,6 +7,7 @@ use eframe::egui_wgpu;
 use crate::annotation_tool::AnnotationTool;
 use crate::annotations::WidgetToTextureTransform;
 use crate::color_image::PixelSRGBA;
+use crate::crop_tool::CropTool;
 use crate::image_list::SelectedImageView;
 use crate::image_view::{CellView, ImageView};
 use crate::layout::LayoutConfig;
@@ -72,6 +73,7 @@ impl ImageWindow {
         images: Vec<Option<SelectedImageView>>,
         cursor_info: Arc<Mutex<Option<CursorPixelInfo>>>,
         annotation_tool: Arc<Mutex<AnnotationTool>>,
+        crop_tool: Arc<Mutex<CropTool>>,
     ) -> ImageWindowOutput {
         let mut output = ImageWindowOutput {
             image_rect: None,
@@ -141,33 +143,38 @@ impl ImageWindow {
                     );
                     ui.painter().add(callback);
 
-                    if let Ok(mut tool) = annotation_tool.lock() {
-                        let image_size = image_sizes
-                            .get(index)
-                            .copied()
-                            .flatten()
-                            .map(|size| [size.x as u32, size.y as u32])
-                            .unwrap_or([1, 1]);
+                    let image_size = image_sizes[index]
+                        .map(|size| [size.x as u32, size.y as u32])
+                        .unwrap_or([1, 1]);
+                    let transform = WidgetToTextureTransform {
+                        widget_rect: view.paint_rect,
+                        uv_min: view.uv_min,
+                        uv_max: view.uv_max,
+                        image_size,
+                    };
+                    let crop_active = crop_tool.lock().is_ok_and(|mut crop| {
+                        if !crop.active() {
+                            return false;
+                        }
+                        output.shared_state_changed |=
+                            crop.render(ui, &response, transform, first_valid_index == Some(index));
+                        true
+                    });
+                    let mut tool_busy = crop_active;
+                    if !crop_active && let Ok(mut tool) = annotation_tool.lock() {
                         let annotation_output = tool.render_for_image(
                             ui,
                             &response,
                             image_data,
-                            WidgetToTextureTransform {
-                                widget_rect: view.paint_rect,
-                                uv_min: view.uv_min,
-                                uv_max: view.uv_max,
-                                image_size,
-                            },
+                            transform,
                             first_valid_index == Some(index),
                             &visible_images,
                         );
                         output.shared_state_changed |= annotation_output.selection_changed;
+                        tool_busy = tool.is_creating() || tool.is_editing();
                     }
 
-                    // Unlike annotation editing, scrolling is a view gesture:
-                    // every cell shares one view, so it is driven by whichever
-                    // cell the pointer is over. The guards are inside.
-                    self.handle_pan_input(ui, &response, &annotation_tool, view);
+                    self.handle_pan_input(ui, &response, tool_busy, view);
 
                     let Some(pointer_pos) = response.hover_pos() else {
                         continue;
@@ -201,6 +208,7 @@ impl ImageWindow {
                     });
                 }
 
+                let crop_region = crop_tool.lock().ok().and_then(|crop| crop.region());
                 if let Some(hovered) = hovered {
                     if let Ok(mut info) = cursor_info.lock() {
                         let new_info = CursorPixelInfo {
@@ -217,11 +225,39 @@ impl ImageWindow {
                         *info = Some(new_info);
                     }
                     paint_synced_cursor(ui, &images, &cell_views, hovered.slot_index, hovered.sample.uv);
-                    if !self.status_bar_hidden {
+                    if !self.status_bar_hidden && crop_region.is_none() {
                         paint_synced_status_bars(ui, &images, &cell_rects, &hovered);
                     }
                 } else if let Ok(mut info) = cursor_info.lock() {
                     output.shared_state_changed |= info.take().is_some();
+                }
+
+                if !self.status_bar_hidden
+                    && let Some(region) = crop_region
+                {
+                    for (index, image) in images.iter().enumerate() {
+                        let Some(image) = image else {
+                            continue;
+                        };
+                        let Some(size) = image_sizes[index] else {
+                            continue;
+                        };
+                        let Some(crop) = region.pixels([size.x as u32, size.y as u32]) else {
+                            continue;
+                        };
+                        let rect = cell_rects[index];
+                        let pointer = ui.input(|input| input.pointer.interact_pos()).unwrap_or(rect.min);
+                        paint_status_text(
+                            ui,
+                            rect,
+                            pointer,
+                            image.name.clone(),
+                            format!(
+                                "Crop: {} × {} px   X: {}  Y: {}",
+                                crop.width, crop.height, crop.x, crop.y
+                            ),
+                        );
+                    }
                 }
 
                 // Painted after every cell so it sits on top, and on each of
@@ -250,26 +286,17 @@ impl ImageWindow {
         output
     }
 
-    fn handle_pan_input(
-        &mut self,
-        ui: &egui::Ui,
-        response: &egui::Response,
-        annotation_tool: &Arc<Mutex<AnnotationTool>>,
-        view: CellView,
-    ) {
+    fn handle_pan_input(&mut self, ui: &egui::Ui, response: &egui::Response, tool_busy: bool, view: CellView) {
         let scroll_delta = ui.input(|input| input.smooth_scroll_delta);
         if scroll_delta != egui::Vec2::ZERO && response.hovered() {
             self.view.scroll_by(scroll_delta, view);
         }
 
         // The middle button is always a pan. The primary button is only a pan
-        // when the annotation tool did not take the drag for itself, which it
+        // when the active tool did not take the drag for itself, which it
         // already decided while handling this frame's input.
-        let annotation_busy = annotation_tool
-            .lock()
-            .is_ok_and(|tool| tool.is_creating() || tool.is_editing());
         let dragged_to_pan = response.dragged_by(egui::PointerButton::Middle)
-            || (!annotation_busy && response.dragged_by(egui::PointerButton::Primary));
+            || (!tool_busy && response.dragged_by(egui::PointerButton::Primary));
         if dragged_to_pan {
             self.view.scroll_by(response.drag_delta(), view);
         }
@@ -492,10 +519,6 @@ fn paint_synced_status_bars(
 }
 
 fn paint_status_bar(ui: &egui::Ui, image_rect: egui::Rect, status: &StatusBarInfo<'_>) {
-    let painter = ui.painter();
-    let font_id = egui::TextStyle::Monospace.resolve(ui.style());
-    let font_size = font_id.size;
-
     let hsv = PixelSRGBA::from_array(status.rgba).to_hsv().display_hsv();
     let line1 = status.image_name.to_owned();
     let line2 = format!(
@@ -503,6 +526,13 @@ fn paint_status_bar(ui: &egui::Ui, image_rect: egui::Rect, status: &StatusBarInf
         status.x, status.y, status.rgba[0], status.rgba[1], status.rgba[2], status.rgba[3], hsv.0, hsv.1, hsv.2,
     );
 
+    paint_status_text(ui, image_rect, status.pointer_pos, line1, line2);
+}
+
+fn paint_status_text(ui: &egui::Ui, image_rect: egui::Rect, pointer_pos: egui::Pos2, line1: String, line2: String) {
+    let painter = ui.painter();
+    let font_id = egui::TextStyle::Monospace.resolve(ui.style());
+    let font_size = font_id.size;
     let line1_galley = painter.layout_no_wrap(line1, font_id.clone(), egui::Color32::WHITE);
     let line2_galley = painter.layout_no_wrap(line2, font_id, egui::Color32::WHITE);
     let line1_height = line1_galley.size().y;
@@ -512,7 +542,7 @@ fn paint_status_bar(ui: &egui::Ui, image_rect: egui::Rect, status: &StatusBarInf
     let top_bar_height = (font_size * 2.2).max(text_height + font_size * 0.35);
     let bottom_bar_height = (font_size * 2.55).max(text_height + font_size * 0.55);
 
-    let mouse_y_in_widget = status.pointer_pos.y - image_rect.top();
+    let mouse_y_in_widget = pointer_pos.y - image_rect.top();
     let show_on_bottom = (image_rect.height() - mouse_y_in_widget) > top_bar_height;
     let bar_height = if show_on_bottom {
         bottom_bar_height

@@ -23,6 +23,15 @@ pub struct ViewerDebugState {
     pub cursor_info: Option<crate::image_window::CursorPixelInfo>,
     pub selected_image: Option<SelectedImageDebug>,
     pub annotation: AnnotationDebugState,
+    pub crop: CropDebugState,
+}
+
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct CropDebugState {
+    pub active: bool,
+    pub dragging: bool,
+    pub pixels: Option<crate::crop_tool::PixelCrop>,
+    pub target_count: usize,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -138,6 +147,15 @@ enum DebugAction {
         viewport: DebugViewport,
         key: DebugKey,
     },
+    PointerButton {
+        viewport: DebugViewport,
+        at: [f32; 2],
+        pressed: bool,
+    },
+    Text {
+        viewport: DebugViewport,
+        text: String,
+    },
     /// Resizes the image window without preserving the image aspect ratio,
     /// which is how scripts reach the shapes a user gets by dragging a corner.
     ResizeWindow {
@@ -180,6 +198,8 @@ enum DebugKey {
     S,
     ArrowDown,
     ArrowUp,
+    ShiftC,
+    Enter,
     ShiftL,
     ShiftA,
     ShiftR,
@@ -216,6 +236,7 @@ struct StateSnapshot<'a> {
     image_window: ImageWindowSnapshot,
     controls_window: ControlsWindowSnapshot,
     annotation: &'a AnnotationDebugState,
+    crop: &'a CropDebugState,
     cursor: Option<CursorSnapshot<'a>>,
 }
 
@@ -431,6 +452,25 @@ impl RuntimeDebug {
                 self.advance_action();
                 false
             }
+            DebugAction::PointerButton { viewport, at, pressed } => {
+                let viewport_id = resolve_viewport(viewport, state);
+                self.queue_pointer_button(
+                    viewport_id,
+                    egui::pos2(at[0], at[1]),
+                    egui::PointerButton::Primary,
+                    pressed,
+                );
+                request_repaint_after_scripted_input(ctx, state, viewport_id);
+                self.advance_action();
+                false
+            }
+            DebugAction::Text { viewport, text } => {
+                let viewport_id = resolve_viewport(viewport, state);
+                self.queue_events(viewport_id, [egui::Event::Text(text)]);
+                request_repaint_after_scripted_input(ctx, state, viewport_id);
+                self.advance_action();
+                false
+            }
             DebugAction::Key { viewport, key } => {
                 let viewport_id = resolve_viewport(viewport, state);
                 self.queue_key(viewport_id, key);
@@ -603,6 +643,8 @@ impl RuntimeDebug {
             DebugKey::S => (egui::Key::S, egui::Modifiers::NONE),
             DebugKey::ArrowDown => (egui::Key::ArrowDown, egui::Modifiers::NONE),
             DebugKey::ArrowUp => (egui::Key::ArrowUp, egui::Modifiers::NONE),
+            DebugKey::ShiftC => (egui::Key::C, egui::Modifiers::SHIFT),
+            DebugKey::Enter => (egui::Key::Enter, egui::Modifiers::NONE),
             DebugKey::ShiftL => (
                 egui::Key::L,
                 egui::Modifiers {
@@ -746,6 +788,7 @@ impl RuntimeDebug {
                 target_position: state.controls_target_position.map(PosSnapshot::from),
             },
             annotation: &state.annotation,
+            crop: &state.crop,
             cursor: state.cursor_info.as_ref().map(|cursor| CursorSnapshot {
                 image: cursor.image_name.as_str(),
                 x: cursor.x,
