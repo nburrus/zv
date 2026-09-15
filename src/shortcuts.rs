@@ -141,6 +141,12 @@ fn push_annotation_shortcuts(
     if !scope_allows(ShortcutScope::GlobalWhenNotTyping, viewport, typing_text) {
         return;
     }
+    if input.key_pressed(egui::Key::C) && input.modifiers == egui::Modifiers::SHIFT {
+        out_actions.push(AppAction::StartCrop);
+    }
+    if input.key_pressed(egui::Key::Enter) && input.modifiers == egui::Modifiers::NONE {
+        out_actions.push(AppAction::ApplyCrop);
+    }
     if input.key_pressed(egui::Key::L) && input.modifiers.shift {
         out_actions.push(AppAction::SetAnnotationMode(AnnotationMode::AddLine));
     }

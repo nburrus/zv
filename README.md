@@ -89,6 +89,7 @@ rm -f ~/.local/bin/zv
 - WGPU rendering with nearest magnification, linear minification, and mipmapped downsampling.
 - Image filtering, reordering, close/delete actions, and clipboard import/export.
 - Line, arrow, rectangle, ellipse, and text annotations with selection, editing, undo, save, and discard.
+- Draw-and-adjust cropping with exact pixel controls, editable annotations, and undo.
 - Color editing including levels, hue adjustment, grayscale, inversion, channel swaps, histogram equalization, and label colorization.
 - Built-in `zv --server` and `zv --client` modes for remote image inspection.
 
@@ -125,6 +126,8 @@ On macOS, shortcuts shown with `Ctrl` use `Cmd` instead.
 | `Ctrl+Z` / `Cmd+Z` | Undo |
 | `Ctrl+N` / `Cmd+N` | Create a new image from the clipboard |
 | `Ctrl+C` / `Cmd+C` | Copy the current image to the clipboard |
+| `Shift+C` | Draw a crop; adjust it with handles or pixel controls in Modifiers |
+| `Enter` | Apply the pending crop |
 | `Shift+T` | Add text annotation |
 | `Shift+L` | Add line annotation |
 | `Shift+R` | Add rectangle annotation |
@@ -133,6 +136,18 @@ On macOS, shortcuts shown with `Ctrl` use `Cmd` instead.
 | `Esc` | Cancel the current tool or annotation placement mode |
 | `Delete` | Delete the selected annotation |
 | `Shift+Delete` | Delete the selected image from disk (after confirmation) |
+
+To crop, press `Shift+C`, then drag on the first visible image. Release to adjust:
+drag inside to move, drag a corner or edge handle to resize, or drag outside to
+redraw. Hold `Shift` while drawing or dragging a corner for a square. The Modifiers
+panel has X/Y and width/height sliders with editable numeric values; the status
+bar shows the crop dimensions. `Enter` applies, `Esc` cancels, and `Ctrl+Z` / `Cmd+Z`
+cancels a pending crop or undoes a committed one. Middle-button pan, scrolling,
+and Ctrl/Cmd-click zoom remain available.
+
+In a comparison layout, the same relative region is cropped on all visible
+images; numeric values and the square constraint refer to the first image.
+Cropping preserves editable annotations and their pixel sizes. Saving is separate.
 
 ## Remote usage with zv --client and --server
 

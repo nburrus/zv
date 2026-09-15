@@ -1,12 +1,13 @@
 use std::path::{Path, PathBuf};
 
-use eframe::egui_wgpu::wgpu;
+use eframe::{egui, egui_wgpu::wgpu};
 
 use crate::annotations::{
     AnnotationDocument, AnnotationElement, AnnotationId, AnnotationRenderer, BoundingBox, LineEndpointStyle,
     StrokeStyle, TextStyle, resize_text_bounds_to_content,
 };
 use crate::color_image::ImageSRGBA;
+use crate::crop_tool::CropRegion;
 use crate::image_io::write_rgba_image;
 use crate::image_item_data::ImageItemData;
 
@@ -32,6 +33,7 @@ pub enum ImageUndoAction {
     ReplaceBaseImage {
         cpu_data: ImageSRGBA,
         annotations: AnnotationDocument,
+        base_dirty: bool,
     },
 }
 
@@ -204,11 +206,12 @@ impl ModifiedImage {
                     self.mark_annotations_dirty();
                 }
             }
-            ImageUndoAction::ReplaceBaseImage { cpu_data, annotations } => {
-                self.base_dirty = self
-                    .saved_data
-                    .as_ref()
-                    .is_some_and(|saved_data| !image_pixels_equal(&cpu_data, saved_data));
+            ImageUndoAction::ReplaceBaseImage {
+                cpu_data,
+                annotations,
+                base_dirty,
+            } => {
+                self.base_dirty = base_dirty;
                 if !self.base_dirty {
                     self.saved_data = None;
                 }
@@ -219,6 +222,50 @@ impl ModifiedImage {
                 self.bump_display_revision();
             }
         }
+    }
+
+    pub fn crop(&mut self, region: CropRegion) -> bool {
+        let size = self.image_size();
+        let Some(crop) = region.pixels(size) else {
+            return false;
+        };
+        if crop.x == 0 && crop.y == 0 && [crop.width, crop.height] == size {
+            return false;
+        }
+        let mut replacement = ImageSRGBA::new(crop.width, crop.height);
+        for y in 0..crop.height {
+            let source = self
+                .original_data
+                .cpu_data()
+                .row(crop.y + y)
+                .expect("crop row in bounds");
+            replacement
+                .row_mut(y)
+                .expect("valid row")
+                .copy_from_slice(&source[crop.x as usize..(crop.x + crop.width) as usize]);
+        }
+        let mut annotations = self.annotations.clone();
+        let original_size = egui::vec2(size[0] as f32, size[1] as f32);
+        let origin = egui::vec2(crop.x as f32, crop.y as f32);
+        let cropped_size = egui::vec2(crop.width as f32, crop.height as f32);
+        let remap = |point: egui::Vec2| (point * original_size - origin) / cropped_size;
+        for element in annotations.elements_mut() {
+            match element {
+                AnnotationElement::Line { segment, .. } => {
+                    segment.p1 = remap(segment.p1);
+                    segment.p2 = remap(segment.p2);
+                }
+                AnnotationElement::Rectangle { bounds, .. }
+                | AnnotationElement::Ellipse { bounds, .. }
+                | AnnotationElement::Text { bounds, .. } => {
+                    bounds.min = remap(bounds.min);
+                    bounds.max = remap(bounds.max);
+                }
+            }
+        }
+        // Preserve off-image geometry and pixel styles; the compositor clips it.
+        self.replace_base_image(replacement, annotations);
+        true
     }
 
     pub fn rotate_cw(&mut self) {
@@ -249,6 +296,7 @@ impl ModifiedImage {
         self.ensure_saved_data_snapshot();
         let snapshot_cpu = self.original_data.cpu_data().clone();
         let snapshot_annotations = self.annotations.clone();
+        let snapshot_base_dirty = self.base_dirty;
         self.original_data = ImageItemData::new(replacement);
         self.annotations = replacement_annotations;
         self.annotated_data = None;
@@ -257,6 +305,7 @@ impl ModifiedImage {
         self.actions.push(ImageUndoAction::ReplaceBaseImage {
             cpu_data: snapshot_cpu,
             annotations: snapshot_annotations,
+            base_dirty: snapshot_base_dirty,
         });
         self.bump_display_revision();
     }
@@ -609,6 +658,150 @@ mod tests {
 
         assert!(output.is_file());
         assert!(!modified.has_pending_changes());
+        let _ = std::fs::remove_file(output);
+    }
+
+    #[test]
+    fn crop_preserves_exact_pixels_and_annotation_pixel_geometry_and_undo_restores_both() {
+        let mut source = ImageSRGBA::new(8, 6);
+        for y in 0..6 {
+            for (x, pixel) in source.row_mut(y).unwrap().iter_mut().enumerate() {
+                *pixel = PixelSRGBA {
+                    r: x as u8,
+                    g: y as u8,
+                    b: 47,
+                    a: 128,
+                };
+            }
+        }
+        let mut modified = ModifiedImage::new(ImageItemData::new(source), None);
+        let id = AnnotationId::next();
+        let text_id = AnnotationId::next();
+        let segment = LineSegment {
+            p1: egui::vec2(0.0, 0.0),
+            p2: egui::vec2(0.75, 1.0),
+        };
+        let style = LineStyle::default();
+        modified.add_element(AnnotationElement::Line { id, segment, style });
+        let text_bounds = BoundingBox {
+            min: egui::vec2(0.25, 0.0),
+            max: egui::vec2(1.0, 0.5),
+        };
+        let text_style = TextStyle::default();
+        modified.add_element(AnnotationElement::Text {
+            id: text_id,
+            bounds: text_bounds,
+            style: text_style.clone(),
+        });
+        let before_actions = modified.actions.len();
+        let crop = crate::crop_tool::PixelCrop {
+            x: 2,
+            y: 1,
+            width: 6,
+            height: 5,
+        };
+        assert!(modified.crop(crop.region([8, 6])));
+        assert_eq!(modified.image_size(), [6, 5]);
+        for y in 0..5 {
+            for x in 0..6 {
+                assert_eq!(
+                    modified
+                        .pre_annotation_data()
+                        .cpu_data()
+                        .pixel(x, y)
+                        .unwrap()
+                        .as_array(),
+                    [x as u8 + 2, y as u8 + 1, 47, 128]
+                );
+            }
+        }
+        let AnnotationElement::Line {
+            segment: after,
+            style: after_style,
+            ..
+        } = modified.annotations.find_by_id(id).unwrap()
+        else {
+            panic!("line missing");
+        };
+        assert_eq!(after.p1 * egui::vec2(6.0, 5.0), egui::vec2(-2.0, -1.0));
+        assert_eq!(after.p2 * egui::vec2(6.0, 5.0), egui::vec2(4.0, 5.0));
+        assert_eq!(*after_style, style);
+        let AnnotationElement::Text {
+            bounds,
+            style: after_style,
+            ..
+        } = modified.annotations.find_by_id(text_id).unwrap()
+        else {
+            panic!("text missing");
+        };
+        assert_eq!(bounds.min * egui::vec2(6.0, 5.0), egui::vec2(0.0, -1.0));
+        assert_eq!(bounds.max * egui::vec2(6.0, 5.0), egui::vec2(6.0, 2.0));
+        assert_eq!(*after_style, text_style);
+        assert_eq!(modified.actions.len(), before_actions + 1);
+        modified.undo_last_change();
+        assert_eq!(modified.image_size(), [8, 6]);
+        let AnnotationElement::Line { segment: restored, .. } = modified.annotations.find_by_id(id).unwrap() else {
+            panic!("line missing");
+        };
+        assert_eq!(*restored, segment);
+        assert_eq!(modified.actions.len(), before_actions);
+        assert!(!modified.base_dirty);
+    }
+
+    #[test]
+    fn undoing_crop_of_a_pasted_image_keeps_it_unsaved() {
+        let mut modified = ModifiedImage::new_unsaved(image());
+        let corner = crate::crop_tool::PixelCrop {
+            x: 1,
+            y: 1,
+            width: 1,
+            height: 1,
+        }
+        .region([2, 2]);
+        modified.crop(corner);
+        modified.undo_last_change();
+        assert_eq!(modified.image_size(), [2, 2]);
+        assert!(modified.has_pending_changes());
+        assert!(modified.source_path().is_none());
+        let path = temp_png_path("crop-undo-unsaved");
+        modified.save_changes(Some(&path)).unwrap();
+        assert!(path.exists());
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn crop_noop_single_pixel_and_save_discard_boundaries() {
+        let full = CropRegion {
+            min: egui::Vec2::ZERO,
+            max: egui::Vec2::splat(1.0),
+        };
+        let mut modified = ModifiedImage::new(image(), None);
+        assert!(!modified.crop(full));
+        assert!(!modified.can_undo());
+        let corner = crate::crop_tool::PixelCrop {
+            x: 1,
+            y: 1,
+            width: 1,
+            height: 1,
+        }
+        .region([2, 2]);
+        modified.crop(corner);
+        assert_eq!(modified.image_size(), [1, 1]);
+        assert!(!modified.crop(full));
+        modified.discard_changes();
+        assert_eq!(modified.image_size(), [2, 2]);
+        assert!(!modified.has_pending_changes());
+        modified.crop(corner);
+        let output = temp_png_path("crop-save");
+        modified.save_changes(Some(&output)).unwrap();
+        assert_eq!(
+            [
+                load_rgba_image(&output).unwrap().width(),
+                load_rgba_image(&output).unwrap().height()
+            ],
+            [1, 1]
+        );
+        assert!(!modified.has_pending_changes() && !modified.can_undo());
         let _ = std::fs::remove_file(output);
     }
 
