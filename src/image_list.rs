@@ -488,6 +488,14 @@ impl ImageList {
         self.cache.get_cached(id)
     }
 
+    pub fn selected_pending_change_images(&self) -> Vec<PendingImageChange> {
+        self.selected_indices()
+            .into_iter()
+            .flatten()
+            .filter_map(|index| self.pending_change_image_at(index))
+            .collect()
+    }
+
     pub fn pending_change_images(&self) -> Vec<PendingImageChange> {
         self.items
             .iter()
@@ -1257,6 +1265,44 @@ mod tests {
 
         assert!(images.items[0].error.as_deref().unwrap().contains("worker stopped"));
         assert!(!images.pending_preloads.contains_key(&id));
+    }
+
+    #[test]
+    fn saving_filtered_selection_updates_each_selected_source_and_clears_changes() {
+        let mut images = list(&["hidden.png", "selected-a.png", "other.png", "selected-b.png"]);
+        for item in &images.items {
+            let data = cached_test_image();
+            data.lock().unwrap().rotate_cw();
+            images.cache.put(item.id, data);
+        }
+        images.set_filter("selected".to_owned());
+        images.set_selection_count(3);
+        let pending = images.selected_pending_change_images();
+        assert_eq!(pending.iter().map(|image| image.index).collect::<Vec<_>>(), [1, 3]);
+
+        let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tmp/save-selection-tests");
+        fs::create_dir_all(&dir).unwrap();
+        for image in pending {
+            let path = dir.join(format!("saved-{}-{}.png", std::process::id(), image.index));
+            image.data.lock().unwrap().save_changes(Some(&path)).unwrap();
+            images.set_source_path_at(image.index, path.clone());
+            assert_eq!(images.source_path_at(image.index), Some(path.as_path()));
+            assert_eq!(image.data.lock().unwrap().source_path(), Some(path.as_path()));
+            assert!(images.items[image.index].pretty_name.contains("saved-"));
+            assert!(images.pending_change_image_at(image.index).is_none());
+            assert!(::image::open(&path).is_ok());
+            fs::remove_file(path).unwrap();
+        }
+        assert_eq!(images.source_path_at(0), Some(Path::new("hidden.png")));
+        assert_eq!(images.source_path_at(2), Some(Path::new("other.png")));
+        assert_eq!(
+            images
+                .pending_change_images()
+                .iter()
+                .map(|image| image.index)
+                .collect::<Vec<_>>(),
+            [0, 2]
+        );
     }
 
     #[test]

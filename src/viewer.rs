@@ -846,18 +846,7 @@ impl Viewer {
         self.image_list
             .lock()
             .ok()
-            .map(|image_list| {
-                image_list
-                    .selected_range_views()
-                    .into_iter()
-                    .flatten()
-                    .filter_map(|image| {
-                        let data = image.data?;
-                        let has_changes = data.lock().ok().is_some_and(|data| data.has_pending_changes());
-                        has_changes.then(|| pending_image_change(0, image.name, data))
-                    })
-                    .collect()
-            })
+            .map(|image_list| image_list.selected_pending_change_images())
             .unwrap_or_default()
     }
 
@@ -1230,10 +1219,6 @@ fn ensure_viewport_can_fit_confirmation(ctx: &egui::Context) {
         current_size.x.max(CONFIRMATION_MIN_INNER_SIZE.x),
         current_size.y.max(CONFIRMATION_MIN_INNER_SIZE.y),
     )));
-}
-
-fn pending_image_change(index: usize, name: String, data: Arc<Mutex<ModifiedImage>>) -> PendingImageChange {
-    PendingImageChange { index, name, data }
 }
 
 fn choose_save_path(image_name: &str, suggested_path: Option<&Path>) -> Option<PathBuf> {

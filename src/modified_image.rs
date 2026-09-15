@@ -568,6 +568,38 @@ mod tests {
     }
 
     #[test]
+    fn failed_save_preserves_source_and_unsaved_edits() {
+        let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tmp/save-failure-tests/output.png");
+        std::fs::create_dir_all(&dir).unwrap();
+        let source = PathBuf::from("original.png");
+        let mut modified = ModifiedImage::new(image(), Some(source.clone()));
+        modified.rotate_cw();
+        let pixels = modified.final_data().cpu_data().to_tightly_packed_bytes();
+        // A directory cannot be used as the output file.
+        assert!(modified.save_changes(Some(&dir)).is_err());
+        assert_eq!(modified.source_path(), Some(source.as_path()));
+        assert!(modified.has_pending_changes());
+        assert!(modified.can_undo());
+        assert_eq!(modified.final_data().cpu_data().to_tightly_packed_bytes(), pixels);
+    }
+
+    #[test]
+    fn saving_jpeg_adopts_output_path_and_clears_pending_changes() {
+        let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tmp/save-jpeg-tests");
+        std::fs::create_dir_all(&dir).unwrap();
+        let output = dir.join(format!("saved-{}.jpg", std::process::id()));
+        let mut modified = ModifiedImage::new(image(), Some(PathBuf::from("original.png")));
+        modified.rotate_cw();
+        modified.save_changes(Some(&output)).unwrap();
+        assert_eq!(modified.source_path(), Some(output.as_path()));
+        assert!(!modified.has_pending_changes());
+        assert!(!modified.can_undo());
+        let decoded = ::image::open(&output).unwrap();
+        assert_eq!([decoded.width(), decoded.height()], modified.image_size());
+        std::fs::remove_file(output).unwrap();
+    }
+
+    #[test]
     fn unsaved_image_requires_save_and_can_be_written() {
         let output = std::env::temp_dir().join(format!("zv-unsaved-image-{}.png", std::process::id()));
         let mut modified = ModifiedImage::new_unsaved(image());

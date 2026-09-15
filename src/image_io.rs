@@ -238,7 +238,11 @@ fn has_jpeg_extension(path: &Path) -> bool {
 
 pub fn write_rgba_image(path: &Path, image: &ImageSRGBA) -> anyhow::Result<()> {
     let tight = image.to_tightly_packed_bytes();
-    ::image::save_buffer(path, &tight, image.width(), image.height(), ::image::ColorType::Rgba8)
+    let rgba = ::image::RgbaImage::from_raw(image.width(), image.height(), tight)
+        .ok_or_else(|| anyhow::anyhow!("invalid RGBA image dimensions"))?;
+    // DynamicImage adapts the pixels to the encoder (e.g. RGBA to RGB for JPEG).
+    ::image::DynamicImage::ImageRgba8(rgba)
+        .save(path)
         .with_context(|| format!("failed to write image '{}'", path.display()))
 }
 
