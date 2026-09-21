@@ -253,6 +253,9 @@ impl Viewer {
             if image_output.shared_state_changed && self.controls_window.is_enabled() {
                 ctx.request_repaint_of(self.controls_window.viewport_id());
             }
+            if image_output.annotation_selected {
+                self.controls_window.select_modifiers();
+            }
             if image_output.secondary_clicked {
                 self.controls_window.toggle();
             }
@@ -466,6 +469,7 @@ impl Viewer {
                     if let Ok(mut crop) = self.crop_tool.lock() {
                         crop.start(&images);
                     }
+                    self.controls_window.select_modifiers();
                 }
                 AppAction::ApplyCrop => {
                     let region = self.crop_tool.lock().ok().and_then(|mut crop| crop.take_region());
@@ -503,6 +507,9 @@ impl Viewer {
                     self.cancel_crop();
                     if let Ok(mut tool) = self.annotation_tool.lock() {
                         tool.set_mode(mode);
+                    }
+                    if mode != AnnotationMode::Select {
+                        self.controls_window.select_modifiers();
                     }
                 }
                 AppAction::DeleteSelectedAnnotation => self.delete_selected_annotation(),
@@ -551,10 +558,12 @@ impl Viewer {
                 AppAction::RotateLeft => {
                     self.cancel_crop();
                     self.apply_to_visible_images(|image| image.rotate_ccw());
+                    self.controls_window.select_modifiers();
                 }
                 AppAction::RotateRight => {
                     self.cancel_crop();
                     self.apply_to_visible_images(|image| image.rotate_cw());
+                    self.controls_window.select_modifiers();
                 }
                 AppAction::ShowColorEditor => {
                     self.cancel_crop();
@@ -1345,11 +1354,20 @@ mod tests {
     }
 
     #[test]
-    fn starting_crop_does_not_open_the_controls_window() {
+    fn starting_crop_keeps_the_controls_window_closed() {
         let mut viewer = Viewer::new(Vec::new());
         assert!(!viewer.controls_window.is_enabled());
 
         viewer.queue_action(AppAction::StartCrop);
+        viewer.apply_pending_actions(&egui::Context::default(), None);
+
+        assert!(!viewer.controls_window.is_enabled());
+    }
+
+    #[test]
+    fn choosing_an_annotation_tool_keeps_the_controls_window_closed() {
+        let mut viewer = Viewer::new(Vec::new());
+        viewer.queue_action(AppAction::SetAnnotationMode(AnnotationMode::AddLine));
         viewer.apply_pending_actions(&egui::Context::default(), None);
 
         assert!(!viewer.controls_window.is_enabled());

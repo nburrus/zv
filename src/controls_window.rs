@@ -173,6 +173,12 @@ impl ControlsWindow {
         self.focus_on_show = true;
     }
 
+    pub fn select_modifiers(&mut self) {
+        if let Ok(mut state) = self.ui_state.lock() {
+            state.active_tab = ControlsTab::Modifiers;
+        }
+    }
+
     pub fn set_target_position(&mut self, position: Option<egui::Pos2>) {
         self.target_position = position;
     }
@@ -518,8 +524,14 @@ impl ControlsWindow {
                         ctx,
                     ),
                     ControlsTab::ColorEditor => {
-                        if let Ok(mut crop) = crop_tool.lock() {
+                        if let Ok(mut crop) = crop_tool.lock()
+                            && crop.active()
+                        {
                             crop.cancel();
+                            // Cancelling from the controls viewport leaves the
+                            // crop overlay painted in the root viewport until
+                            // something else repaints it.
+                            ctx.request_repaint_of(egui::ViewportId::ROOT);
                         }
                         render_color_editor_tab(ui, ctx, &image_list, &color_editor_state, &action_queue);
                     }
@@ -1761,5 +1773,35 @@ mod tests {
 
         window.consume_close_request();
         assert!(window.is_enabled());
+    }
+
+    #[test]
+    fn selecting_modifiers_keeps_window_closed_until_opened() {
+        let mut window = controls_window();
+        window.select_modifiers();
+
+        assert!(!window.is_enabled());
+        assert_eq!(window.ui_state.lock().unwrap().active_tab, ControlsTab::Modifiers);
+        assert!(!window.focus_on_show);
+
+        window.toggle();
+        assert!(window.is_enabled());
+        assert_eq!(window.ui_state.lock().unwrap().active_tab, ControlsTab::Modifiers);
+    }
+
+    #[test]
+    fn selecting_modifiers_in_an_open_window_does_not_request_focus() {
+        let mut window = controls_window();
+        let pending = set_pending_levels(&window);
+        window.show_color_editor();
+        window.focus_on_show = false;
+        assert_eq!(window.color_preview(), pending);
+
+        window.select_modifiers();
+
+        assert!(window.is_enabled());
+        assert_eq!(window.ui_state.lock().unwrap().active_tab, ControlsTab::Modifiers);
+        assert!(!window.focus_on_show);
+        assert_eq!(window.color_preview(), ColorPreview::None);
     }
 }

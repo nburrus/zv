@@ -138,10 +138,10 @@ On macOS, shortcuts shown with `Ctrl` use `Cmd` instead.
 | `Shift+Delete` | Delete the selected image from disk (after confirmation) |
 
 To crop, press `Shift+C`, then drag on the first visible image. Release to adjust:
-drag inside to move, drag a corner or edge handle to resize, or drag outside to
-redraw. Hold `Shift` while drawing or dragging a corner for a square. The Modifiers
-panel has X/Y and width/height sliders with editable numeric values; the status
-bar shows the crop dimensions. `Enter` applies, `Esc` cancels, and `Ctrl+Z` / `Cmd+Z`
+drag inside to move, or drag a corner or edge handle to resize. Hold `Shift`
+while drawing or dragging a corner for a square. The Modifiers panel has X/Y and
+width/height sliders with editable numeric values; the status bar shows the crop
+dimensions. `Enter` applies, `Esc` cancels, and `Ctrl+Z` / `Cmd+Z`
 cancels a pending crop or undoes a committed one. Middle-button pan, scrolling,
 and Ctrl/Cmd-click zoom remain available.
 

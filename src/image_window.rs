@@ -63,6 +63,7 @@ pub struct ImageWindowOutput {
     // controls window, which lives in a separate viewport and stays idle
     // unless explicitly repainted when they change.
     pub shared_state_changed: bool,
+    pub annotation_selected: bool,
 }
 
 impl ImageWindow {
@@ -79,6 +80,7 @@ impl ImageWindow {
             image_rect: None,
             secondary_clicked: false,
             shared_state_changed: false,
+            annotation_selected: false,
         };
 
         egui::CentralPanel::default()
@@ -171,6 +173,8 @@ impl ImageWindow {
                             &visible_images,
                         );
                         output.shared_state_changed |= annotation_output.selection_changed;
+                        output.annotation_selected |=
+                            annotation_output.selection_changed && tool.selected_id_is_valid();
                         tool_busy = tool.is_creating() || tool.is_editing();
                     }
 
