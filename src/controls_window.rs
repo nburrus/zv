@@ -22,6 +22,7 @@ use crate::image_window_geometry::WindowResizeAction;
 use crate::layout::LAYOUT_MENU_ENTRIES;
 use crate::modified_image::ModifiedImage;
 use crate::modifier_ui::{control_row as render_style_row, panel_header, pixel_control_row_with_slider_range};
+use crate::recent_sessions::{RecentSessions, session_label};
 use crate::render::{ColorPreview, WgpuImageCallback};
 use crate::shortcuts::{ShortcutViewport, collect_shortcuts};
 use crate::viewer::{AppAction, ImageEditorState};
@@ -106,6 +107,7 @@ pub struct ControlsWindow {
     annotation_tool: Arc<Mutex<AnnotationTool>>,
     crop_tool: Arc<Mutex<CropTool>>,
     editor_state: Arc<Mutex<ImageEditorState>>,
+    recent_sessions: Arc<Mutex<RecentSessions>>,
     ui_state: Arc<Mutex<ControlsUiState>>,
     color_editor_state: Arc<Mutex<ColorEditorUiState>>,
     enabled: bool,
@@ -126,6 +128,7 @@ impl ControlsWindow {
         annotation_tool: Arc<Mutex<AnnotationTool>>,
         crop_tool: Arc<Mutex<CropTool>>,
         editor_state: Arc<Mutex<ImageEditorState>>,
+        recent_sessions: Arc<Mutex<RecentSessions>>,
     ) -> Self {
         Self {
             viewport_id: egui::ViewportId::from_hash_of("zv-controls-window"),
@@ -136,6 +139,7 @@ impl ControlsWindow {
             annotation_tool,
             crop_tool,
             editor_state,
+            recent_sessions,
             ui_state: Arc::new(Mutex::new(ControlsUiState::default())),
             color_editor_state: Arc::new(Mutex::new(ColorEditorUiState::default())),
             enabled: false,
@@ -273,6 +277,7 @@ impl ControlsWindow {
         let annotation_tool = self.annotation_tool.clone();
         let crop_tool = self.crop_tool.clone();
         let editor_state = self.editor_state.clone();
+        let recent_sessions = self.recent_sessions.clone();
         let close_requested = self.close_requested.clone();
         let mut builder = egui::ViewportBuilder::default()
             .with_title("zv controls")
@@ -318,6 +323,37 @@ impl ControlsWindow {
                             push_root_action(ctx, &action_queue, AppAction::OpenImage);
                             ui.close();
                         }
+                        ui.menu_button("Open Recent Session", |ui| {
+                            let sessions = recent_sessions
+                                .lock()
+                                .map(|history| history.sessions().to_vec())
+                                .unwrap_or_default();
+                            if sessions.is_empty() {
+                                ui.add_enabled(false, egui::Button::new("No Recent Sessions"));
+                            } else {
+                                for session in sessions {
+                                    let response = ui.button(session_label(&session.paths));
+                                    let response = response.on_hover_ui(|ui| {
+                                        for path in &session.paths {
+                                            ui.label(path.display().to_string());
+                                        }
+                                    });
+                                    if response.clicked() {
+                                        push_root_action(
+                                            ctx,
+                                            &action_queue,
+                                            AppAction::OpenRecentSession(session.paths),
+                                        );
+                                        ui.close();
+                                    }
+                                }
+                                ui.separator();
+                                if ui.button("Clear Recent Sessions").clicked() {
+                                    push_root_action(ctx, &action_queue, AppAction::ClearRecentSessions);
+                                    ui.close();
+                                }
+                            }
+                        });
                         ui.separator();
                         if ui
                             .add_enabled(
@@ -1824,6 +1860,7 @@ mod tests {
             Arc::new(Mutex::new(AnnotationTool::default())),
             Arc::new(Mutex::new(CropTool::default())),
             Arc::new(Mutex::new(ImageEditorState::default())),
+            Arc::new(Mutex::new(RecentSessions::default())),
         )
     }
 

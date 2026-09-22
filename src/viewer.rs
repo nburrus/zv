@@ -22,6 +22,7 @@ use crate::layout::{LayoutConfig, best_layout_for_image_count};
 use crate::modified_image::ModifiedImage;
 use crate::networking::RemoteImageRef;
 use crate::protocol::ImageOffer;
+use crate::recent_sessions::RecentSessions;
 use crate::render::{ColorPreview, WgpuImageRenderer};
 use crate::shortcuts::{ShortcutViewport, collect_shortcuts};
 use crate::viewport_geometry::{ViewportGeometry, ViewportResizeCommand};
@@ -62,6 +63,8 @@ pub enum AppAction {
     CopyImageToClipboard,
     PasteImageFromClipboard,
     OpenImage,
+    OpenRecentSession(Vec<PathBuf>),
+    ClearRecentSessions,
     CloseImage,
     DeleteImageOnDisk,
     ResizeImageToWindow,
@@ -86,7 +89,7 @@ pub enum ArrowKey {
     Right,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 enum PendingConfirmation {
     Quit {
         current_index: usize,
@@ -99,6 +102,13 @@ enum PendingConfirmation {
     },
     DeleteImageAt {
         index: usize,
+    },
+    OpenRecentSession {
+        paths: Vec<PathBuf>,
+        current_index: usize,
+        original_layout: LayoutConfig,
+        original_selection_index: Option<usize>,
+        original_selection_count: usize,
     },
 }
 
@@ -120,6 +130,7 @@ pub struct Viewer {
     annotation_tool: Arc<Mutex<AnnotationTool>>,
     crop_tool: Arc<Mutex<CropTool>>,
     editor_state: Arc<Mutex<ImageEditorState>>,
+    recent_sessions: Arc<Mutex<RecentSessions>>,
     image_window_geometry: ImageWindowGeometryState,
     current_monitor_work_area: Option<egui::Rect>,
     layout: LayoutConfig,
@@ -132,6 +143,12 @@ pub struct Viewer {
 
 impl Viewer {
     pub fn new(image_paths: Vec<PathBuf>) -> Self {
+        let recent_sessions = Arc::new(Mutex::new(RecentSessions::load()));
+        if !image_paths.is_empty()
+            && let Ok(mut history) = recent_sessions.lock()
+        {
+            history.record(image_paths.clone());
+        }
         let image_list = Arc::new(Mutex::new(ImageList::new(image_paths)));
         let cursor_info = Arc::new(Mutex::new(None));
         let image_widget_size = Arc::new(Mutex::new(None));
@@ -149,6 +166,7 @@ impl Viewer {
                 annotation_tool.clone(),
                 crop_tool.clone(),
                 editor_state.clone(),
+                recent_sessions.clone(),
             ),
             image_list,
             pending_actions: Vec::new(),
@@ -158,6 +176,7 @@ impl Viewer {
             annotation_tool,
             crop_tool,
             editor_state,
+            recent_sessions,
             image_window_geometry: ImageWindowGeometryState::default(),
             current_monitor_work_area: None,
             layout: LayoutConfig::default(),
@@ -543,6 +562,12 @@ impl Viewer {
                 AppAction::CopyImageToClipboard => self.copy_image_to_clipboard(ctx, render_state),
                 AppAction::PasteImageFromClipboard => self.paste_image_from_clipboard(),
                 AppAction::OpenImage => self.open_image(),
+                AppAction::OpenRecentSession(paths) => self.request_open_recent_session(ctx, paths),
+                AppAction::ClearRecentSessions => {
+                    if let Ok(mut history) = self.recent_sessions.lock() {
+                        history.clear();
+                    }
+                }
                 AppAction::CloseImage => {
                     let index = self
                         .image_list
@@ -733,11 +758,13 @@ impl Viewer {
     }
 
     fn render_pending_confirmation(&mut self, ctx: &egui::Context, render_state: Option<&egui_wgpu::RenderState>) {
-        let Some(pending) = self.pending_confirmation else {
+        let Some(pending) = self.pending_confirmation.clone() else {
             return;
         };
-        if let PendingConfirmation::Quit { current_index, .. } = pending {
-            self.select_single_image(current_index);
+        if let PendingConfirmation::Quit { current_index, .. }
+        | PendingConfirmation::OpenRecentSession { current_index, .. } = &pending
+        {
+            self.select_single_image(*current_index);
         }
         ensure_viewport_can_fit_confirmation(ctx);
         let (title, message) = match pending {
@@ -760,6 +787,12 @@ impl Viewer {
                     .map(|path| format!("{} will be deleted.\nThis operation cannot be undone!", path.display()))
                     .unwrap_or_else(|| "This image will be deleted.\nThis operation cannot be undone!".to_owned()),
             ),
+            PendingConfirmation::OpenRecentSession { current_index, .. } => (
+                "Open Recent Session",
+                self.pending_change_image_at(current_index)
+                    .map(|image| format!("{} has unsaved changes. What would you like to do?", image.name))
+                    .unwrap_or_else(|| "This image has unsaved changes. What would you like to do?".to_owned()),
+            ),
         };
         let response = egui::Modal::new(egui::Id::new("pending_changes_confirm_modal")).show(ctx, |ui| {
             ui.set_width(340.0);
@@ -772,10 +805,10 @@ impl Viewer {
                     let ok_response = ui.button("OK");
                     ok_response.request_focus();
                     if ok_response.clicked() || ui.input(|input| input.key_pressed(egui::Key::Enter)) {
-                        self.finish_pending_confirmation(ctx, pending);
+                        self.finish_pending_confirmation(ctx, pending.clone());
                     }
                     if ui.button("Cancel").clicked() {
-                        self.cancel_pending_confirmation(pending);
+                        self.cancel_pending_confirmation(pending.clone());
                     }
                     return;
                 }
@@ -783,16 +816,16 @@ impl Viewer {
                 save_response.request_focus();
                 let save_requested = save_response.clicked() || ui.input(|input| input.key_pressed(egui::Key::Enter));
                 if save_requested {
-                    if self.save_for_pending_confirmation(pending, render_state) {
-                        self.finish_pending_confirmation(ctx, pending);
+                    if self.save_for_pending_confirmation(pending.clone(), render_state) {
+                        self.finish_pending_confirmation(ctx, pending.clone());
                     }
                 }
                 if ui.button("Discard").clicked() {
-                    self.discard_for_pending_confirmation(pending);
-                    self.finish_pending_confirmation(ctx, pending);
+                    self.discard_for_pending_confirmation(pending.clone());
+                    self.finish_pending_confirmation(ctx, pending.clone());
                 }
                 if ui.button("Cancel").clicked() {
-                    self.cancel_pending_confirmation(pending);
+                    self.cancel_pending_confirmation(pending.clone());
                 }
             });
         });
@@ -825,6 +858,14 @@ impl Viewer {
                 }
             }
             PendingConfirmation::DeleteImageAt { .. } => true,
+            PendingConfirmation::OpenRecentSession { current_index, .. } => {
+                let Some(image) = self.pending_change_image_at(current_index) else {
+                    return true;
+                };
+                let images = vec![image];
+                self.update_pending_image_annotations(&images, render_state);
+                self.save_pending_images_with_dialog(images)
+            }
         }
     }
 
@@ -845,6 +886,13 @@ impl Viewer {
                 }
             }
             PendingConfirmation::DeleteImageAt { .. } => {}
+            PendingConfirmation::OpenRecentSession { current_index, .. } => {
+                if let Some(image) = self.pending_change_image_at(current_index)
+                    && let Ok(mut image) = image.data.lock()
+                {
+                    image.discard_changes();
+                }
+            }
         }
         self.clear_missing_annotation_selection();
     }
@@ -878,6 +926,27 @@ impl Viewer {
                 self.pending_confirmation = None;
                 self.delete_image_at(index);
             }
+            PendingConfirmation::OpenRecentSession {
+                paths,
+                original_layout,
+                original_selection_index,
+                original_selection_count,
+                ..
+            } => {
+                if let Some(next_index) = self.pending_change_images().first().map(|image| image.index) {
+                    self.select_single_image(next_index);
+                    self.pending_confirmation = Some(PendingConfirmation::OpenRecentSession {
+                        paths,
+                        current_index: next_index,
+                        original_layout,
+                        original_selection_index,
+                        original_selection_count,
+                    });
+                } else {
+                    self.pending_confirmation = None;
+                    self.open_recent_session(paths);
+                }
+            }
         }
         ctx.request_repaint_of(egui::ViewportId::ROOT);
         ctx.request_repaint_of(self.controls_window.viewport_id());
@@ -885,6 +954,12 @@ impl Viewer {
 
     fn cancel_pending_confirmation(&mut self, pending: PendingConfirmation) {
         if let PendingConfirmation::Quit {
+            original_layout,
+            original_selection_index,
+            original_selection_count,
+            ..
+        }
+        | PendingConfirmation::OpenRecentSession {
             original_layout,
             original_selection_index,
             original_selection_count,
@@ -1061,6 +1136,60 @@ impl Viewer {
             if let Ok(mut image_list) = self.image_list.lock() {
                 image_list.add_image_paths(paths);
             }
+            self.record_current_session();
+        }
+    }
+
+    fn request_open_recent_session(&mut self, ctx: &egui::Context, paths: Vec<PathBuf>) {
+        let paths = paths.into_iter().filter(|path| path.is_file()).collect::<Vec<_>>();
+        if paths.is_empty() {
+            tracing::warn!("none of the images in the recent session still exist");
+            return;
+        }
+        let Some(current_index) = self.pending_change_images().first().map(|image| image.index) else {
+            self.open_recent_session(paths);
+            return;
+        };
+        let (original_selection_index, original_selection_count) = self
+            .image_list
+            .lock()
+            .ok()
+            .map(|image_list| (image_list.first_selected_index(), image_list.selection_count()))
+            .unwrap_or((None, 1));
+        let original_layout = self.layout;
+        self.select_single_image(current_index);
+        self.set_pending_confirmation(
+            ctx,
+            PendingConfirmation::OpenRecentSession {
+                paths,
+                current_index,
+                original_layout,
+                original_selection_index,
+                original_selection_count,
+            },
+        );
+    }
+
+    fn open_recent_session(&mut self, paths: Vec<PathBuf>) {
+        if let Ok(mut image_list) = self.image_list.lock() {
+            image_list.replace_image_paths(paths.clone());
+        }
+        self.layout = LayoutConfig::default();
+        self.last_displayed_signature = None;
+        if let Ok(mut history) = self.recent_sessions.lock() {
+            history.record(paths);
+        }
+        self.clear_missing_annotation_selection();
+    }
+
+    fn record_current_session(&self) {
+        let paths = self
+            .image_list
+            .lock()
+            .map(|image_list| image_list.local_paths())
+            .unwrap_or_default();
+        if let Ok(mut history) = self.recent_sessions.lock() {
+            history.record(paths);
         }
     }
 

@@ -271,6 +271,17 @@ impl ImageList {
         }
     }
 
+    pub fn replace_image_paths(&mut self, paths: Vec<PathBuf>) {
+        *self = Self::new(paths);
+    }
+
+    pub fn local_paths(&self) -> Vec<PathBuf> {
+        self.items
+            .iter()
+            .filter_map(|item| item.local_path().map(Path::to_path_buf))
+            .collect()
+    }
+
     pub fn add_remote_image(&mut self, offer: ImageOffer, remote: RemoteImageRef) {
         if self.items.len() == 1 && self.items[0].is_default() {
             let default_id = self.items.remove(0).id;
