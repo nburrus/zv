@@ -21,7 +21,7 @@ use crate::image_window::CursorPixelInfo;
 use crate::image_window_geometry::WindowResizeAction;
 use crate::layout::LAYOUT_MENU_ENTRIES;
 use crate::modified_image::ModifiedImage;
-use crate::modifier_ui::{control_row as render_style_row, panel_header};
+use crate::modifier_ui::{control_row as render_style_row, panel_header, pixel_control_row_with_slider_range};
 use crate::render::{ColorPreview, WgpuImageCallback};
 use crate::shortcuts::{ShortcutViewport, collect_shortcuts};
 use crate::viewer::{AppAction, ImageEditorState};
@@ -78,6 +78,8 @@ struct ControlsUiState {
     size_texts: [String; 2],
     size_being_edited: [bool; 2],
     lock_ratio: bool,
+    resize_size: Option<[u32; 2]>,
+    resize_slider_max: [u32; 2],
     annotation_style_edit: Option<AnnotationStyleEditState>,
 }
 
@@ -88,6 +90,8 @@ impl Default for ControlsUiState {
             size_texts: [String::new(), String::new()],
             size_being_edited: [false, false],
             lock_ratio: true,
+            resize_size: None,
+            resize_slider_max: [1; 2],
             annotation_style_edit: None,
         }
     }
@@ -150,6 +154,24 @@ impl ControlsWindow {
             self.apply_initial_position_on_show = !self.has_ever_been_shown;
             self.has_ever_been_shown = true;
             self.focus_on_show = true;
+        }
+    }
+
+    pub fn select_resize(&mut self) {
+        let Some((width, height)) = self.image_widget_size.lock().ok().and_then(|size| *size) else {
+            return;
+        };
+        if let Ok(mut state) = self.ui_state.lock() {
+            flush_annotation_style_edit(&self.image_list, &mut state);
+            state.resize_size = Some([width.max(1), height.max(1)]);
+            state.resize_slider_max = [width, height].map(|value| value.saturating_mul(2).clamp(2, 16384));
+        }
+        self.select_modifiers();
+    }
+
+    pub fn close_resize(&mut self) {
+        if let Ok(mut state) = self.ui_state.lock() {
+            state.resize_size = None;
         }
     }
 
@@ -381,6 +403,16 @@ impl ControlsWindow {
                             push_root_action(ctx, &action_queue, AppAction::StartCrop);
                             ui.close();
                         }
+                        ui.menu_button("Resize", |ui| {
+                            if ui.button("Resize Image to Window").clicked() {
+                                push_root_action(ctx, &action_queue, AppAction::ResizeImageToWindow);
+                                ui.close();
+                            }
+                            if ui.button("Resize…").clicked() {
+                                push_root_action(ctx, &action_queue, AppAction::ShowResize);
+                                ui.close();
+                            }
+                        });
                         if ui.add(egui::Button::new("Color Editor").shortcut_text("e")).clicked() {
                             push_root_action(ctx, &action_queue, AppAction::ShowColorEditor);
                             ui.close();
@@ -585,6 +617,7 @@ fn render_annotation_tools_tab(
     let mode = tool.mode();
 
     let crop_active = crop_tool.lock().is_ok_and(|crop| crop.active());
+    let resizing = ui_state.lock().is_ok_and(|state| state.resize_size.is_some());
     // Transform toolbar.
     ui.horizontal(|ui| {
         if ui
@@ -615,6 +648,13 @@ fn render_annotation_tools_tab(
                     AppAction::StartCrop
                 },
             );
+        }
+        if ui
+            .add(modifier_tool_button(ph::ARROWS_OUT).selected(resizing))
+            .on_hover_text("Resize…")
+            .clicked()
+        {
+            push_root_action(ctx, action_queue, AppAction::ShowResize);
         }
         ui.separator();
         // Annotation toolbar — one button per implemented type.
@@ -699,6 +739,22 @@ fn render_annotation_tools_tab(
         return;
     }
     let mut ui_state = ui_state.lock().ok();
+    if let Some(state) = ui_state.as_deref_mut()
+        && let Some(size) = state.resize_size.as_mut()
+    {
+        let target_count = image_list
+            .lock()
+            .map(|list| {
+                list.selected_range_views()
+                    .into_iter()
+                    .filter_map(|image| image?.data)
+                    .count()
+            })
+            .unwrap_or(0);
+        render_resize_controls(ui, size, state.resize_slider_max, target_count, action_queue, ctx);
+        return;
+    }
+
     let selected_id = tool.selected_id();
     let selected_element = selected_element_data(image_list, selected_id);
     let selected_kind = selected_element.as_ref().map(AnnotationElement::kind);
@@ -830,6 +886,55 @@ fn arrow_tool_button(ui: &mut egui::Ui, selected: bool) -> egui::Response {
         egui::Stroke::NONE,
     ));
     response
+}
+
+fn render_resize_controls(
+    ui: &mut egui::Ui,
+    size: &mut [u32; 2],
+    slider_max: [u32; 2],
+    target_count: usize,
+    action_queue: &Arc<Mutex<Vec<AppAction>>>,
+    ctx: &egui::Context,
+) {
+    panel_header(ui, "Resize image");
+    egui::Grid::new("resize_image_size_grid").num_columns(2).show(ui, |ui| {
+        for ((label, value), max) in ["Width", "Height"].into_iter().zip(size.iter_mut()).zip(slider_max) {
+            pixel_control_row_with_slider_range(ui, label, value, 1..=max, 1..=16384);
+        }
+    });
+    if target_count > 1 {
+        ui.label("The same dimensions apply to all visible images.");
+    }
+    ui.add_space(ui.spacing().item_spacing.y);
+    ui.horizontal_wrapped(|ui| {
+        let label = if target_count > 1 {
+            format!("Apply Resize to {target_count} Images")
+        } else {
+            "Apply Resize".to_owned()
+        };
+        if ui.add_enabled(target_count > 0, egui::Button::new(label)).clicked() {
+            push_root_action(
+                ctx,
+                action_queue,
+                AppAction::ResizeImage {
+                    width: size[0],
+                    height: size[1],
+                },
+            );
+        }
+        if ui.button("Cancel").clicked() {
+            push_root_action(ctx, action_queue, AppAction::SetAnnotationMode(AnnotationMode::Select));
+        }
+    });
+    ui.add_space(ui.spacing().item_spacing.y);
+    if ui
+        .add_enabled(target_count > 0, egui::Button::new("Resize to Window"))
+        .on_hover_text("Resize immediately to the current window size and update the fields above.")
+        .clicked()
+    {
+        push_root_action(ctx, action_queue, AppAction::ResizeImageToWindow);
+        push_root_action(ctx, action_queue, AppAction::ShowResize);
+    }
 }
 
 fn render_line_controls(
@@ -1172,7 +1277,7 @@ fn render_image_list(
             hover_text: row.display_path.map(|path| path.display().to_string()),
             size_text: row
                 .size
-                .map(|(w, h)| format!("{w}x{h}"))
+                .map(|(w, h)| format!("{w}x{h}{}", if row.size_changed { "*" } else { "" }))
                 .unwrap_or_else(|| "(?x?)".to_owned()),
             has_changes: row.has_changes,
         })
@@ -1773,6 +1878,33 @@ mod tests {
 
         window.consume_close_request();
         assert!(window.is_enabled());
+    }
+
+    #[test]
+    fn selecting_resize_preserves_window_state_and_refreshes_dimensions() {
+        for visible in [false, true] {
+            let mut window = controls_window();
+            let pending = set_pending_levels(&window);
+            if visible {
+                window.show_color_editor();
+                assert_eq!(window.color_preview(), pending);
+            }
+            window.focus_on_show = false;
+            let position_pending = window.apply_initial_position_on_show;
+            *window.image_widget_size.lock().unwrap() = Some((640, 480));
+            window.select_resize();
+            assert_eq!(window.is_enabled(), visible);
+            assert!(!window.focus_on_show);
+            assert_eq!(window.apply_initial_position_on_show, position_pending);
+            assert_eq!(window.ui_state.lock().unwrap().active_tab, ControlsTab::Modifiers);
+            assert_eq!(window.color_preview(), ColorPreview::None);
+            assert_eq!(window.ui_state.lock().unwrap().resize_size, Some([640, 480]));
+            *window.image_widget_size.lock().unwrap() = Some((320, 200));
+            window.select_resize();
+            assert_eq!(window.ui_state.lock().unwrap().resize_size, Some([320, 200]));
+            assert_eq!(window.is_enabled(), visible);
+            assert!(!window.focus_on_show);
+        }
     }
 
     #[test]

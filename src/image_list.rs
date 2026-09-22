@@ -21,6 +21,8 @@ pub struct ImageListRow<'a> {
     pub name: &'a str,
     pub display_path: Option<&'a Path>,
     pub size: Option<(u32, u32)>,
+    /// The in-memory size differs from the file on disk because of unsaved edits.
+    pub size_changed: bool,
     pub has_changes: bool,
 }
 
@@ -211,17 +213,24 @@ impl ImageList {
     pub fn visible_rows(&self) -> impl Iterator<Item = ImageListRow<'_>> {
         let selected_indices = self.selected_indices();
         self.items.iter().enumerate().filter_map(move |(index, item)| {
-            let has_changes = self
+            let (has_changes, cached_size) = self
                 .cache
                 .get_cached(item.id)
-                .and_then(|data| data.lock().ok().map(|d| d.has_pending_changes()))
-                .unwrap_or(false);
+                .and_then(|data| {
+                    data.lock().ok().map(|d| {
+                        let [w, h] = d.image_size();
+                        (d.has_pending_changes(), Some((w, h)))
+                    })
+                })
+                .unwrap_or((false, None));
+            let size = cached_size.or(item.metadata);
             self.item_enabled(index).then_some(ImageListRow {
                 index,
                 selected: selected_indices.contains(&Some(index)),
                 name: &item.pretty_name,
                 display_path: item.naming_path(),
-                size: item.metadata,
+                size,
+                size_changed: has_changes && size != item.metadata,
                 has_changes,
             })
         })
@@ -479,6 +488,13 @@ impl ImageList {
         };
         item.source = ImageSource::LocalPath(path);
         item.error = None;
+        // The saved file carries the edited dimensions.
+        if let Some(data) = self.cache.get_cached(item.id)
+            && let Ok(data) = data.lock()
+        {
+            let [w, h] = data.image_size();
+            item.metadata = Some((w, h));
+        }
         self.cache.unprotect(item.id);
         refresh_pretty_names(&mut self.items);
     }

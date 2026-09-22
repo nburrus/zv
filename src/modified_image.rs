@@ -268,6 +268,28 @@ impl ModifiedImage {
         true
     }
 
+    /// Resize the base pixels while retaining editable annotation geometry in UV space.
+    pub fn resize(&mut self, width: u32, height: u32) -> bool {
+        let [old_width, old_height] = self.image_size();
+        if width == 0 || height == 0 || [width, height] == [old_width, old_height] {
+            return false;
+        }
+        let resized = resize_image(self.original_data.cpu_data(), width, height);
+        let mut annotations = self.annotations.clone();
+        // Stroke and text sizes are in image pixels, whereas positions are normalized.
+        let scale = width as f32 / old_width as f32;
+        for element in annotations.elements_mut() {
+            if let Some(stroke) = element.stroke_mut() {
+                stroke.width *= scale;
+            }
+            if let AnnotationElement::Text { style, .. } = element {
+                style.font_size *= scale;
+            }
+        }
+        self.replace_base_image(resized, annotations);
+        true
+    }
+
     pub fn rotate_cw(&mut self) {
         self.rotate(RotationDirection::Clockwise);
     }
@@ -384,6 +406,55 @@ impl ModifiedImage {
     fn bump_display_revision(&mut self) {
         self.display_revision = self.display_revision.wrapping_add(1);
     }
+}
+
+/// Filter linear-light, premultiplied RGBA, matching the old stb sRGB resize semantics.
+fn resize_image(src: &ImageSRGBA, width: u32, height: u32) -> ImageSRGBA {
+    let linear = image::Rgba32FImage::from_fn(src.width(), src.height(), |x, y| {
+        let pixel = src.pixel(x, y).expect("valid source pixel");
+        let alpha = pixel.a as f32 / 255.0;
+        let decode = |value: u8| {
+            let value = value as f32 / 255.0;
+            if value <= 0.04045 {
+                value / 12.92
+            } else {
+                ((value + 0.055) / 1.055).powf(2.4)
+            }
+        };
+        image::Rgba([
+            decode(pixel.r) * alpha,
+            decode(pixel.g) * alpha,
+            decode(pixel.b) * alpha,
+            alpha,
+        ])
+    });
+    let resized = image::imageops::resize(&linear, width, height, image::imageops::FilterType::CatmullRom);
+    let mut output = ImageSRGBA::new(width, height);
+    for (y, row) in resized.rows().enumerate() {
+        for (dest, pixel) in output.row_mut(y as u32).unwrap().iter_mut().zip(row) {
+            let alpha = pixel[3].clamp(0.0, 1.0);
+            let encode = |value: f32| {
+                let value = if alpha > 0.0 {
+                    (value / alpha).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                };
+                let srgb = if value <= 0.0031308 {
+                    value * 12.92
+                } else {
+                    1.055 * value.powf(1.0 / 2.4) - 0.055
+                };
+                (srgb * 255.0).round() as u8
+            };
+            *dest = crate::color_image::PixelSRGBA::from_array([
+                encode(pixel[0]),
+                encode(pixel[1]),
+                encode(pixel[2]),
+                (alpha * 255.0).round() as u8,
+            ]);
+        }
+    }
+    output
 }
 
 fn image_pixels_equal(a: &ImageSRGBA, b: &ImageSRGBA) -> bool {
@@ -503,6 +574,75 @@ mod tests {
     fn temp_png_path(name: &str) -> PathBuf {
         let stamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
         std::env::temp_dir().join(format!("zv-{name}-{}-{stamp}.png", std::process::id()))
+    }
+
+    #[test]
+    fn resize_preserves_orientation_and_handles_padded_rows() {
+        let mut source = ImageSRGBA::new(3, 2);
+        source
+            .row_mut(0)
+            .unwrap()
+            .fill(PixelSRGBA::from_array([255, 0, 0, 255]));
+        source
+            .row_mut(1)
+            .unwrap()
+            .fill(PixelSRGBA::from_array([0, 0, 255, 255]));
+        let resized = resize_image(&source, 9, 6);
+        assert_eq!([resized.width(), resized.height()], [9, 6]);
+        for x in 0..9 {
+            assert_eq!(resized.pixel(x, 0).unwrap().as_array(), [255, 0, 0, 255]);
+            assert_eq!(resized.pixel(x, 5).unwrap().as_array(), [0, 0, 255, 255]);
+        }
+    }
+
+    #[test]
+    fn resize_filters_in_linear_light_without_transparent_color_bleeding() {
+        let opaque = ImageSRGBA::from_tightly_packed_bytes(2, 1, &[0, 0, 0, 255, 255, 255, 255, 255]);
+        let midpoint = resize_image(&opaque, 1, 1).pixel(0, 0).unwrap();
+        assert!((185..=190).contains(&midpoint.r));
+        let transparent = ImageSRGBA::from_tightly_packed_bytes(2, 1, &[255, 0, 0, 255, 0, 0, 255, 0]);
+        let midpoint = resize_image(&transparent, 1, 1).pixel(0, 0).unwrap();
+        assert_eq!([midpoint.r, midpoint.g, midpoint.b], [255, 0, 0]);
+        assert!((126..=129).contains(&midpoint.a));
+    }
+
+    #[test]
+    fn resize_undo_restores_annotation_sizes_and_original_pixels() {
+        let mut modified = ModifiedImage::new(image(), None);
+        let id = AnnotationId::next();
+        add_default_line(&mut modified, id);
+        let before = modified.annotations().find_by_id(id).unwrap().clone();
+        modified.actions.clear();
+        assert!(!modified.resize(0, 3));
+        assert!(!modified.resize(2, 2));
+        assert!(!modified.can_undo());
+        assert!(modified.resize(6, 4));
+        assert_eq!(modified.image_size(), [6, 4]);
+        let style = modified.annotations().find_by_id(id).unwrap().line_style().unwrap();
+        assert_eq!(style.stroke.width, before.line_style().unwrap().stroke.width * 3.0);
+        modified.undo_last_change();
+        assert_eq!(modified.image_size(), [2, 2]);
+        assert_eq!(modified.annotations().find_by_id(id).unwrap(), &before);
+        assert!(!modified.base_dirty);
+        assert!(!modified.can_undo());
+    }
+
+    #[test]
+    fn resize_save_and_discard_use_the_correct_dimensions() {
+        let mut modified = ModifiedImage::new(image(), None);
+        modified.resize(7, 3);
+        modified.discard_changes();
+        assert_eq!(modified.image_size(), [2, 2]);
+        modified.resize(3, 7);
+        let path = temp_png_path("resize");
+        modified.save_changes(Some(&path)).unwrap();
+        let saved = load_rgba_image(&path).unwrap();
+        assert_eq!([saved.width(), saved.height()], [3, 7]);
+        modified.resize(9, 1);
+        modified.discard_changes();
+        assert_eq!(modified.image_size(), [3, 7]);
+        assert!(!modified.has_pending_changes());
+        std::fs::remove_file(path).unwrap();
     }
 
     #[test]

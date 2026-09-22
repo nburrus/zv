@@ -5,7 +5,7 @@ use eframe::egui;
 
 use crate::annotations::WidgetToTextureTransform;
 use crate::modified_image::ModifiedImage;
-use crate::modifier_ui::{control_row, panel_header};
+use crate::modifier_ui::{panel_header, pixel_control_row};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct CropRegion {
@@ -313,29 +313,6 @@ impl CropTool {
             response.ctx.set_cursor_icon(cursor);
         }
     }
-}
-
-fn pixel_control_row(
-    ui: &mut egui::Ui,
-    label: &'static str,
-    value: &mut u32,
-    range: std::ops::RangeInclusive<u32>,
-) -> bool {
-    let mut changed = false;
-    control_row(ui, label, |ui, width| {
-        const VALUE_WIDTH: f32 = 72.0;
-        ui.spacing_mut().slider_width = (width - VALUE_WIDTH - ui.spacing().item_spacing.x).max(1.0);
-        changed |= ui
-            .add(egui::Slider::new(value, range.clone()).show_value(false))
-            .changed();
-        changed |= ui
-            .add_sized(
-                [VALUE_WIDTH, ui.spacing().interact_size.y],
-                egui::DragValue::new(value).range(range).speed(1).suffix(" px"),
-            )
-            .changed();
-    });
-    changed
 }
 
 fn handles(rect: egui::Rect) -> [(i8, i8, egui::Pos2); 8] {

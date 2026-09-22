@@ -64,6 +64,12 @@ pub enum AppAction {
     OpenImage,
     CloseImage,
     DeleteImageOnDisk,
+    ResizeImageToWindow,
+    ShowResize,
+    ResizeImage {
+        width: u32,
+        height: u32,
+    },
     RotateLeft,
     RotateRight,
     ShowColorEditor,
@@ -461,6 +467,7 @@ impl Viewer {
             self.validate_crop_targets();
             match action {
                 AppAction::StartCrop => {
+                    self.controls_window.close_resize();
                     let images = self.visible_modified_images();
                     self.update_modified_images_annotations(&images, render_state);
                     if let Ok(mut tool) = self.annotation_tool.lock() {
@@ -505,6 +512,7 @@ impl Viewer {
                 }
                 AppAction::SetAnnotationMode(mode) => {
                     self.cancel_crop();
+                    self.controls_window.close_resize();
                     if let Ok(mut tool) = self.annotation_tool.lock() {
                         tool.set_mode(mode);
                     }
@@ -553,6 +561,28 @@ impl Viewer {
                         .and_then(|image_list| image_list.first_selected_index());
                     if let Some(index) = index {
                         self.request_delete_image_at(ctx, index);
+                    }
+                }
+                AppAction::ShowResize => {
+                    self.cancel_crop();
+                    if let Ok(mut tool) = self.annotation_tool.lock() {
+                        tool.clear_selection();
+                    }
+                    self.controls_window.select_resize();
+                }
+                AppAction::ResizeImage { width, height } => {
+                    self.cancel_crop();
+                    self.apply_to_visible_images(|image| {
+                        image.resize(width, height);
+                    });
+                }
+                AppAction::ResizeImageToWindow => {
+                    self.cancel_crop();
+                    let size = self.image_widget_size.lock().ok().and_then(|size| *size);
+                    if let Some((width, height)) = size {
+                        self.apply_to_visible_images(|image| {
+                            image.resize(width, height);
+                        });
                     }
                 }
                 AppAction::RotateLeft => {

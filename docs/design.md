@@ -386,3 +386,30 @@ Open questions for the next milestones:
 - how to render annotations to a texture for final apply/export
 - when to split `zv` into smaller crates
 - how to preserve C++ behavior where it matters while accepting Rust/egui-specific structure
+
+## Image resizing
+
+Tools → Resize → Resize Image to Window changes the pixels of every
+loaded visible image to the image-window dimensions shown in the controls footer.
+Tools → Resize → Resize… selects the Resize modifier and the Modifiers tab
+without changing window visibility or focus, just like Crop. Its toolbar icon
+sits immediately beside Crop, and both tools share the same slider/pixel-input rows. Width and height start at the current window size; edit
+them and press Apply Resize to resize. Sliders cover up to twice the initial
+window dimensions; numeric inputs allow exact values up to 16384 pixels.
+Apply and Cancel share a row, and Apply names the image count for batch resizing. Opening the modifier again refreshes the defaults.
+The panel’s Resize to Window button immediately applies the current window size
+and refreshes both fields. The immediate menu command uses the window dimensions
+without opening the tool. As in C++, the target is the entire image widget,
+including in a multi-image layout; zoom and pan do not crop the source pixels.
+
+Resampling uses Catmull–Rom filtering in linear-light, premultiplied RGBA through
+the existing `image` dependency. This preserves the C++ sRGB/alpha-aware behavior,
+though the downsampling kernel differs from stb's default Mitchell filter.
+Annotations retain normalized positions and editable elements; stroke widths and
+text sizes scale with the horizontal image scale, as in the annotation renderer.
+Resize participates in the normal undo, revert, and save workflow. Identical or
+zero dimensions do not create an edit.
+
+Image dimension changes reuse the existing image-change window geometry policy:
+Normal, Aspect Ratio, and Maxspect are reapplied, while manually sized windows
+keep their dimensions. This also covers undo, revert, and rotation.

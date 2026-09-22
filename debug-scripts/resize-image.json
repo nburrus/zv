@@ -1,0 +1,17 @@
+{
+  "wait_frames_default": 5,
+  "actions": [
+    { "type": "wait_for_image" },
+    { "type": "state", "name": "before" },
+    { "type": "resize_window", "width": 360, "height": 240 },
+    { "type": "wait_frames", "frames": 15 },
+    { "type": "resize_image_to_window" },
+    { "type": "wait_frames", "frames": 10 },
+    { "type": "state", "name": "resized" },
+    { "type": "screenshot", "name": "resized", "viewport": "root" },
+    { "type": "discard_changes" },
+    { "type": "wait_frames", "frames": 10 },
+    { "type": "state", "name": "reverted" },
+    { "type": "key", "viewport": "root", "key": "q" }
+  ]
+}
