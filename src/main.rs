@@ -21,6 +21,7 @@ mod modifier_ui;
 mod networking;
 mod platform_window;
 mod protocol;
+mod recent_sessions;
 mod render;
 mod shortcuts;
 mod viewer;

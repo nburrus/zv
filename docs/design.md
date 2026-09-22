@@ -153,6 +153,21 @@ Current behavior:
 
 `Viewer` owns and manages `ControlsWindow`; the controls window does not own viewer state.
 
+### Recent Sessions
+
+The File menu keeps up to 25 recent local image groups rather than a flat list
+of individual files. Opening a recent session replaces the current image list;
+the normal save/discard confirmation protects any pending edits first. Missing
+files are skipped, and remote or in-memory images are not persisted.
+
+The history is versioned JSON in the platform's user configuration location
+(`~/Library/Application Support/zv` on macOS, `%APPDATA%/zv` on Windows, and
+`$XDG_CONFIG_HOME/zv` or `~/.config/zv` on Linux). Repeated groups move to the
+front. A separate lock file serializes the complete reload, merge, and write
+transaction across ZV processes, and each writer uses a process-specific
+temporary file followed by a rename. Menu labels use a shared parent directory
+when useful, and their hover tooltips list every full path in the group.
+
 ## Image Data
 
 ### `RgbaImage`
