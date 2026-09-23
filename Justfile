@@ -15,6 +15,11 @@ release:
 release-small:
     cargo build --profile release-small
 
+install:
+    cargo build --locked --profile release-small
+    mkdir -p "$HOME/.local/bin"
+    cp target/release-small/zv "$HOME/.local/bin/zv"
+
 fmt:
     cargo fmt
 
