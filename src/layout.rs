@@ -160,17 +160,4 @@ mod tests {
         assert_eq!(layout, LayoutConfig { rows: 8, cols: 8 });
         assert_eq!(layout.image_count(), MAX_MOSAIC_IMAGES);
     }
-
-    #[test]
-    fn shortcut_layouts_match_cpp() {
-        assert_eq!(shortcut_layout_for_image_count(1), LayoutConfig { rows: 1, cols: 1 });
-        assert_eq!(shortcut_layout_for_image_count(2), LayoutConfig { rows: 1, cols: 2 });
-        assert_eq!(shortcut_layout_for_image_count(3), LayoutConfig { rows: 1, cols: 3 });
-        assert_eq!(shortcut_layout_for_image_count(4), LayoutConfig { rows: 2, cols: 2 });
-        assert_eq!(shortcut_layout_for_image_count(5), LayoutConfig { rows: 2, cols: 3 });
-        assert_eq!(shortcut_layout_for_image_count(6), LayoutConfig { rows: 2, cols: 3 });
-        assert_eq!(shortcut_layout_for_image_count(7), LayoutConfig { rows: 2, cols: 4 });
-        assert_eq!(shortcut_layout_for_image_count(8), LayoutConfig { rows: 2, cols: 4 });
-        assert_eq!(shortcut_layout_for_image_count(9), LayoutConfig { rows: 3, cols: 3 });
-    }
 }

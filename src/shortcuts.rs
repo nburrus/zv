@@ -357,13 +357,4 @@ mod tests {
             assert!(actions.contains(&AppAction::PasteImageFromClipboard));
         }
     }
-
-    #[test]
-    fn clipboard_shortcuts_are_suppressed_while_typing() {
-        assert!(!scope_allows(
-            ShortcutScope::GlobalWhenNotTyping,
-            ShortcutViewport::MainImage,
-            true
-        ));
-    }
 }

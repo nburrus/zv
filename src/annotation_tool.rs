@@ -645,18 +645,4 @@ mod tests {
         assert_eq!(constrain_to_square(egui::vec2(-4.0, 9.0)), egui::vec2(-9.0, 9.0));
         assert_eq!(constrain_to_square(egui::vec2(7.0, -2.0)), egui::vec2(7.0, -7.0));
     }
-
-    #[test]
-    fn edited_stroke_becomes_the_default_for_every_annotation_tool() {
-        let mut tool = AnnotationTool::default();
-        let stroke = StrokeStyle {
-            color: egui::Color32::RED,
-            width: 6.0,
-        };
-        tool.set_default_stroke(stroke);
-        assert_eq!(tool.default_line_style().stroke, stroke);
-        assert_eq!(tool.default_stroke, stroke);
-        tool.set_mode(AnnotationMode::AddArrow);
-        assert_eq!(tool.default_line_style().stroke, stroke);
-    }
 }

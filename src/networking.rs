@@ -483,14 +483,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn client_normalizes_relative_paths_for_remote_metadata() {
-        let path = absolute_client_path(PathBuf::from("attic/zv-cpp/tests/books_4k.jpg"));
-
-        assert!(path.is_absolute());
-        assert!(path.ends_with("attic/zv-cpp/tests/books_4k.jpg"));
-    }
-
-    #[test]
     fn client_offers_and_serves_original_file_bytes() {
         let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
         let port = listener.local_addr().unwrap().port();

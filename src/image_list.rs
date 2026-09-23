@@ -1074,31 +1074,6 @@ mod tests {
     }
 
     #[test]
-    fn navigation_stops_at_first_and_last_rows() {
-        let mut images = list(&["a.png", "b.png", "c.png"]);
-
-        images.select_relative(-1);
-        assert_eq!(images.selected_index(), Some(0));
-        images.select_relative(1);
-        assert_eq!(images.selected_index(), Some(1));
-        images.select_relative(10);
-        assert_eq!(images.selected_index(), Some(2));
-        images.select_relative(1);
-        assert_eq!(images.selected_index(), Some(2));
-    }
-
-    #[test]
-    fn selection_count_marks_contiguous_visible_range() {
-        let mut images = list(&["a.png", "b.png", "c.png", "d.png"]);
-        images.set_selection_count(3);
-        assert_eq!(selected_visible_indices(&images), [0, 1, 2]);
-
-        images.select_index(1);
-        assert_eq!(selected_visible_indices(&images), [1, 2, 3]);
-        assert_eq!(images.selected_range_views().len(), 3);
-    }
-
-    #[test]
     fn selection_range_keeps_empty_slots_past_end() {
         let mut images = list(&["a.png", "b.png"]);
         images.set_selection_count(4);

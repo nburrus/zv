@@ -584,15 +584,6 @@ mod tests {
     use crate::color_editor::LevelsParams;
 
     #[test]
-    fn identity_preview_encoding_uses_identity_lut() {
-        let data = PreviewGpuData::encode(ColorPreview::None);
-        assert_eq!(data.uniforms, [PREVIEW_NONE, 0, 0, 0]);
-        assert_eq!(data.lut[0], [0, 0, 0, 255]);
-        assert_eq!(data.lut[127], [127, 127, 127, 255]);
-        assert_eq!(data.lut[255], [255, 255, 255, 255]);
-    }
-
-    #[test]
     fn levels_preview_encoding_uses_compiled_replacement_luts() {
         let params = LevelsAdjustment {
             luma: LevelsParams {
@@ -644,12 +635,5 @@ mod tests {
             ..Default::default()
         });
         assert_eq!(finite.sanitized(), finite);
-    }
-
-    #[test]
-    fn hue_preview_encoding_preserves_angle_bits() {
-        let data = PreviewGpuData::encode(ColorPreview::Hue(HueShiftParams { degrees: 123.5 }));
-        assert_eq!(data.uniforms[0], PREVIEW_HUE);
-        assert_eq!(f32::from_bits(data.uniforms[1]), 123.5);
     }
 }

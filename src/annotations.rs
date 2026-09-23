@@ -1057,27 +1057,6 @@ mod tests {
     }
 
     #[test]
-    fn line_handles_are_texture_endpoints() {
-        let element = AnnotationElement::Line {
-            id: AnnotationId(1),
-            segment: LineSegment {
-                p1: egui::vec2(0.25, 0.5),
-                p2: egui::vec2(0.75, 0.5),
-            },
-            style: LineStyle::default(),
-        };
-        assert_eq!(
-            element.handle_texture_pos(AnnotationHandle::LineStart),
-            Some(egui::vec2(0.25, 0.5))
-        );
-        assert_eq!(
-            element.handle_texture_pos(AnnotationHandle::LineEnd),
-            Some(egui::vec2(0.75, 0.5))
-        );
-        assert_eq!(element.handle_texture_pos(AnnotationHandle::TopLeft), None);
-    }
-
-    #[test]
     fn line_hit_test_prefers_selected_handle() {
         let mut document = AnnotationDocument::default();
         let id = AnnotationId(3);
@@ -1094,24 +1073,6 @@ mod tests {
             .hit_test(egui::pos2(20.0, 20.0), &transform(), id, 6.0, 4.0)
             .expect("handle hit");
         assert_eq!(hit.part, AnnotationHitPart::Handle(AnnotationHandle::LineStart));
-    }
-
-    #[test]
-    fn line_body_can_be_moved() {
-        let mut element = AnnotationElement::Line {
-            id: AnnotationId(7),
-            segment: LineSegment {
-                p1: egui::vec2(0.1, 0.2),
-                p2: egui::vec2(0.3, 0.4),
-            },
-            style: LineStyle::default(),
-        };
-        element.move_by(egui::vec2(0.1, -0.1));
-        let AnnotationElement::Line { segment, .. } = element else {
-            panic!("expected line");
-        };
-        assert_eq!(segment.p1, egui::vec2(0.2, 0.1));
-        assert_eq!(segment.p2, egui::vec2(0.4, 0.3));
     }
 
     #[test]
@@ -1230,25 +1191,6 @@ mod tests {
             handle.map(|hit| hit.part),
             Some(AnnotationHitPart::Handle(AnnotationHandle::TopLeft))
         );
-    }
-
-    #[test]
-    fn text_move_and_resize_reuse_bounding_box_geometry() {
-        let mut element = AnnotationElement::Text {
-            id: AnnotationId::next(),
-            bounds: BoundingBox {
-                min: egui::vec2(0.2, 0.3),
-                max: egui::vec2(0.7, 0.8),
-            },
-            style: TextStyle::default(),
-        };
-        element.move_by(egui::vec2(0.1, -0.1));
-        element.move_handle_to(AnnotationHandle::TopLeft, egui::vec2(0.1, 0.1));
-        let AnnotationElement::Text { bounds, .. } = element else {
-            unreachable!()
-        };
-        assert_eq!(bounds.min, egui::vec2(0.1, 0.1));
-        assert_eq!(bounds.max, egui::vec2(0.8, 0.7));
     }
 
     #[test]

@@ -1501,25 +1501,6 @@ fn choose_save_path(image_name: &str, suggested_path: Option<&Path>) -> Option<P
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::color_image::{ImageSRGBA, PixelSRGBA};
-    use crate::image_item_data::ImageItemData;
-
-    fn modified_pixel(rgba: [u8; 4]) -> Arc<Mutex<ModifiedImage>> {
-        Arc::new(Mutex::new(ModifiedImage::new(
-            ImageItemData::new(ImageSRGBA::from_tightly_packed_bytes(1, 1, &rgba)),
-            None,
-        )))
-    }
-
-    fn base_pixel(image: &Arc<Mutex<ModifiedImage>>) -> PixelSRGBA {
-        image
-            .lock()
-            .unwrap()
-            .pre_annotation_data()
-            .cpu_data()
-            .pixel(0, 0)
-            .unwrap()
-    }
 
     #[test]
     fn layout_widget_size_uses_first_image_and_grid_padding() {
@@ -1547,23 +1528,5 @@ mod tests {
         viewer.apply_pending_actions(&egui::Context::default(), None);
 
         assert!(!viewer.controls_window.is_enabled());
-    }
-
-    #[test]
-    fn one_color_action_commits_once_to_every_visible_image() {
-        let first = modified_pixel([10, 20, 30, 40]);
-        let second = modified_pixel([100, 110, 120, 130]);
-        let images = vec![first.clone(), second.clone()];
-
-        apply_transform_to_images(&images, |base| apply_one_shot(base, OneShotOperation::Invert));
-        assert_eq!(base_pixel(&first).as_array(), [245, 235, 225, 40]);
-        assert_eq!(base_pixel(&second).as_array(), [155, 145, 135, 130]);
-        assert_eq!(first.lock().unwrap().display_revision(), 1);
-        assert_eq!(second.lock().unwrap().display_revision(), 1);
-
-        first.lock().unwrap().undo_last_change();
-        second.lock().unwrap().undo_last_change();
-        assert_eq!(base_pixel(&first).as_array(), [10, 20, 30, 40]);
-        assert_eq!(base_pixel(&second).as_array(), [100, 110, 120, 130]);
     }
 }

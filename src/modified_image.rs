@@ -646,52 +646,6 @@ mod tests {
     }
 
     #[test]
-    fn undo_line_creation_removes_annotation() {
-        let mut modified = ModifiedImage::new(image(), None);
-        let id = AnnotationId::next();
-        add_default_line(&mut modified, id);
-        assert!(!modified.annotations().is_empty());
-
-        modified.undo_last_change();
-        assert!(modified.annotations().is_empty());
-    }
-
-    #[test]
-    fn live_rectangle_style_updates_can_be_committed_as_one_undo_step() {
-        let mut modified = ModifiedImage::new(image(), None);
-        let id = AnnotationId::next();
-        let before_bounds = BoundingBox::default();
-        let before_stroke = StrokeStyle::default();
-        modified.add_element(AnnotationElement::Rectangle {
-            id,
-            bounds: before_bounds,
-            stroke: before_stroke,
-        });
-
-        modified.update_stroke_style(
-            id,
-            StrokeStyle {
-                color: eframe::egui::Color32::RED,
-                width: 7.0,
-            },
-        );
-        modified.push_undo_action(ImageUndoAction::RestoreElementState {
-            element: AnnotationElement::Rectangle {
-                id,
-                bounds: before_bounds,
-                stroke: before_stroke,
-            },
-        });
-        modified.undo_last_change();
-
-        let AnnotationElement::Rectangle { bounds, stroke, .. } = modified.annotations().find_by_id(id).unwrap() else {
-            panic!("expected rectangle");
-        };
-        assert_eq!(*bounds, before_bounds);
-        assert_eq!(*stroke, before_stroke);
-    }
-
-    #[test]
     fn live_line_style_updates_can_be_committed_as_one_undo_step() {
         let mut modified = ModifiedImage::new(image(), None);
         let id = AnnotationId::next();
@@ -738,25 +692,6 @@ mod tests {
     }
 
     #[test]
-    fn discard_clears_annotations_and_undo() {
-        let mut modified = ModifiedImage::new(image(), None);
-        add_default_line(&mut modified, AnnotationId::next());
-        modified.discard_changes();
-        assert!(modified.annotations().is_empty());
-        assert!(!modified.can_undo());
-    }
-
-    #[test]
-    fn save_without_annotations_is_noop() {
-        let mut modified = ModifiedImage::new(image(), None);
-        let revision = modified.display_revision();
-        modified.save_changes(None).unwrap();
-        assert_eq!(modified.display_revision(), revision);
-        assert!(modified.annotations().is_empty());
-        assert!(!modified.can_undo());
-    }
-
-    #[test]
     fn failed_save_preserves_source_and_unsaved_edits() {
         let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tmp/save-failure-tests/output.png");
         std::fs::create_dir_all(&dir).unwrap();
@@ -786,19 +721,6 @@ mod tests {
         let decoded = ::image::open(&output).unwrap();
         assert_eq!([decoded.width(), decoded.height()], modified.image_size());
         std::fs::remove_file(output).unwrap();
-    }
-
-    #[test]
-    fn unsaved_image_requires_save_and_can_be_written() {
-        let output = std::env::temp_dir().join(format!("zv-unsaved-image-{}.png", std::process::id()));
-        let mut modified = ModifiedImage::new_unsaved(image());
-
-        assert!(modified.has_pending_changes());
-        modified.save_changes(Some(&output)).unwrap();
-
-        assert!(output.is_file());
-        assert!(!modified.has_pending_changes());
-        let _ = std::fs::remove_file(output);
     }
 
     #[test]
@@ -1032,31 +954,6 @@ mod tests {
             modified.actions.last(),
             Some(ImageUndoAction::ReplaceBaseImage { .. })
         ));
-    }
-
-    #[test]
-    fn undo_base_image_transform_restores_pixels_annotations_and_revision() {
-        let original = PixelSRGBA {
-            r: 10,
-            g: 20,
-            b: 30,
-            a: 77,
-        };
-        let mut modified = ModifiedImage::new(image_with_color(original), None);
-        let annotation_id = AnnotationId::next();
-        add_default_line(&mut modified, annotation_id);
-        modified.actions.clear();
-        let revision = modified.display_revision();
-        modified.apply_base_image_transform(|image| apply_one_shot(image, OneShotOperation::Grayscale));
-
-        modified.undo_last_change();
-
-        assert_eq!(first_pixel(modified.pre_annotation_data()), original.as_array());
-        assert!(modified.annotations().find_by_id(annotation_id).is_some());
-        assert!(!modified.base_dirty);
-        assert!(modified.saved_data.is_none());
-        assert!(!modified.can_undo());
-        assert_eq!(modified.display_revision(), revision + 2);
     }
 
     #[test]

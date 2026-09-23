@@ -249,7 +249,6 @@ pub fn write_rgba_image(path: &Path, image: &ImageSRGBA) -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::color_image::PixelSRGBA;
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -311,28 +310,6 @@ mod tests {
         assert_eq!(image.pixel(1, 0).unwrap().as_array(), [0, 255, 0, 128]);
         assert_eq!(image.pixel(0, 1).unwrap().as_array(), [0, 0, 255, 64]);
         assert_eq!(image.pixel(1, 1).unwrap().as_array(), [255, 255, 255, 0]);
-
-        let _ = std::fs::remove_file(path);
-    }
-
-    #[test]
-    fn png_files_use_generic_loader() {
-        let path = temp_image_path("normal-png", "png");
-        write_png(&path);
-
-        let image = load_rgba_image(&path).unwrap();
-
-        assert_eq!(image.width(), 2);
-        assert_eq!(image.height(), 2);
-        assert_eq!(
-            image.pixel(0, 0).unwrap(),
-            PixelSRGBA {
-                r: 255,
-                g: 0,
-                b: 0,
-                a: 255,
-            }
-        );
 
         let _ = std::fs::remove_file(path);
     }

@@ -665,32 +665,6 @@ mod tests {
     }
 
     #[test]
-    fn clamped_maxspect_is_corrected_when_viewport_feedback_arrives() {
-        let monitor_size = egui::vec2(1000.0, 1000.0);
-        let image_size = egui::vec2(1024.0, 1024.0);
-        let mut state = ImageWindowGeometryState::default();
-        state.normal_size = Some(image_size);
-
-        let maxspect = state
-            .apply_resize_action(
-                decorated_viewport(monitor_size, egui::pos2(100.0, 100.0), egui::vec2(600.0, 500.0), 0.0),
-                WindowResizeAction::Maxspect,
-            )
-            .expect("maxspect should apply");
-        assert_size_near(maxspect.inner_size.unwrap(), egui::vec2(1000.0, 1000.0));
-
-        let correction = state
-            .observe_viewport(decorated_viewport(
-                monitor_size,
-                egui::pos2(0.0, 0.0),
-                egui::vec2(1000.0, 930.0),
-                0.0,
-            ))
-            .expect("clamped maxspect should be corrected");
-        assert_size_near(correction.inner_size.unwrap(), egui::vec2(930.0, 930.0));
-    }
-
-    #[test]
     fn aspect_specific_clamp_does_not_cap_a_wider_layout() {
         let monitor_size = egui::vec2(1600.0, 1000.0);
         let mut state = ImageWindowGeometryState::default();

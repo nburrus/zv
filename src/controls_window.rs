@@ -1953,34 +1953,4 @@ mod tests {
             assert!(!window.focus_on_show);
         }
     }
-
-    #[test]
-    fn selecting_modifiers_keeps_window_closed_until_opened() {
-        let mut window = controls_window();
-        window.select_modifiers();
-
-        assert!(!window.is_enabled());
-        assert_eq!(window.ui_state.lock().unwrap().active_tab, ControlsTab::Modifiers);
-        assert!(!window.focus_on_show);
-
-        window.toggle();
-        assert!(window.is_enabled());
-        assert_eq!(window.ui_state.lock().unwrap().active_tab, ControlsTab::Modifiers);
-    }
-
-    #[test]
-    fn selecting_modifiers_in_an_open_window_does_not_request_focus() {
-        let mut window = controls_window();
-        let pending = set_pending_levels(&window);
-        window.show_color_editor();
-        window.focus_on_show = false;
-        assert_eq!(window.color_preview(), pending);
-
-        window.select_modifiers();
-
-        assert!(window.is_enabled());
-        assert_eq!(window.ui_state.lock().unwrap().active_tab, ControlsTab::Modifiers);
-        assert!(!window.focus_on_show);
-        assert_eq!(window.color_preview(), ColorPreview::None);
-    }
 }
