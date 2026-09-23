@@ -25,6 +25,10 @@ key-to-action mapping, or a case another test already covers. They pass by
 construction, so they never catch a regression, and they still have to be read
 and updated on every refactor. Delete them instead of carrying them.
 
+Tests that only exercise newly written code are fine as scaffolding during
+development, but do not stage or commit them. Before committing, drop every new
+test that would not catch a plausible future regression.
+
 ## Layout
 
 - `src/`: application and viewer implementation.
