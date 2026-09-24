@@ -9,5 +9,5 @@ Manual install:
 
 The archived C++ zv-client and Python APIs are not included in Rust releases.
 
-macOS: Run zv --install-app to create /Applications/Zv.app.
+macOS: Run zv --install-desktop to create /Applications/Zv.app.
 Missing Command Line Tools are offered for installation; full Xcode is not needed.

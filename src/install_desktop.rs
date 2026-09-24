@@ -8,7 +8,7 @@ pub use macos::{install, install_staged};
 
 #[cfg(not(target_os = "macos"))]
 pub fn install() -> anyhow::Result<()> {
-    anyhow::bail!("--install-app is only supported on macOS")
+    anyhow::bail!("--install-desktop is only supported on macOS")
 }
 
 #[cfg(not(target_os = "macos"))]

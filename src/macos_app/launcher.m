@@ -34,7 +34,7 @@
         NSAlert *alert = [[NSAlert alloc] init];
         alert.messageText = @"Unable to start zv";
         alert.informativeText = [NSString stringWithFormat:
-            @"%@\n\nExpected the installed viewer at:\n%@\n\nIf you moved or removed it, reinstall zv and run zv --install-app again.",
+            @"%@\n\nExpected the installed viewer at:\n%@\n\nIf you moved or removed it, reinstall zv and run zv --install-desktop again.",
             error.localizedDescription, binary];
         [alert runModal];
         if (self.viewers.count == 0) [NSApp terminate:nil];

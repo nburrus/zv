@@ -1,6 +1,6 @@
 # macOS application launcher
 
-Place `zv` at its permanent location, then run `zv --install-app` to install
+Place `zv` at its permanent location, then run `zv --install-desktop` to install
 `/Applications/Zv.app`. The app launches that binary; rerun the command if you
 move it.
 

@@ -38,25 +38,25 @@ pub fn install() -> anyhow::Result<()> {
         Ok(()) => {}
         Err(error) if permission_denied(&error) => {
             let command = format!(
-                "sudo {} --install-app-staged {}",
+                "sudo {} --install-desktop-staged {}",
                 shell_quote(executable_text),
                 shell_quote(&bundle.to_string_lossy())
             );
             if !confirm(&format!(
                 "Administrator permission is needed to install {DESTINATION}.\nRun: {command}"
             ))? {
-                bail!("installation cancelled; rerun zv --install-app from a terminal to approve installation");
+                bail!("installation cancelled; rerun zv --install-desktop from a terminal to approve installation");
             }
             // Only copying and replacing the completed bundle runs as root.
             run(Command::new("/usr/bin/sudo")
                 .arg(&executable)
-                .arg("--install-app-staged")
+                .arg("--install-desktop-staged")
                 .arg(&bundle))?;
         }
         Err(error) => return Err(error),
     }
     println!(
-        "Installed {DESTINATION}\nLauncher target: {executable_text}\n\nChoose Zv in Finder’s Open With menu. To grant Full Disk Access, add\n{DESTINATION} in System Settings > Privacy & Security > Full Disk Access.\nRerun zv --install-app if you move the zv binary."
+        "Installed {DESTINATION}\nLauncher target: {executable_text}\n\nChoose Zv in Finder’s Open With menu. To grant Full Disk Access, add\n{DESTINATION} in System Settings > Privacy & Security > Full Disk Access.\nRerun zv --install-desktop if you move the zv binary."
     );
     Ok(())
 }
